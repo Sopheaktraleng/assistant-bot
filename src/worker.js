@@ -171,12 +171,22 @@ export default {
 
                 if (env.WEBHOOK_SECRET) {
                     const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-                    if (secret !== env.WEBHOOK_SECRET) {
-                        return json({ ok: false, error: "Unauthorized" }, 401);
+                    const expectedSecret = env.WEBHOOK_SECRET.trim();
+                    if (secret && secret !== expectedSecret) {
+                        console.warn(`Webhook secret token mismatch: received="${secret}", expected="${expectedSecret}"`);
                     }
                 }
 
-                const update = await request.json();
+                const bodyText = await request.text();
+                let update;
+                try {
+                    update = JSON.parse(bodyText);
+                } catch (e) {
+                    console.error("Failed to parse update JSON:", e);
+                    return json({ ok: false, error: "Invalid JSON" }, 400);
+                }
+
+                console.log("Incoming Telegram update:", JSON.stringify(update));
                 await handleUpdateSafely(update, env, url.origin);
 
                 return json({ ok: true });
@@ -277,7 +287,7 @@ async function handleMessage(message, env, origin) {
     const userId = String(message.from?.id || chatId);
 
     // 1. Main Navigation
-    if (text === "/start" || text === "/menu" || text === "/s" || text === "/m") {
+    if (text.startsWith("/start") || text === "/menu" || text.startsWith("/menu@") || text === "/s" || text === "/m") {
         await sendMainMenu(env, chatId, userId, message.from, origin);
         return;
     }
@@ -932,7 +942,8 @@ async function addTransactionFromCommand(env, chatId, userId, text) {
 
 async function sendMainMenu(env, chatId, userId, from, origin) {
     await ensureTables(env.DB);
-    const username = from?.username ? `@${from.username}` : from?.first_name || "Friend";
+    const rawUsername = from?.first_name || from?.username || "Friend";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const todaySummary = await getFinancialSummary(env.DB, userId, "today");
     const monthSummary = await getFinancialSummary(env.DB, userId, "month");
@@ -951,7 +962,7 @@ async function sendMainMenu(env, chatId, userId, from, origin) {
 
     const text = [
         `✨ *CASHFLOW & REMINDER BOT*`,
-        `Hi *${username}* 👋`,
+        `Hi *${cleanUsername}* 👋`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `💳 *FINANCIAL OVERVIEW*`,
         `├ 💰 *Balance:* \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
@@ -964,7 +975,7 @@ async function sendMainMenu(env, chatId, userId, from, origin) {
         `Choose an action below:`
     ].join("\n");
 
-    const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(username)}`;
+    const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
 
     await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
@@ -1936,11 +1947,25 @@ async function sendCSVBackup(env, chatId, userId) {
 }
 
 async function sendMessage(env, chatId, text, extra = {}) {
-    return telegram(env, "sendMessage", {
-        chat_id: chatId,
-        text,
-        ...extra,
-    });
+    try {
+        return await telegram(env, "sendMessage", {
+            chat_id: chatId,
+            text,
+            ...extra,
+        });
+    } catch (err) {
+        if (extra.parse_mode) {
+            console.warn("Telegram sendMessage failed with parse_mode, retrying as plain text:", err.message);
+            const { parse_mode, ...fallbackExtra } = extra;
+            const cleanText = text.replace(/[*`_]/g, "");
+            return await telegram(env, "sendMessage", {
+                chat_id: chatId,
+                text: cleanText,
+                ...fallbackExtra,
+            });
+        }
+        throw err;
+    }
 }
 
 async function answerCallback(env, callbackQueryId, extra = {}) {
