@@ -1,23 +1,33 @@
-# Cashflow Telegram Bot
+# Personal Assistant & Cashflow Telegram Bot
 
-A 24/7 Telegram expense tracker designed for free hosting on Cloudflare Workers with Cloudflare D1.
+A 24/7 personal assistant and productivity bot hosted on Cloudflare Workers with Cloudflare D1.
 
 Cloudflare Workers do not run as a permanent process. Telegram sends each bot update to `/webhook`, the Worker handles it, stores data in D1, replies to Telegram, then exits. This keeps the bot available without paying for an always-on server.
+
+## Workspaces & Architecture
+
+The bot is structured as an extensible **Personal Assistant Hub**:
+- 🌟 **Main Assistant Hub (`/hub` or `/menu`):** Clean top-level portal with quick access to workspaces. Designed to easily scale with future tools (e.g. Notes, Tasks, AI tools).
+- 💰 **Cashflow & Finance Workspace (`/finance`):** Expense & income tracking, daily ledger, monthly budgets, category breakdowns, and paginated transaction history.
+- ⏰ **Reminders & Habits Workspace (`/reminders`):** Automated departure alarms (lunch box reminder), custom reminders (`/remind`), and daily check-ins.
+- 📱 **Web Mini-App Dashboard:** Interactive visual dashboard with Chart.js, budget gauges, and history search.
+- ⚙️ **Settings (`/settings`):** Multi-currency switch (USD / KHR), monthly budget setup, and secure CSV data management.
 
 ## Commands
 
 ```text
-/start or /menu   - Open modern dashboard & quick actions
+/hub or /menu     - Open Personal Assistant Hub
+/finance          - Open Cashflow & Finance Workspace
+/reminders        - Open Reminders & Habits Workspace
 /lunchbox         - Lunch box departure reminder manager
 /lunchbox 17:30   - Set lunch box reminder time
 /lunchbox on/off  - Enable or disable lunch box alarm
-/remind 17:30 ... - Set custom daily reminder
-/reminders        - View & manage all active reminders
+/remind 17:30 ... - Set custom reminder
 /add 5 usd lunch  - Log an expense (or type /a for picker)
 /income 500 usd   - Log income (or type /i for picker)
 /today or /t      - View today's itemized ledger
 /summary          - Today's spending stats & category progress bars
-/week             - 7-day spending report with doughnut chart
+/week             - 7-day spending report with chart
 /month            - Current month summary & budget status
 /budget 300 usd   - Set monthly spending limit (0 to disable)
 /settings         - Currency switcher & budget settings
@@ -27,10 +37,11 @@ Cloudflare Workers do not run as a permanent process. Telegram sends each bot up
 
 ## Bot Highlights & Flow
 
+- **🌟 Modular Assistant Hub:** An uncluttered, minimalist portal where features are neatly separated into dedicated workspaces.
 - **🍱 Lunch Box Departure Alarm:** Set a weekday reminder (e.g. at 5:30 PM before heading home) so you never leave your lunch box behind at the office. Comes with `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
-- **⏰ Habit & Custom Reminders:** Setup custom daily reminders (`/remind <time> <title>`) or enable daily 9:00 PM expense check-ins.
-- **🎨 Redesigned Premium UI:** Clean layout, sleek category icons (`🍔 Food`, `☕ Coffee`, `🚗 Transport`, etc.), currency toggle (USD/KHR), visual progress bars (`▰▰▰▰▱▱`), and organized menus without chat clutter.
-- **⚡ Instant Interactive Receipts:** Clean receipt cards with quick actions `[➕ Add Another]`, `[📜 Ledger]`, `[🏠 Menu]`.
+- **⏰ Habit & Custom Reminders:** Setup custom reminders (`/remind <time> <title>`) or enable daily 9:00 PM expense check-ins.
+- **🎨 Modern UI & Two-Way Navigation:** Clean cards with quick return links `[⬅️ Back to Workspace]` and `[🏠 Main Hub]`.
+- **⚡ Instant Interactive Receipts:** Clean receipt cards with quick actions `[➕ Add Another]`, `[📜 Ledger]`, `[💰 Finance Hub]`.
 - **📱 Web Mini-App Dashboard:** Full analytics with Chart.js, budget gauges, historical search, and pagination.
 
 ## Setup

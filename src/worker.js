@@ -286,9 +286,14 @@ async function handleMessage(message, env, origin) {
     const chatId = message.chat.id;
     const userId = String(message.from?.id || chatId);
 
-    // 1. Main Navigation
-    if (text.startsWith("/start") || text === "/menu" || text.startsWith("/menu@") || text === "/s" || text === "/m") {
-        await sendMainMenu(env, chatId, userId, message.from, origin);
+    // 1. Main Navigation & Workspaces
+    if (text.startsWith("/start") || text === "/menu" || text.startsWith("/menu@") || text === "/hub" || text.startsWith("/hub@") || text === "/s" || text === "/m") {
+        await sendMainHub(env, chatId, userId, message.from, origin);
+        return;
+    }
+
+    if (text === "/finance" || text === "/cashflow" || text === "/money" || text === "/f") {
+        await sendFinanceHub(env, chatId, userId);
         return;
     }
 
@@ -398,7 +403,7 @@ async function handleMessage(message, env, origin) {
     }
 
     if (text.startsWith("/")) {
-        await sendMessage(env, chatId, "⚠️ Unknown command. Type /help to see all available commands, or /menu to open the main dashboard.");
+        await sendMessage(env, chatId, "⚠️ Unknown command. Type /help to see all available commands, or /hub to open your Personal Assistant Hub.");
     }
 }
 
@@ -411,9 +416,19 @@ async function handleCallback(callback, env, origin) {
 
     if (!chatId) return;
 
-    // --- Main Menu & Settings ---
-    if (data === "menu") {
-        await sendMainMenu(env, chatId, userId, callback.from, origin);
+    // --- Main Hub, Finance Hub & Settings ---
+    if (data === "menu" || data === "hub") {
+        await sendMainHub(env, chatId, userId, callback.from, origin);
+        return;
+    }
+
+    if (data === "finance_hub") {
+        await sendFinanceHub(env, chatId, userId);
+        return;
+    }
+
+    if (data === "help") {
+        await sendHelpMessage(env, chatId);
         return;
     }
 
@@ -677,6 +692,22 @@ async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data === "remind_help") {
+        await sendMessage(
+            env,
+            chatId,
+            `⏰ *HOW TO SET CUSTOM REMINDERS*\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `Use the command format:\n` +
+            `• \`/remind 17:30 Pack lunch box\`\n` +
+            `• \`/remind 09:00 Daily morning standup\`\n` +
+            `• \`/remind 20:00 Drink water & stretch\`\n\n` +
+            `The bot will automatically notify you at the scheduled local time (Asia/Bangkok)!`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
     // --- Ledger & Summaries Callbacks ---
     if (data === "view_transactions") {
         await sendTransactions(env, chatId, userId);
@@ -884,8 +915,8 @@ async function handleRemindCommand(env, chatId, userId, text) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "⏰ All Reminders", callback_data: "reminders" },
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "⏰ Reminders Workspace", callback_data: "reminders" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -937,45 +968,66 @@ async function addTransactionFromCommand(env, chatId, userId, text) {
 }
 
 // ---------------------------------------------------------------------------
-// Beautiful, Clean UI Screen Renderers
+// Personal Assistant Hub & Modular Workspace Renderers
 // ---------------------------------------------------------------------------
 
-async function sendMainMenu(env, chatId, userId, from, origin) {
+async function sendMainHub(env, chatId, userId, from, origin) {
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "Friend";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
+
+    const text = [
+        `🌟 *PERSONAL ASSISTANT HUB*`,
+        `Hello *${cleanUsername}* 👋`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Welcome to your personal assistant & productivity hub. Manage your finances, automated reminders, and daily habits seamlessly.`,
+        ``,
+        `📂 *Select a Workspace:*`
+    ].join("\n");
+
+    const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "💰 Cashflow & Finance", callback_data: "finance_hub" },
+                    { text: "⏰ Reminders & Habits", callback_data: "reminders" }
+                ],
+                [
+                    { text: "📱 Open Web Dashboard", web_app: { url: webAppUrl } },
+                    { text: "⚙️ Settings", callback_data: "settings" }
+                ],
+                [
+                    { text: "💡 Help & Command Guide", callback_data: "help" }
+                ]
+            ]
+        }
+    });
+}
+
+async function sendMainMenu(env, chatId, userId, from, origin) {
+    return sendMainHub(env, chatId, userId, from, origin);
+}
+
+async function sendFinanceHub(env, chatId, userId) {
+    await ensureTables(env.DB);
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const todaySummary = await getFinancialSummary(env.DB, userId, "today");
     const monthSummary = await getFinancialSummary(env.DB, userId, "month");
     const allSummary = await getFinancialSummary(env.DB, userId, "all");
-    
-    // Check lunchbox reminder status
-    const lbRow = await env.DB.prepare(
-        "SELECT reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-    ).bind(userId).first();
-
-    let lbStatus = "⚪ Off (Tap below to enable)";
-    if (lbRow && lbRow.is_active) {
-        const freqText = lbRow.frequency === "weekdays" ? "Mon–Fri" : "Daily";
-        lbStatus = `🟢 Active (${lbRow.reminder_time} ${freqText})`;
-    }
 
     const text = [
-        `✨ *CASHFLOW & REMINDER BOT*`,
-        `Hi *${cleanUsername}* 👋`,
+        `💰 *CASHFLOW & FINANCE WORKSPACE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `💳 *FINANCIAL OVERVIEW*`,
+        `💳 *Financial Overview (${displayCurrency}):*`,
         `├ 💰 *Balance:* \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
         `├ 📈 *This Month:* \`${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}\``,
         `└ 📅 *Today Spent:* \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
-        ``,
-        `⏰ *HABITS & REMINDERS*`,
-        `└ 🍱 *Lunch Box:* ${lbStatus}`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `Choose an action below:`
+        `Choose an action below, or type commands like \`/add 5 usd coffee\``
     ].join("\n");
-
-    const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
 
     await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
@@ -986,16 +1038,15 @@ async function sendMainMenu(env, chatId, userId, from, origin) {
                     { text: "📥 Add Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "🍱 Lunch Box Alarm", callback_data: "lunchbox" },
-                    { text: "⏰ All Reminders", callback_data: "reminders" }
-                ],
-                [
                     { text: "📊 Today Summary", callback_data: "summary_today" },
                     { text: "📜 Daily Ledger", callback_data: "view_transactions" }
                 ],
                 [
-                    { text: "📱 Open Web Dashboard", web_app: { url: webAppUrl } },
-                    { text: "⚙️ Settings", callback_data: "settings" }
+                    { text: "🎯 Monthly Budget", callback_data: "budget_help" },
+                    { text: "📈 View History", callback_data: "history:1" }
+                ],
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1052,7 +1103,8 @@ async function sendLunchboxMenu(env, chatId, userId) {
                     { text: "🔔 Test Notification Now", callback_data: "lb_test" }
                 ],
                 [
-                    { text: "⬅️ Back to Menu", callback_data: "menu" }
+                    { text: "⬅️ Back to Reminders", callback_data: "reminders" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1067,19 +1119,31 @@ async function sendRemindersMenu(env, chatId, userId) {
 
     const reminders = results || [];
 
+    const lbRow = reminders.find(r => r.type === "lunchbox");
+    let lbStatus = "⚪ Disabled (Tap below to turn ON)";
+    if (lbRow && lbRow.is_active) {
+        const freqText = lbRow.frequency === "weekdays" ? "Mon–Fri" : "Daily";
+        lbStatus = `🟢 Active (${lbRow.reminder_time} ${freqText})`;
+    }
+
     const lines = [
-        `⏰ *REMINDERS & HABITS*`,
+        `⏰ *REMINDERS & HABITS WORKSPACE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `Manage your automated reminders and daily notifications:`,
+        `Manage your automated reminders and departure alarms:`,
+        ``,
+        `🍱 *Lunch Box Departure Alarm:*`,
+        `└ ${lbStatus}`,
         ``
     ];
 
-    if (reminders.length === 0) {
-        lines.push(`_No reminders configured yet._`, `Tap *🍱 Lunch Box Alarm* below to set up your departure reminder!`);
+    const customReminders = reminders.filter(r => r.type !== "lunchbox");
+    if (customReminders.length === 0) {
+        lines.push(`📋 *Custom Reminders:*`, `_No custom reminders configured yet._`);
     } else {
-        reminders.forEach((r, idx) => {
+        lines.push(`📋 *Custom Reminders:*`);
+        customReminders.forEach((r, idx) => {
             const status = r.is_active ? "🟢" : "⚪";
-            const icon = r.type === "lunchbox" ? "🍱" : r.type === "expense_log" ? "💰" : "📌";
+            const icon = r.type === "expense_log" ? "💰" : "📌";
             const freq = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
             lines.push(`${idx + 1}. ${status} ${icon} *${r.title}* — \`${r.reminder_time}\` (${freq})`);
         });
@@ -1091,13 +1155,13 @@ async function sendRemindersMenu(env, chatId, userId) {
     const buttons = [
         [
             { text: "🍱 Lunch Box Alarm", callback_data: "lunchbox" },
-            { text: "💰 Daily Expense Check-in", callback_data: "toggle_expense_reminder" }
+            { text: "💰 Daily Check-in", callback_data: "toggle_expense_reminder" }
         ]
     ];
 
     if (reminders.length > 0) {
         const delRow = reminders.slice(0, 3).map(r => ({
-            text: `🗑️ #${r.id}`,
+            text: `🗑️ Delete #${r.id}`,
             callback_data: `remind_del:${r.id}`
         }));
         buttons.push(delRow);
@@ -1105,7 +1169,11 @@ async function sendRemindersMenu(env, chatId, userId) {
 
     buttons.push([
         { text: "🔔 Test Lunch Box Alert", callback_data: "lb_test" },
-        { text: "🏠 Main Menu", callback_data: "menu" }
+        { text: "💡 Remind Help", callback_data: "remind_help" }
+    ]);
+
+    buttons.push([
+        { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
     await sendMessage(env, chatId, lines.join("\n"), {
@@ -1127,12 +1195,12 @@ async function sendSettingsMenu(env, chatId, userId) {
     const toggleLabel = displayCurrency === "USD" ? "🇰🇭 Switch to KHR (៛)" : "🇺🇸 Switch to USD ($)";
 
     const text = [
-        `⚙️ *BOT SETTINGS*`,
+        `⚙️ *SYSTEM SETTINGS*`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `🏳️ *Active Currency:* *${displayCurrency}*`,
         `🎯 *Monthly Budget:* *${budgetStr}*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `Manage your currency, budget, or transaction records below:`
+        `Configure preferences or manage your transaction records:`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -1145,7 +1213,7 @@ async function sendSettingsMenu(env, chatId, userId) {
                     { text: "🗑️ Clear Today's Data", callback_data: "clear_today_warn" },
                     { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
                 ],
-                [{ text: "⬅️ Back to Menu", callback_data: "menu" }]
+                [{ text: "🏠 Main Hub", callback_data: "hub" }]
             ]
         }
     });
@@ -1174,7 +1242,10 @@ async function sendCategoryPicker(env, chatId, type = "expense") {
 
     const customCb = isIncome ? "custom_inc" : "custom_add";
     rows.push([{ text: `✏️ Type custom: ${exampleCmd}`, callback_data: customCb }]);
-    rows.push([{ text: "⬅️ Back to Menu", callback_data: "menu" }]);
+    rows.push([
+        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
 
     const text = [
         title,
@@ -1281,7 +1352,8 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" }
                 ],
                 [
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1313,7 +1385,10 @@ async function sendTransactions(env, chatId, userId) {
                         { text: "➕ Add Expense", callback_data: "add_expense" },
                         { text: "📥 Add Income", callback_data: "add_income" }
                     ],
-                    [{ text: "⬅️ Back to Menu", callback_data: "menu" }]
+                    [
+                        { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
                 ]
             }
         });
@@ -1361,7 +1436,10 @@ async function sendTransactions(env, chatId, userId) {
                 ],
                 [
                     { text: "📊 Today Summary", callback_data: "summary_today" },
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" }
+                ],
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1408,7 +1486,10 @@ async function sendSummary(env, chatId, userId, period) {
             inline_keyboard: [
                 [
                     { text: "📜 Daily Ledger", callback_data: "view_transactions" },
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" }
+                ],
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1445,7 +1526,10 @@ async function sendCategoryBreakdown(env, chatId, userId, period) {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
-                [{ text: "⬅️ Back to Menu", callback_data: "menu" }]
+                [
+                    { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
             ]
         }
     });
@@ -1504,7 +1588,10 @@ async function getHistoryMessageData(db, userId, page = 1) {
             text: "📜 *TRANSACTION HISTORY*\n━━━━━━━━━━━━━━━━━━━━\nNo transactions recorded yet.",
             replyMarkup: {
                 inline_keyboard: [
-                    [{ text: "⬅️ Back to Menu", callback_data: "menu" }]
+                    [
+                        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
                 ]
             }
         };
@@ -1539,7 +1626,10 @@ async function getHistoryMessageData(db, userId, page = 1) {
     if (navRow.length > 0) {
         inlineKeyboard.push(navRow);
     }
-    inlineKeyboard.push([{ text: "⬅️ Back to Menu", callback_data: "menu" }]);
+    inlineKeyboard.push([
+        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
 
     return {
         text,
@@ -1549,14 +1639,19 @@ async function getHistoryMessageData(db, userId, page = 1) {
 
 async function sendHelpMessage(env, chatId) {
     const text = [
-        `💡 *CASHFLOW & REMINDER BOT GUIDE*`,
+        `💡 *PERSONAL ASSISTANT GUIDE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
+        `🌟 *Workspaces & Navigation*`,
+        `• /hub or /menu — Personal Assistant Hub`,
+        `• /finance — Cashflow & Finance Workspace`,
+        `• /reminders — Reminders & Habits Workspace`,
+        `• /settings — Currency toggle & budget limit`,
+        ``,
         `🍱 *Lunch Box & Reminders*`,
-        `• /lunchbox — Lunch box alarm manager`,
-        `• /lunchbox 17:30 — Set lunch box reminder time`,
+        `• /lunchbox — Lunch box alarm control`,
+        `• /lunchbox 17:30 — Set departure alarm time`,
         `• /lunchbox on / off — Enable or disable alarm`,
-        `• /remind 17:30 Take lunch box — Set custom reminder`,
-        `• /reminders — View & manage all active reminders`,
+        `• /remind 17:30 <Title> — Set custom alert`,
         ``,
         `💳 *Logging Transactions*`,
         `• /add 5 usd coffee — Log expense in USD`,
@@ -1569,13 +1664,7 @@ async function sendHelpMessage(env, chatId) {
         `• /summary — Spending stats & breakdown`,
         `• /week — 7-day visual report & doughnut chart`,
         `• /month — Current month spending overview`,
-        `• /history — Full paginated transaction ledger`,
-        ``,
-        `⚙️ *Settings & Budgets*`,
-        `• /budget 300 usd — Set monthly spending cap`,
-        `• /settings — Currency toggle & budget settings`,
-        `• /clear — Clear data with automatic CSV backup`,
-        `• /menu — Return to main dashboard`
+        `• /history — Full paginated transaction ledger`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -1583,8 +1672,11 @@ async function sendHelpMessage(env, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🍱 Lunch Box Alarm", callback_data: "lunchbox" },
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "⏰ Reminders Hub", callback_data: "reminders" }
+                ],
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
@@ -1696,7 +1788,7 @@ async function sendExpenseLogNotification(env, chatId) {
                 ],
                 [
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" },
-                    { text: "🏠 Main Menu", callback_data: "menu" }
+                    { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
