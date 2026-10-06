@@ -1,6 +1,6 @@
 import dashboardHtml from "./dashboard_html.js";
 
-const TIME_ZONE = "Asia/Bangkok";
+const TIME_ZONE = "Asia/Phnom_Penh";
 const CURRENCY = "KHR";
 const EXCHANGE_RATE = 4000; // 1 USD = 4000 KHR
 
@@ -1379,7 +1379,7 @@ async function handleRemindCommand(env, chatId, userId, text) {
         `${icon} *REMINDER SET!*`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `📌 *Title:* *${title}*`,
-        `⏰ *Time:* \`${timeStr}\` (${freqLabel}, Asia/Bangkok)`,
+        `⏰ *Time:* \`${timeStr}\` (${freqLabel}, Phnom Penh)`,
         `🔔 We will alert you on Telegram when it's time!`
     ].join("\n");
 
@@ -1948,7 +1948,7 @@ async function sendWorkReportFile(env, chatId, userId, period = "this_month", fr
         "================================================================================",
         `Period:          ${label}`,
         `Prepared By:     ${cleanUsername}`,
-        `Generated At:    ${today()} ${currentTime()} (Asia/Bangkok)`,
+        `Generated At:    ${today()} ${currentTime()} (Phnom Penh)`,
         `Total Completed: ${logs.length} tasks`,
         `Active Days:     ${activeDays} days`,
         `Focus Breakdown: ${catSummary}`,
@@ -2846,7 +2846,7 @@ async function sendCustomReminderNotification(env, chatId, title, time, reminder
         `━━━━━━━━━━━━━━━━━━━━`,
         `📌 *${title}*`,
         ``,
-        `⏰ Time: *${time}* (Asia/Bangkok)`
+        `⏰ Time: *${time}* (Phnom Penh)`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
