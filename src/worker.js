@@ -334,20 +334,19 @@ async function handleMessage(message, env, origin) {
         return;
     }
 
-    // 2. Lunch Box Reminder Command
-    if (text.startsWith("/lunchbox") || text === "/lb") {
-        await handleLunchboxCommand(env, chatId, userId, text);
-        return;
-    }
-
-    // 3. General Reminder Command
-    if (text.startsWith("/remind")) {
+    // 2. Reminders & Alarms Commands
+    if (text.startsWith("/remind") || text.startsWith("/alarm")) {
         await handleRemindCommand(env, chatId, userId, text);
         return;
     }
 
     if (text === "/reminders" || text === "/reminder" || text === "/r") {
         await sendRemindersMenu(env, chatId, userId);
+        return;
+    }
+
+    if (text.startsWith("/lunchbox") || text === "/lb") {
+        await handleLunchboxCommand(env, chatId, userId, text);
         return;
     }
 
@@ -471,8 +470,8 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
-        if (lower === "lunchbox" || lower === "alarm" || lower === "lunch") {
-            await sendLunchboxMenu(env, chatId, userId);
+        if (lower === "reminder" || lower === "reminders" || lower === "alarm" || lower === "alarms" || lower === "lunchbox" || lower === "lunch") {
+            await sendRemindersMenu(env, chatId, userId);
             return;
         }
 
@@ -481,7 +480,13 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 2. Natural Work Logging: e.g. "done fixed checkout bug", "did code review", "finished report"
+        // 2. Natural Reminder: e.g. "remind 17:30 Bring lunch box", "remind in 30m Check oven", "remind 9am Standup"
+        if (lower.startsWith("remind ") || lower.startsWith("remindme ") || lower.startsWith("alarm ")) {
+            await handleRemindCommand(env, chatId, userId, text);
+            return;
+        }
+
+        // 3. Natural Work Logging: e.g. "done fixed checkout bug", "did code review", "finished report"
         if (
             lower.startsWith("done ") || 
             lower.startsWith("did ") || 
@@ -496,7 +501,7 @@ async function handleMessage(message, env, origin) {
             }
         }
 
-        // 3. Natural Income: e.g. "+500 salary" or "income 500 salary"
+        // 4. Natural Income: e.g. "+500 salary" or "income 500 salary"
         const incMatch = text.match(/^\+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i) ||
                          text.match(/^income\s+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i);
         if (incMatch) {
@@ -512,7 +517,7 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 4. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5"
+        // 5. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5"
         const expMatch1 = text.match(/^(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
         const expMatch2 = text.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
 
@@ -545,11 +550,12 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 5. Friendly guidance if casual text doesn't match
+        // 6. Friendly guidance if casual text doesn't match
         await sendMessage(
             env,
             chatId,
             `💡 *Quick Shortcuts:*\n` +
+            `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\`\n` +
             `• Log work: \`done <task>\`\n` +
             `• Log spend: \`5 coffee\` or \`10000 lunch\`\n` +
             `• Manager report: \`report\`\n` +
@@ -877,6 +883,116 @@ async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data === "remind_prompt_add") {
+        await sendPromptAddReminder(env, chatId);
+        return;
+    }
+
+    if (data === "remind_add_lunchbox") {
+        await ensureTables(env.DB);
+        const existing = await env.DB.prepare(
+            "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
+        ).bind(userId).first();
+
+        if (existing) {
+            await env.DB.prepare("UPDATE reminders SET is_active = 1, chat_id = ? WHERE id = ?")
+                .bind(String(chatId), existing.id)
+                .run();
+        } else {
+            await env.DB.prepare(`
+                INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+                VALUES (?, ?, 'Bring lunch box home', '17:30', 'weekdays', 'lunchbox', 1)
+            `).bind(userId, String(chatId)).run();
+        }
+
+        await answerCallback(env, callback.id, { text: "🍱 Lunchbox alarm enabled (17:30 Mon–Fri)!" });
+        await sendRemindersMenu(env, chatId, userId);
+        return;
+    }
+
+    if (data.startsWith("remind_toggle:")) {
+        const id = parseInt(data.slice(14), 10);
+        await ensureTables(env.DB);
+        const existing = await env.DB.prepare(
+            "SELECT id, is_active, title FROM reminders WHERE id = ? AND user_id = ?"
+        ).bind(id, userId).first();
+
+        if (existing) {
+            const newActive = existing.is_active ? 0 : 1;
+            await env.DB.prepare("UPDATE reminders SET is_active = ?, chat_id = ? WHERE id = ?")
+                .bind(newActive, String(chatId), id)
+                .run();
+            const statusTxt = newActive ? `🟢 "${existing.title}" is now ON!` : `⚪ "${existing.title}" is now OFF.`;
+            await answerCallback(env, callback.id, { text: statusTxt });
+        }
+        await sendRemindersMenu(env, chatId, userId);
+        return;
+    }
+
+    if (data.startsWith("remind_time_menu:")) {
+        const id = parseInt(data.slice(17), 10);
+        await sendReminderTimeMenu(env, chatId, userId, id);
+        return;
+    }
+
+    if (data.startsWith("remind_set_time:")) {
+        const parts = data.split(":");
+        const id = parseInt(parts[1], 10);
+        const newTime = `${parts[2]}:${parts[3]}`;
+        await ensureTables(env.DB);
+        await env.DB.prepare(
+            "UPDATE reminders SET reminder_time = ?, is_active = 1, chat_id = ? WHERE id = ? AND user_id = ?"
+        ).bind(newTime, String(chatId), id, userId).run();
+
+        await answerCallback(env, callback.id, { text: `⏰ Time updated to ${newTime}!` });
+        await sendRemindersMenu(env, chatId, userId);
+        return;
+    }
+
+    if (data.startsWith("remind_set_rel:")) {
+        const parts = data.split(":");
+        const id = parseInt(parts[1], 10);
+        const mins = parseInt(parts[2], 10);
+        const now = new Date();
+        const targetDate = new Date(now.getTime() + mins * 60 * 1000);
+        const targetTimeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(targetDate);
+
+        await ensureTables(env.DB);
+        await env.DB.prepare(
+            "UPDATE reminders SET reminder_time = ?, frequency = 'once', is_active = 1, chat_id = ? WHERE id = ? AND user_id = ?"
+        ).bind(targetTimeStr, String(chatId), id, userId).run();
+
+        await answerCallback(env, callback.id, { text: `⏱️ Set to ${targetTimeStr} (in ${mins}m)!` });
+        await sendRemindersMenu(env, chatId, userId);
+        return;
+    }
+
+    if (data.startsWith("remind_freq:")) {
+        const parts = data.split(":");
+        const id = parseInt(parts[1], 10);
+        const newFreq = parts[2];
+        await ensureTables(env.DB);
+        await env.DB.prepare(
+            "UPDATE reminders SET frequency = ?, chat_id = ? WHERE id = ? AND user_id = ?"
+        ).bind(newFreq, String(chatId), id, userId).run();
+
+        const label = newFreq === "weekdays" ? "Mon–Fri" : newFreq === "daily" ? "Daily" : "Once";
+        await answerCallback(env, callback.id, { text: `🗓️ Schedule: ${label}` });
+        await sendReminderTimeMenu(env, chatId, userId, id);
+        return;
+    }
+
+    if (data === "remind_test_general") {
+        await answerCallback(env, callback.id, { text: "🔔 Sending test reminder..." });
+        await sendCustomReminderNotification(env, chatId, "Test Reminder: Everything is working perfectly!", currentTime(), 0);
+        return;
+    }
+
     if (data === "toggle_expense_reminder") {
         await ensureTables(env.DB);
         const existing = await env.DB.prepare(
@@ -910,24 +1026,66 @@ async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data.startsWith("remind_snooze:")) {
+        const id = parseInt(data.slice(14), 10);
+        const now = new Date();
+        const snoozeTime = new Date(now.getTime() + 15 * 60 * 1000);
+        const snoozeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(snoozeTime);
+
+        await ensureTables(env.DB);
+        let title = "Reminder";
+        if (id) {
+            const r = await env.DB.prepare("SELECT title FROM reminders WHERE id = ?").bind(id).first();
+            if (r?.title) title = r.title;
+        }
+
+        await env.DB.prepare(`
+            INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+            VALUES (?, ?, ?, ?, 'once', 'custom', 1)
+        `).bind(userId, String(chatId), `${title} (Snoozed)`, snoozeStr).run();
+
+        await answerCallback(env, callback.id, { text: `⏰ Snoozed 15 mins (until ${snoozeStr})!` });
+        try {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: callback.message.message_id,
+                text: [
+                    `⏰🔔 *REMINDER SNOOZED*`,
+                    `━━━━━━━━━━━━━━━━━━━━`,
+                    `📌 *${title}*`,
+                    `⏰ Alert snoozed for 15 minutes!`,
+                    `We will alert you again at *${snoozeStr}*. ✨`
+                ].join("\n"),
+                parse_mode: "Markdown"
+            });
+        } catch (e) {}
+        return;
+    }
+
     if (data.startsWith("remind_done:")) {
         await answerCallback(env, callback.id, { text: "✅ Done!" });
+        try {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: callback.message.message_id,
+                text: [
+                    `⏰🔔 *REMINDER COMPLETED*`,
+                    `━━━━━━━━━━━━━━━━━━━━`,
+                    `✅ *Marked as done! Keep up the great work!* 🎉`
+                ].join("\n"),
+                parse_mode: "Markdown"
+            });
+        } catch (e) {}
         return;
     }
 
     if (data === "remind_help") {
-        await sendMessage(
-            env,
-            chatId,
-            `⏰ *HOW TO SET CUSTOM REMINDERS*\n` +
-            `━━━━━━━━━━━━━━━━━━━━\n` +
-            `Use the command format:\n` +
-            `• \`/remind 17:30 Pack lunch box\`\n` +
-            `• \`/remind 09:00 Daily morning standup\`\n` +
-            `• \`/remind 20:00 Drink water & stretch\`\n\n` +
-            `The bot will automatically notify you at the scheduled local time (Asia/Bangkok)!`,
-            { parse_mode: "Markdown" }
-        );
+        await sendPromptAddReminder(env, chatId);
         return;
     }
 
@@ -1092,57 +1250,155 @@ async function handleLunchboxCommand(env, chatId, userId, text) {
     await sendLunchboxMenu(env, chatId, userId);
 }
 
-async function handleRemindCommand(env, chatId, userId, text) {
-    const parts = text.split(/\s+/);
-    if (parts.length < 2 || parts[1] === "help") {
-        await sendMessage(env, chatId, [
-            `💡 *HOW TO SET A REMINDER*`,
-            `━━━━━━━━━━━━━━━━━━━━`,
-            `Usage: \`/remind <time> <title>\``,
-            ``,
-            `Examples:`,
-            `• \`/remind 17:30 Bring lunch box home\``,
-            `• \`/remind 21:00 Review today's spending\``,
-            `• \`/remind 08:30 Morning vitamins\``,
-            ``,
-            `Time must be 24-hour format (\`HH:mm\`) in Asia/Bangkok time.`
-        ].join("\n"), { parse_mode: "Markdown" });
-        return;
-    }
-
-    const timeArg = parts[1];
-    const timeMatch = timeArg.match(/^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/);
-    if (!timeMatch) {
-        await sendMessage(env, chatId, "❌ Invalid time format. Please use 24-hour format like `17:30` or `08:00`.\nExample: `/remind 17:30 Lunch box`", { parse_mode: "Markdown" });
-        return;
-    }
-
-    const formattedTime = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
-    const title = parts.slice(2).join(" ").trim() || "Reminder";
-    const type = title.toLowerCase().includes("lunch") ? "lunchbox" : "custom";
-
-    await ensureTables(env.DB);
-    await env.DB.prepare(`
-        INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-        VALUES (?, ?, ?, ?, 'daily', ?, 1)
-    `).bind(userId, String(chatId), title, formattedTime, type).run();
-
-    await sendMessage(env, chatId, [
-        `⏰ *REMINDER SET!*`,
+async function sendPromptAddReminder(env, chatId) {
+    const text = [
+        `⏰ *SET A NEW REMINDER*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `📌 *Title:* *${title}*`,
-        `⏰ *Time:* \`${formattedTime}\` (Daily, Asia/Bangkok)`,
-        `🔔 We will alert you on Telegram when it's time!`
-    ].join("\n"), {
+        `You can remind *whatever you want* with any time! Just type:`,
+        ``,
+        `1️⃣ *Exact Time:*`,
+        `• \`remind 17:30 Bring lunch box home\``,
+        `• \`remind 09:00 Team morning standup\``,
+        `• \`remind 21:00 Review daily expenses\``,
+        `• \`remind 8:30pm Water the plants\``,
+        ``,
+        `2️⃣ *Quick Timers (Minutes / Hours):*`,
+        `• \`remind in 15m Check the oven\``,
+        `• \`remind in 30m Take medicine\``,
+        `• \`remind in 1h Call the client\``,
+        ``,
+        `Or choose a quick preset below:`
+    ].join("\n");
+
+    await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "⏰ Reminders Workspace", callback_data: "reminders" },
+                    { text: "🍱 Lunchbox (17:30)", callback_data: "remind_add_lunchbox" },
+                    { text: "💰 Spending Check (21:00)", callback_data: "toggle_expense_reminder" }
+                ],
+                [
+                    { text: "⬅️ Back to Reminders", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
         }
+    });
+}
+
+async function handleRemindCommand(env, chatId, userId, text) {
+    const raw = text.replace(/^\/?(remindme|remind|alarm)\s*/i, "").trim();
+    if (!raw || raw.toLowerCase() === "help") {
+        await sendPromptAddReminder(env, chatId);
+        return;
+    }
+
+    let timeStr = "";
+    let title = "";
+    let frequency = "daily";
+    let isRelative = false;
+    let mins = 0;
+
+    // 1. Relative: e.g. "in 30m check oven", "30 mins call mom", "in 1h check server"
+    const relMatch = raw.match(/^(?:in\s+)?(\d+)\s*(minutes|minute|mins|min|hours|hour|hrs|hr|m|h)\s*(.*)$/i);
+    if (relMatch) {
+        const num = parseInt(relMatch[1], 10);
+        const unit = relMatch[2].toLowerCase();
+        title = relMatch[3].trim() || "Reminder";
+        mins = unit.startsWith("h") ? num * 60 : num;
+        const now = new Date();
+        const target = new Date(now.getTime() + mins * 60 * 1000);
+        timeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(target);
+        frequency = "once";
+        isRelative = true;
+    }
+
+    // 2. 12-hour AM/PM: e.g. "5pm bring lunch box", "5:30pm call mom", "9am standup"
+    if (!timeStr) {
+        const ampmMatch = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*(.*)$/i);
+        if (ampmMatch) {
+            let hour = parseInt(ampmMatch[1], 10);
+            const minute = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+            const ampm = ampmMatch[3].toLowerCase();
+            if (ampm === "pm" && hour < 12) hour += 12;
+            if (ampm === "am" && hour === 12) hour = 0;
+            timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+            title = ampmMatch[4].trim() || "Reminder";
+            frequency = "daily";
+        }
+    }
+
+    // 3. 24-hour format: e.g. "17:30 bring lunch box", "08:00 vitamins", "9:00 standup"
+    if (!timeStr) {
+        const standardMatch = raw.match(/^([0-1]?[0-9]|2[0-3]):([0-5][0-9])\s*(.*)$/i);
+        if (standardMatch) {
+            const hour = standardMatch[1].padStart(2, "0");
+            const minute = standardMatch[2];
+            timeStr = `${hour}:${minute}`;
+            title = standardMatch[3].trim() || "Reminder";
+            frequency = "daily";
+        }
+    }
+
+    if (!timeStr) {
+        await sendMessage(env, chatId, [
+            `❌ *Could not understand the time.*`,
+            `Please specify a time like \`17:30\`, \`5:30pm\`, or \`in 30m\`.`,
+            ``,
+            `Examples:`,
+            `• \`remind 17:30 Bring lunch box\``,
+            `• \`remind in 20m Check oven\``,
+            `• \`remind 9am Team standup\``
+        ].join("\n"), { parse_mode: "Markdown" });
+        return;
+    }
+
+    const type = title.toLowerCase().includes("lunch") ? "lunchbox" : "custom";
+
+    await ensureTables(env.DB);
+    const insertResult = await env.DB.prepare(`
+        INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+    `).bind(userId, String(chatId), title, timeStr, frequency, type).run();
+
+    const newId = insertResult?.meta?.last_row_id;
+    const freqLabel = frequency === "once" 
+        ? (isRelative ? `in ${mins} mins` : "Once") 
+        : frequency === "weekdays" ? "Mon–Fri" : "Daily";
+
+    const isLunch = type === "lunchbox";
+    const icon = isLunch ? "🍱" : "⏰";
+
+    const textResponse = [
+        `${icon} *REMINDER SET!*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `📌 *Title:* *${title}*`,
+        `⏰ *Time:* \`${timeStr}\` (${freqLabel}, Asia/Bangkok)`,
+        `🔔 We will alert you on Telegram when it's time!`
+    ].join("\n");
+
+    const buttons = [
+        [
+            { text: "⏰ Reminders Hub", callback_data: "reminders" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
+    if (newId) {
+        buttons.unshift([
+            { text: "⏰ Adjust Time", callback_data: `remind_time_menu:${newId}` },
+            { text: "🗑️ Delete", callback_data: `remind_del:${newId}` }
+        ]);
+    }
+
+    await sendMessage(env, chatId, textResponse, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons }
     });
 }
 
@@ -1314,13 +1570,16 @@ async function sendMainHub(env, chatId, userId, from, origin) {
     ).bind(userId, `${monthStr}%`).first();
     const workCount = workRow?.count || 0;
 
-    const lbRow = await env.DB.prepare(
-        "SELECT reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-    ).bind(userId).first();
-
-    let lbStatus = "⚪ Off";
-    if (lbRow && lbRow.is_active) {
-        lbStatus = `🟢 ${lbRow.reminder_time}`;
+    const { results: allReminders } = await env.DB.prepare(
+        "SELECT id, title, reminder_time, is_active FROM reminders WHERE user_id = ? ORDER BY id ASC"
+    ).bind(userId).all();
+    const remList = allReminders || [];
+    const activeRems = remList.filter(r => r.is_active);
+    let remStatus = "⚪ None active";
+    if (activeRems.length > 0) {
+        const first = activeRems[0];
+        const shortTitle = first.title.length > 15 ? first.title.slice(0, 14) + "…" : first.title;
+        remStatus = `🟢 \`${activeRems.length} active\` (${first.reminder_time} ${shortTitle})`;
     }
 
     const text = [
@@ -1328,7 +1587,7 @@ async function sendMainHub(env, chatId, userId, from, origin) {
         ``,
         `💼 *Work:* \`${workCount} tasks\` logged this month`,
         `💰 *Money:* \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\` today • Balance: \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
-        `🍱 *Lunchbox:* ${lbStatus}`,
+        `⏰ *Reminders:* ${remStatus}`,
         ``,
         `_What would you like to do?_`
     ].join("\n");
@@ -1344,7 +1603,7 @@ async function sendMainHub(env, chatId, userId, from, origin) {
                     { text: "💰 Money & Budget", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "🍱 Lunchbox Alarm", callback_data: "lunchbox" },
+                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" },
                     { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
@@ -1848,69 +2107,114 @@ async function sendRemindersMenu(env, chatId, userId) {
     ).bind(userId).all();
 
     const reminders = results || [];
+    const activeCount = reminders.filter(r => r.is_active).length;
 
-    const lbRow = reminders.find(r => r.type === "lunchbox");
-    let lbStatus = "⚪ Disabled (Tap below to turn ON)";
-    if (lbRow && lbRow.is_active) {
-        const freqText = lbRow.frequency === "weekdays" ? "Mon–Fri" : "Daily";
-        lbStatus = `🟢 Active (${lbRow.reminder_time} ${freqText})`;
-    }
-
-    const lines = [
-        `⏰ *REMINDERS & HABITS WORKSPACE*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Manage your automated reminders and departure alarms:`,
-        ``,
-        `🍱 *Lunch Box Departure Alarm:*`,
-        `└ ${lbStatus}`,
-        ``
-    ];
-
-    const customReminders = reminders.filter(r => r.type !== "lunchbox");
-    if (customReminders.length === 0) {
-        lines.push(`📋 *Custom Reminders:*`, `_No custom reminders configured yet._`);
+    let listText = "";
+    if (reminders.length === 0) {
+        listText = "_No reminders set yet._\nTap *[ ➕ Add Reminder ]* below or type:\n`remind 17:30 Bring lunch box`";
     } else {
-        lines.push(`📋 *Custom Reminders:*`);
-        customReminders.forEach((r, idx) => {
+        listText = reminders.map((r, idx) => {
             const status = r.is_active ? "🟢" : "⚪";
-            const icon = r.type === "expense_log" ? "💰" : "📌";
             const freq = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
-            lines.push(`${idx + 1}. ${status} ${icon} *${r.title}* — \`${r.reminder_time}\` (${freq})`);
-        });
+            const icon = r.type === "lunchbox" ? "🍱" : r.type === "expense_log" ? "💰" : "⏰";
+            return `${idx + 1}. ${status} ${icon} *${r.title}*\n    └ \`${r.reminder_time}\` (${freq})`;
+        }).join("\n");
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`💡 _Tip: You can also type \`/remind 17:30 Bring lunch box\` anytime!_`);
+    const text = [
+        `⏰ *REMINDERS & ALARMS*`,
+        `*${activeCount} active* of ${reminders.length} reminder(s)`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        listText,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💡 _Type \`remind <time> <task>\` or \`remind in 30m <task>\`_`
+    ].join("\n");
 
     const buttons = [
         [
-            { text: "🍱 Lunch Box Alarm", callback_data: "lunchbox" },
-            { text: "💰 Daily Check-in", callback_data: "toggle_expense_reminder" }
+            { text: "➕ Add Reminder", callback_data: "remind_prompt_add" },
+            { text: "🍱 Lunchbox Preset", callback_data: "remind_add_lunchbox" }
         ]
     ];
 
-    if (reminders.length > 0) {
-        const delRow = reminders.slice(0, 3).map(r => ({
-            text: `🗑️ Delete #${r.id}`,
-            callback_data: `remind_del:${r.id}`
-        }));
-        buttons.push(delRow);
+    for (const r of reminders.slice(0, 6)) {
+        const toggleIcon = r.is_active ? "🟢" : "⚪";
+        const shortTitle = r.title.length > 13 ? r.title.slice(0, 12) + "…" : r.title;
+        buttons.push([
+            { text: `${toggleIcon} ${shortTitle}`, callback_data: `remind_toggle:${r.id}` },
+            { text: `⏰ ${r.reminder_time}`, callback_data: `remind_time_menu:${r.id}` },
+            { text: "🗑️", callback_data: `remind_del:${r.id}` }
+        ]);
     }
 
     buttons.push([
-        { text: "🔔 Test Lunch Box Alert", callback_data: "lb_test" },
-        { text: "💡 Remind Help", callback_data: "remind_help" }
-    ]);
-
-    buttons.push([
+        { text: "🔔 Test Notification", callback_data: "remind_test_general" },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
-    await sendMessage(env, chatId, lines.join("\n"), {
+    await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: buttons
         }
+    });
+}
+
+async function sendReminderTimeMenu(env, chatId, userId, reminderId) {
+    await ensureTables(env.DB);
+    const r = await env.DB.prepare(
+        "SELECT id, title, reminder_time, frequency, is_active FROM reminders WHERE id = ? AND user_id = ?"
+    ).bind(reminderId, userId).first();
+
+    if (!r) {
+        await sendMessage(env, chatId, "⚠️ Reminder not found.");
+        return sendRemindersMenu(env, chatId, userId);
+    }
+
+    const freqLabel = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
+    const nextFreq = r.frequency === "weekdays" ? "daily" : r.frequency === "daily" ? "once" : "weekdays";
+    const nextFreqLabel = nextFreq === "weekdays" ? "Mon–Fri" : nextFreq === "daily" ? "Daily" : "Once";
+
+    const text = [
+        `⏰ *SET TIME FOR REMINDER*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `📌 *${r.title}*`,
+        `• Current Time: *${r.reminder_time}* (${freqLabel})`,
+        ``,
+        `Choose a preset time below or type:`,
+        `\`remind <time> ${r.title}\``
+    ].join("\n");
+
+    const buttons = [
+        [
+            { text: "⏰ 16:30", callback_data: `remind_set_time:${r.id}:16:30` },
+            { text: "⏰ 17:00", callback_data: `remind_set_time:${r.id}:17:00` },
+            { text: "⏰ 17:30", callback_data: `remind_set_time:${r.id}:17:30` },
+            { text: "⏰ 18:00", callback_data: `remind_set_time:${r.id}:18:00` }
+        ],
+        [
+            { text: "⏰ 08:30", callback_data: `remind_set_time:${r.id}:08:30` },
+            { text: "⏰ 09:00", callback_data: `remind_set_time:${r.id}:09:00` },
+            { text: "⏰ 12:00", callback_data: `remind_set_time:${r.id}:12:00` },
+            { text: "⏰ 21:00", callback_data: `remind_set_time:${r.id}:21:00` }
+        ],
+        [
+            { text: "⏱️ In 15m", callback_data: `remind_set_rel:${r.id}:15` },
+            { text: "⏱️ In 30m", callback_data: `remind_set_rel:${r.id}:30` },
+            { text: "⏱️ In 1h", callback_data: `remind_set_rel:${r.id}:60` }
+        ],
+        [
+            { text: `🔁 Switch Schedule: ${nextFreqLabel}`, callback_data: `remind_freq:${r.id}:${nextFreq}` }
+        ],
+        [
+            { text: "⬅️ Back to Reminders", callback_data: "reminders" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons }
     });
 }
 
@@ -2372,6 +2676,7 @@ async function sendHelpMessage(env, chatId) {
         `💡 *PERSONAL ASSISTANT GUIDE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `✨ *Effortless Natural Typing (No Commands Needed!)*`,
+        `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\``,
         `• Spend: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
         `• Income: \`+500 salary\` or \`+50 bonus\``,
         `• Work log: \`done Fixed checkout bug\` or \`done Team sprint planning\``,
@@ -2379,17 +2684,18 @@ async function sendHelpMessage(env, chatId) {
         `• Today's spend: \`today\` or \`ledger\``,
         `• Open Hub: \`menu\` or \`hub\``,
         ``,
+        `⏰ *General Reminders & Alarms*`,
+        `• \`remind 17:30 <task>\` — Set daily reminder at exact 24h time`,
+        `• \`remind 5:30pm <task>\` — Set reminder using AM/PM`,
+        `• \`remind in 15m <task>\` — Quick one-time timer in minutes/hours`,
+        `• /reminders — Open Reminders Workspace to toggle, change times, or delete`,
+        ``,
         `💼 *Work Journal & Monthly Manager Reports*`,
         `• \`done <task>\` — Record an accomplishment instantly`,
         `• /report — Generate this month's manager report`,
         `• /report last — Generate last month's report`,
         `• /report export — Export report as downloadable .txt file`,
         `• /work — Open your Work Journal & today's tasks`,
-        ``,
-        `🍱 *Lunchbox Departure Alarm*`,
-        `• /lunchbox — Lunchbox alarm settings`,
-        `• /lunchbox 17:30 — Set departure alarm time`,
-        `• /lunchbox on / off — Enable or disable alarm`,
         ``,
         `💰 *Cashflow & Finance*`,
         `• /add 5 usd coffee or /income 500 usd salary`,
@@ -2408,7 +2714,7 @@ async function sendHelpMessage(env, chatId) {
                     { text: "💰 Money & Budget", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "🍱 Lunchbox Alarm", callback_data: "lunchbox" },
+                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
