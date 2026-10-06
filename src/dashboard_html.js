@@ -496,6 +496,20 @@ export default `<!DOCTYPE html>
                 <div class="hero-subvalue" id="balance-sub">0 ៛</div>
             </div>
 
+            <!-- Lunch Box Reminder Status Card (Shown if active) -->
+            <div class="section-card" id="reminder-card" style="display: none; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.08); border-radius: 18px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🍱</span>
+                        <div>
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #ffffff;">Lunch Box Reminder</div>
+                            <div id="reminder-status-sub" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Active at 17:30 (Weekdays)</div>
+                        </div>
+                    </div>
+                    <span id="reminder-status-badge" style="font-size: 0.72rem; font-weight: 700; color: var(--success); background: var(--success-bg); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(16, 185, 129, 0.2);">ACTIVE</span>
+                </div>
+            </div>
+
             <!-- Budget Progress Card (Only shown if budget is set) -->
             <div class="section-card" id="budget-card" style="display: none; margin-bottom: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05); background: rgba(18, 22, 33, 0.7); position: relative; overflow: hidden;">
                 <div class="section-title" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
@@ -677,6 +691,16 @@ export default `<!DOCTYPE html>
             const balanceKhr = data.summary.balanceKhr;
             const incomeKhr = data.summary.totalIncomeInKhr;
             const expenseKhr = data.summary.totalExpenseInKhr;
+
+            // Lunch Box Reminder Status Render
+            const reminderCard = document.getElementById('reminder-card');
+            if (data.lunchboxReminder && data.lunchboxReminder.is_active) {
+                reminderCard.style.display = 'block';
+                const freq = data.lunchboxReminder.frequency === 'weekdays' ? 'Weekdays (Mon–Fri)' : 'Everyday';
+                document.getElementById('reminder-status-sub').innerText = \`Scheduled at \${data.lunchboxReminder.reminder_time} (\${freq})\`;
+            } else {
+                reminderCard.style.display = 'none';
+            }
 
             // Monthly Budget Progress Render
             const budgetCard = document.getElementById('budget-card');

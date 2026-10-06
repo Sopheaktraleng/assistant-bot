@@ -26,3 +26,23 @@ CREATE TABLE IF NOT EXISTS user_settings (
     monthly_budget REAL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    reminder_time TEXT NOT NULL, -- HH:mm 24-hour format in Asia/Bangkok
+    frequency TEXT NOT NULL DEFAULT 'weekdays', -- 'weekdays', 'daily', 'once'
+    type TEXT NOT NULL DEFAULT 'lunchbox', -- 'lunchbox', 'expense_log', 'custom'
+    is_active INTEGER NOT NULL DEFAULT 1,
+    last_sent_date TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_user
+ON reminders (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_active
+ON reminders (is_active, reminder_time);
+

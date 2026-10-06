@@ -7,27 +7,31 @@ Cloudflare Workers do not run as a permanent process. Telegram sends each bot up
 ## Commands
 
 ```text
-/start
-/menu
-/add 5000 food
-/today
-/transactions
-/summary
-/month
-/categories
-/total
-/clear
+/start or /menu   - Open modern dashboard & quick actions
+/lunchbox         - Lunch box departure reminder manager
+/lunchbox 17:30   - Set lunch box reminder time
+/lunchbox on/off  - Enable or disable lunch box alarm
+/remind 17:30 ... - Set custom daily reminder
+/reminders        - View & manage all active reminders
+/add 5 usd lunch  - Log an expense (or type /a for picker)
+/income 500 usd   - Log income (or type /i for picker)
+/today or /t      - View today's itemized ledger
+/summary          - Today's spending stats & category progress bars
+/week             - 7-day spending report with doughnut chart
+/month            - Current month summary & budget status
+/budget 300 usd   - Set monthly spending limit (0 to disable)
+/settings         - Currency switcher & budget settings
+/clear            - Reset records (with auto CSV backup)
+/help             - View bot documentation
 ```
 
-## Bot Flow
+## Bot Highlights & Flow
 
-- `/menu` opens the main dashboard.
-- `Quick Add` lets you pick a category and a preset amount without typing.
-- `/add 5000 food` records a custom expense.
-- `Today` shows today's total, entry count, average, biggest expense, and top categories.
-- `Month` shows the same summary for the current month.
-- `Categories` shows the monthly category breakdown.
-- `Transactions` lists today's entries.
+- **🍱 Lunch Box Departure Alarm:** Set a weekday reminder (e.g. at 5:30 PM before heading home) so you never leave your lunch box behind at the office. Comes with `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
+- **⏰ Habit & Custom Reminders:** Setup custom daily reminders (`/remind <time> <title>`) or enable daily 9:00 PM expense check-ins.
+- **🎨 Redesigned Premium UI:** Clean layout, sleek category icons (`🍔 Food`, `☕ Coffee`, `🚗 Transport`, etc.), currency toggle (USD/KHR), visual progress bars (`▰▰▰▰▱▱`), and organized menus without chat clutter.
+- **⚡ Instant Interactive Receipts:** Clean receipt cards with quick actions `[➕ Add Another]`, `[📜 Ledger]`, `[🏠 Menu]`.
+- **📱 Web Mini-App Dashboard:** Full analytics with Chart.js, budget gauges, historical search, and pagination.
 
 ## Setup
 
