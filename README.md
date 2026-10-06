@@ -7,7 +7,8 @@ Cloudflare Workers do not run as a permanent process. Telegram sends each bot up
 ## Workspaces & Architecture
 
 The bot is structured as an extensible **Personal Assistant Hub**:
-- 🌟 **Main Assistant Hub (`/hub` or `/menu`):** Clean top-level portal with quick access to workspaces. Designed to easily scale with future tools (e.g. Notes, Tasks, AI tools).
+- 🌟 **Main Assistant Hub (`/hub` or `/menu`):** Clean top-level portal with quick access to workspaces. Designed to easily scale with future tools.
+- 💼 **Work Journal & Manager Reports (`/work`, `/done`):** Track daily accomplishments and automatically generate structured, professional monthly accomplishment reports for your manager or 1-on-1s.
 - 💰 **Cashflow & Finance Workspace (`/finance`):** Expense & income tracking, daily ledger, monthly budgets, category breakdowns, and paginated transaction history.
 - ⏰ **Reminders & Habits Workspace (`/reminders`):** Automated departure alarms (lunch box reminder), custom reminders (`/remind`), and daily check-ins.
 - 📱 **Web Mini-App Dashboard:** Interactive visual dashboard with Chart.js, budget gauges, and history search.
@@ -17,6 +18,11 @@ The bot is structured as an extensible **Personal Assistant Hub**:
 
 ```text
 /hub or /menu     - Open Personal Assistant Hub
+/work             - Open Work Journal & Accomplishment Workspace
+/done <task>      - Log a completed work task (e.g. /done Fixed checkout bug)
+/report           - Generate this month's manager accomplishment report
+/report last      - Generate last month's accomplishment report
+/report export    - Export report as a downloadable text document (.txt)
 /finance          - Open Cashflow & Finance Workspace
 /reminders        - Open Reminders & Habits Workspace
 /lunchbox         - Lunch box departure reminder manager
@@ -37,6 +43,7 @@ The bot is structured as an extensible **Personal Assistant Hub**:
 
 ## Bot Highlights & Flow
 
+- **💼 Work Journal & Manager Reports:** Never struggle to recall what you did this month. Type `/done <task>` whenever you finish something. At month-end, type `/report` to get a structured weekly breakdown with active days and categories, ready to copy-paste or download as `.txt`.
 - **🌟 Modular Assistant Hub:** An uncluttered, minimalist portal where features are neatly separated into dedicated workspaces.
 - **🍱 Lunch Box Departure Alarm:** Set a weekday reminder (e.g. at 5:30 PM before heading home) so you never leave your lunch box behind at the office. Comes with `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
 - **⏰ Habit & Custom Reminders:** Setup custom reminders (`/remind <time> <title>`) or enable daily 9:00 PM expense check-ins.

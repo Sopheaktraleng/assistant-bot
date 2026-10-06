@@ -46,3 +46,19 @@ ON reminders (user_id);
 CREATE INDEX IF NOT EXISTS idx_reminders_active
 ON reminders (is_active, reminder_time);
 
+CREATE TABLE IF NOT EXISTS work_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'General',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_logs_user_date
+ON work_logs (user_id, date);
+
+CREATE INDEX IF NOT EXISTS idx_work_logs_user_created
+ON work_logs (user_id, created_at);
+

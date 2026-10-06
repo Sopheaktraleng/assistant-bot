@@ -235,7 +235,23 @@ async function ensureTables(db) {
             );
         `).run();
     } catch (e) {
-        console.error("ensureTables error:", e);
+        console.error("ensureTables reminders error:", e);
+    }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS work_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'General',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables work_logs error:", e);
     }
 }
 
@@ -294,6 +310,27 @@ async function handleMessage(message, env, origin) {
 
     if (text === "/finance" || text === "/cashflow" || text === "/money" || text === "/f") {
         await sendFinanceHub(env, chatId, userId);
+        return;
+    }
+
+    // 2. Work Log & Manager Reports Workspace
+    if (text === "/work" || text === "/worklog" || text === "/tasks" || text === "/task" || text === "/w") {
+        await sendWorkHub(env, chatId, userId, message.from);
+        return;
+    }
+
+    if (text.startsWith("/done") || text.startsWith("/did") || text.startsWith("/log")) {
+        const parts = text.split(/\s+/);
+        if (parts.length === 1) {
+            await sendWorkHub(env, chatId, userId, message.from);
+            return;
+        }
+        await handleAddWorkLogCommand(env, chatId, userId, text, message.from);
+        return;
+    }
+
+    if (text.startsWith("/report")) {
+        await handleReportCommand(env, chatId, userId, text, message.from);
         return;
     }
 
@@ -424,6 +461,72 @@ async function handleCallback(callback, env, origin) {
 
     if (data === "finance_hub") {
         await sendFinanceHub(env, chatId, userId);
+        return;
+    }
+
+    // --- Work Log & Reports Callbacks ---
+    if (data === "work_hub") {
+        await sendWorkHub(env, chatId, userId, callback.from);
+        return;
+    }
+
+    if (data === "work_today") {
+        await sendTodayWork(env, chatId, userId);
+        return;
+    }
+
+    if (data === "work_week") {
+        await sendWorkReport(env, chatId, userId, "this_week", callback.from);
+        return;
+    }
+
+    if (data === "work_report_this") {
+        await sendWorkReport(env, chatId, userId, "this_month", callback.from);
+        return;
+    }
+
+    if (data === "work_report_last") {
+        await sendWorkReport(env, chatId, userId, "last_month", callback.from);
+        return;
+    }
+
+    if (data === "work_export_this") {
+        await sendWorkReportFile(env, chatId, userId, "this_month", callback.from);
+        return;
+    }
+
+    if (data === "work_export_last") {
+        await sendWorkReportFile(env, chatId, userId, "last_month", callback.from);
+        return;
+    }
+
+    if (data === "work_delete_menu") {
+        await sendWorkDeletePicker(env, chatId, userId);
+        return;
+    }
+
+    if (data.startsWith("work_del:")) {
+        const id = parseInt(data.slice(9), 10);
+        await env.DB.prepare("DELETE FROM work_logs WHERE id = ? AND user_id = ?").bind(id, userId).run();
+        await answerCallback(env, callback.id, { text: "🗑️ Task deleted." });
+        await sendWorkHub(env, chatId, userId, callback.from);
+        return;
+    }
+
+    if (data === "work_log_prompt") {
+        await sendMessage(
+            env,
+            chatId,
+            `💼 *HOW TO LOG WORK TASKS*\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `Whenever you finish a task, meeting, or bugfix, type:\n` +
+            `• \`/done Fixed customer checkout payment failure\`\n` +
+            `• \`/done Prepared Q3 API migration roadmap\`\n` +
+            `• \`/done Weekly team sprint planning meeting\`\n` +
+            `• \`/done [Bugfix] Fixed mobile crash on iOS 18\`\n\n` +
+            `At the end of the month, type \`/report\` or tap *This Month's Report* to generate your complete monthly manager accomplishment report ready to copy & paste! 🚀`,
+            { parse_mode: "Markdown" }
+        );
         return;
     }
 
@@ -923,6 +1026,120 @@ async function handleRemindCommand(env, chatId, userId, text) {
     });
 }
 
+async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
+    await ensureTables(env.DB);
+    const content = text.replace(/^\/\w+\s*/, "").trim();
+    if (!content) {
+        await sendMessage(
+            env,
+            chatId,
+            `💡 *Usage:* \`/done <task description>\`\n\n` +
+            `Examples:\n` +
+            `• \`/done Fixed checkout payment failure bug\`\n` +
+            `• \`/done Completed API migration for auth service\`\n` +
+            `• \`/done Sprint planning meeting with design team\`\n` +
+            `• \`/done [Bugfix] Fixed mobile crash on iOS 18\``,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    let category = "General";
+    let finalContent = content;
+
+    const bracketMatch = content.match(/^\[(.*?)\]\s*(.*)$/);
+    if (bracketMatch) {
+        category = capitalize(bracketMatch[1].trim());
+        finalContent = bracketMatch[2].trim() || content;
+    } else {
+        const lower = content.toLowerCase();
+        if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("resolve") || lower.includes("patch") || lower.includes("error")) {
+            category = "Bugfix";
+        } else if (lower.includes("meet") || lower.includes("sync") || lower.includes("call") || lower.includes("standup") || lower.includes("discuss") || lower.includes("1-on-1") || lower.includes("1:1")) {
+            category = "Meeting";
+        } else if (lower.includes("deploy") || lower.includes("release") || lower.includes("publish") || lower.includes("ship")) {
+            category = "Release";
+        } else if (lower.includes("doc") || lower.includes("report") || lower.includes("write") || lower.includes("spec") || lower.includes("manual")) {
+            category = "Documentation";
+        } else if (lower.includes("test") || lower.includes("qa") || lower.includes("verify") || lower.includes("audit")) {
+            category = "Testing";
+        } else if (lower.includes("design") || lower.includes("ui") || lower.includes("ux") || lower.includes("figma") || lower.includes("mockup")) {
+            category = "Design";
+        } else if (lower.includes("code") || lower.includes("api") || lower.includes("feature") || lower.includes("develop") || lower.includes("implement") || lower.includes("refactor") || lower.includes("build") || lower.includes("service")) {
+            category = "Development";
+        }
+    }
+
+    const todayDate = today();
+    const timeStr = currentTime();
+
+    await env.DB.prepare(
+        "INSERT INTO work_logs (user_id, date, time, content, category) VALUES (?, ?, ?, ?, ?)"
+    ).bind(userId, todayDate, timeStr, finalContent, category).run();
+
+    const monthStr = monthPrefix();
+    const countRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
+    ).bind(userId, `${monthStr}%`).first();
+    const monthCount = countRow?.count || 1;
+
+    const icon = getWorkCategoryIcon(category);
+
+    const message = [
+        `💼 *WORK TASK RECORDED!*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `📌 *Task:* ${finalContent}`,
+        `🏷️ *Category:* ${icon} ${category}`,
+        `📅 *Logged:* \`${todayDate}\` • \`${timeStr}\` (Asia/Bangkok)`,
+        `🏆 *Month Accomplishments:* \`${monthCount}\` tasks logged`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💡 _Your monthly manager report is automatically updated!_`
+    ].join("\n");
+
+    await sendMessage(env, chatId, message, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "📋 Today's Work", callback_data: "work_today" },
+                    { text: "📊 Monthly Report", callback_data: "work_report_this" }
+                ],
+                [
+                    { text: "💼 Work Workspace", callback_data: "work_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleReportCommand(env, chatId, userId, text, from) {
+    const parts = text.split(/\s+/);
+    const arg = (parts[1] || "").toLowerCase();
+
+    if (arg === "last" || arg === "prev" || arg === "previous") {
+        await sendWorkReport(env, chatId, userId, "last_month", from);
+        return;
+    }
+
+    if (arg === "week" || arg === "7d") {
+        await sendWorkReport(env, chatId, userId, "this_week", from);
+        return;
+    }
+
+    if (arg === "export" || arg === "file" || arg === "txt") {
+        await sendWorkReportFile(env, chatId, userId, "this_month", from);
+        return;
+    }
+
+    if (arg.match(/^\d{4}-\d{2}$/)) {
+        await sendWorkReport(env, chatId, userId, arg, from);
+        return;
+    }
+
+    await sendWorkReport(env, chatId, userId, "this_month", from);
+}
+
 async function addTransactionFromCommand(env, chatId, userId, text) {
     const parts = text.split(/\s+/);
     const command = parts[0].toLowerCase();
@@ -993,14 +1210,15 @@ async function sendMainHub(env, chatId, userId, from, origin) {
             inline_keyboard: [
                 [
                     { text: "💰 Cashflow & Finance", callback_data: "finance_hub" },
-                    { text: "⏰ Reminders & Habits", callback_data: "reminders" }
+                    { text: "💼 Work Log & Reports", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "📱 Open Web Dashboard", web_app: { url: webAppUrl } },
-                    { text: "⚙️ Settings", callback_data: "settings" }
+                    { text: "⏰ Reminders & Habits", callback_data: "reminders" },
+                    { text: "📱 Open Web Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
-                    { text: "💡 Help & Command Guide", callback_data: "help" }
+                    { text: "⚙️ Settings", callback_data: "settings" },
+                    { text: "💡 Help & Guide", callback_data: "help" }
                 ]
             ]
         }
@@ -1050,6 +1268,471 @@ async function sendFinanceHub(env, chatId, userId) {
                 ]
             ]
         }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Work Journal & Manager Accomplishment Reports Workspace
+// ---------------------------------------------------------------------------
+
+async function sendWorkHub(env, chatId, userId, from) {
+    await ensureTables(env.DB);
+    const rawUsername = from?.first_name || from?.username || "Friend";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
+
+    const todayDate = today();
+    const monthStr = monthPrefix();
+    const sevenDaysAgo = dateDaysAgo(6);
+
+    const todayRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date = ?"
+    ).bind(userId, todayDate).first();
+
+    const weekRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date >= ? AND date <= ?"
+    ).bind(userId, sevenDaysAgo, todayDate).first();
+
+    const monthRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
+    ).bind(userId, `${monthStr}%`).first();
+
+    const todayCount = todayRow?.count || 0;
+    const weekCount = weekRow?.count || 0;
+    const monthCount = monthRow?.count || 0;
+    const mLabel = monthLabel();
+
+    const text = [
+        `💼 *WORK JOURNAL & MANAGER REPORTS*`,
+        `Hi *${cleanUsername}* 👋`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Record your daily accomplishments so you never stress about writing monthly reports for your manager again! 🚀`,
+        ``,
+        `📊 *Your Logged Accomplishments:*`,
+        `├ 📅 *Today:* \`${todayCount} tasks\``,
+        `├ 🗓️ *Rolling 7 Days:* \`${weekCount} tasks\``,
+        `└ 🏆 *This Month (${mLabel}):* \`${monthCount} tasks\``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💡 *Quick Command:* \`/done <what you did>\``
+    ].join("\n");
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "➕ How to Log Work", callback_data: "work_log_prompt" },
+                    { text: "📋 Today's Work", callback_data: "work_today" }
+                ],
+                [
+                    { text: "📊 This Month's Report", callback_data: "work_report_this" },
+                    { text: "⏪ Last Month's Report", callback_data: "work_report_last" }
+                ],
+                [
+                    { text: "🗓️ Rolling 7 Days", callback_data: "work_week" },
+                    { text: "📄 Export Report (.txt)", callback_data: "work_export_this" }
+                ],
+                [
+                    { text: "🗑️ Delete Recent Task", callback_data: "work_delete_menu" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function sendTodayWork(env, chatId, userId) {
+    await ensureTables(env.DB);
+    const todayDate = today();
+    const { results } = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, todayDate).all();
+
+    const logs = results || [];
+
+    if (logs.length === 0) {
+        await sendMessage(env, chatId, [
+            `📋 *TODAY'S WORK LOGS*`,
+            `📅 \`${todayDate}\``,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_No tasks recorded today yet._`,
+            ``,
+            `💡 Type \`/done <task>\` to log your first accomplishment today!`,
+            `Example: \`/done Fixed checkout payment failure bug\``
+        ].join("\n"), {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "💼 Work Workspace", callback_data: "work_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    const lines = [
+        `📋 *TODAY'S WORK LOGS*`,
+        `📅 \`${todayDate}\``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        ...logs.map((item, idx) => {
+            const icon = getWorkCategoryIcon(item.category);
+            return `${idx + 1}. \`${item.time}\` • ${icon} *${item.content}*`;
+        }),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Total logged today: *${logs.length} tasks*`
+    ];
+
+    await sendMessage(env, chatId, lines.join("\n"), {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "📊 This Month's Report", callback_data: "work_report_this" },
+                    { text: "🗑️ Delete Task", callback_data: "work_delete_menu" }
+                ],
+                [
+                    { text: "💼 Work Workspace", callback_data: "work_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function sendWorkReport(env, chatId, userId, period = "this_month", from) {
+    await ensureTables(env.DB);
+    const rawUsername = from?.first_name || from?.username || "You";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "You";
+
+    let label = "";
+    let isMonth = false;
+    let query = "";
+    let bindArgs = [];
+
+    if (period === "this_month") {
+        isMonth = true;
+        label = monthLabel();
+        const prefix = monthPrefix();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${prefix}%`];
+    } else if (period === "last_month") {
+        isMonth = true;
+        label = lastMonthLabel();
+        const prefix = lastMonthPrefix();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${prefix}%`];
+    } else if (period === "this_week") {
+        const start = dateDaysAgo(6);
+        const end = today();
+        label = `Rolling 7 Days (${start} to ${end})`;
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, start, end];
+    } else if (period.match(/^\d{4}-\d{2}$/)) {
+        isMonth = true;
+        label = period;
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${period}%`];
+    } else {
+        isMonth = true;
+        label = monthLabel();
+        const prefix = monthPrefix();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${prefix}%`];
+    }
+
+    const { results } = await env.DB.prepare(query).bind(...bindArgs).all();
+    const logs = results || [];
+
+    if (logs.length === 0) {
+        const text = [
+            `📋 *MONTHLY WORK REPORT*`,
+            `🗓️ *Period:* *${label}*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_No accomplishments logged for this period yet._`,
+            ``,
+            `💡 Whenever you complete a task, meeting, or bugfix, type:`,
+            `\`/done <task description>\``,
+            `Example: \`/done Completed API migration for auth service\``
+        ].join("\n");
+
+        await sendMessage(env, chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "➕ How to Log Work", callback_data: "work_log_prompt" },
+                        { text: "⏪ Last Month's Report", callback_data: "work_report_last" }
+                    ],
+                    [
+                        { text: "💼 Work Workspace", callback_data: "work_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    const activeDays = new Set(logs.map(r => r.date)).size;
+    const catMap = {};
+    for (const r of logs) {
+        catMap[r.category] = (catMap[r.category] || 0) + 1;
+    }
+    const catBreakdown = Object.entries(catMap)
+        .map(([cat, cnt]) => `${getWorkCategoryIcon(cat)} ${cat}: ${cnt}`)
+        .join(" • ");
+
+    const lines = [
+        `📋 *MONTHLY WORK REPORT*`,
+        `🗓️ *Period:* *${label}*`,
+        `👤 *Report for:* ${cleanUsername}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🏆 *Summary:* *${logs.length} tasks completed* across *${activeDays} working days*`,
+        `📊 *Focus:* ${catBreakdown}`,
+        `━━━━━━━━━━━━━━━━━━━━`
+    ];
+
+    if (isMonth) {
+        const weeks = [
+            { name: "Week 1 (Days 01–07)", min: 1, max: 7, items: [] },
+            { name: "Week 2 (Days 08–14)", min: 8, max: 14, items: [] },
+            { name: "Week 3 (Days 15–21)", min: 15, max: 21, items: [] },
+            { name: "Week 4+ (Days 22–End)", min: 22, max: 31, items: [] }
+        ];
+
+        for (const item of logs) {
+            const dayNum = parseInt(item.date.slice(8, 10), 10) || 1;
+            const w = weeks.find(wk => dayNum >= wk.min && dayNum <= wk.max) || weeks[3];
+            w.items.push(item);
+        }
+
+        for (const w of weeks) {
+            if (w.items.length === 0) continue;
+            lines.push(`📅 *${w.name}:*`);
+            for (const item of w.items) {
+                const shortDate = item.date.slice(5);
+                const icon = getWorkCategoryIcon(item.category);
+                lines.push(`• \`${shortDate}\` ${icon} ${item.content}`);
+            }
+            lines.push(``);
+        }
+    } else {
+        let currentDate = "";
+        for (const item of logs) {
+            if (item.date !== currentDate) {
+                currentDate = item.date;
+                lines.push(`📅 *${currentDate}:*`);
+            }
+            const icon = getWorkCategoryIcon(item.category);
+            lines.push(`• \`${item.time}\` ${icon} ${item.content}`);
+        }
+        lines.push(``);
+    }
+
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`💡 _Ready to copy & paste into your monthly email, Slack, or manager 1-on-1 doc!_`);
+
+    const fullMessage = lines.join("\n");
+    const exportCb = period === "last_month" ? "work_export_last" : "work_export_this";
+    const switchMonthText = period === "last_month" ? "⏩ This Month's Report" : "⏪ Last Month's Report";
+    const switchMonthCb = period === "last_month" ? "work_report_this" : "work_report_last";
+
+    if (fullMessage.length > 3800) {
+        const preview = lines.slice(0, 30).join("\n") + "\n\n⚠️ _Report is extensive. Full report generated as a downloadable text document below..._";
+        await sendMessage(env, chatId, preview, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📄 Download Report (.txt)", callback_data: exportCb },
+                        { text: switchMonthText, callback_data: switchMonthCb }
+                    ],
+                    [
+                        { text: "💼 Work Workspace", callback_data: "work_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        await sendWorkReportFile(env, chatId, userId, period, from);
+        return;
+    }
+
+    await sendMessage(env, chatId, fullMessage, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "📄 Export as File (.txt)", callback_data: exportCb },
+                    { text: switchMonthText, callback_data: switchMonthCb }
+                ],
+                [
+                    { text: "➕ Log Work Done", callback_data: "work_log_prompt" },
+                    { text: "💼 Work Workspace", callback_data: "work_hub" }
+                ],
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function sendWorkReportFile(env, chatId, userId, period = "this_month", from) {
+    await ensureTables(env.DB);
+    const rawUsername = from?.first_name || from?.username || "User";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "User";
+
+    let label = "";
+    let isMonth = false;
+    let query = "";
+    let bindArgs = [];
+    let fileSuffix = "";
+
+    if (period === "this_month") {
+        isMonth = true;
+        label = monthLabel();
+        fileSuffix = monthPrefix().replace("-", "_");
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${monthPrefix()}%`];
+    } else if (period === "last_month") {
+        isMonth = true;
+        label = lastMonthLabel();
+        fileSuffix = lastMonthPrefix().replace("-", "_");
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${lastMonthPrefix()}%`];
+    } else {
+        const start = dateDaysAgo(6);
+        const end = today();
+        label = `Rolling 7 Days (${start} to ${end})`;
+        fileSuffix = "rolling_7d";
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, start, end];
+    }
+
+    const { results } = await env.DB.prepare(query).bind(...bindArgs).all();
+    const logs = results || [];
+
+    if (logs.length === 0) {
+        await sendMessage(env, chatId, `No tasks recorded for ${label} to export.`);
+        return;
+    }
+
+    const activeDays = new Set(logs.map(r => r.date)).size;
+    const catMap = {};
+    for (const r of logs) {
+        catMap[r.category] = (catMap[r.category] || 0) + 1;
+    }
+    const catSummary = Object.entries(catMap)
+        .map(([cat, cnt]) => `${cat}: ${cnt}`)
+        .join(" | ");
+
+    let content = [
+        "================================================================================",
+        "                        MONTHLY ACCOMPLISHMENT REPORT",
+        "================================================================================",
+        `Period:          ${label}`,
+        `Prepared By:     ${cleanUsername}`,
+        `Generated At:    ${today()} ${currentTime()} (Asia/Bangkok)`,
+        `Total Completed: ${logs.length} tasks`,
+        `Active Days:     ${activeDays} days`,
+        `Focus Breakdown: ${catSummary}`,
+        "================================================================================",
+        ""
+    ];
+
+    if (isMonth) {
+        const weeks = [
+            { name: "WEEK 1 (Days 01 - 07)", min: 1, max: 7, items: [] },
+            { name: "WEEK 2 (Days 08 - 14)", min: 8, max: 14, items: [] },
+            { name: "WEEK 3 (Days 15 - 21)", min: 15, max: 21, items: [] },
+            { name: "WEEK 4+ (Days 22 - End)", min: 22, max: 31, items: [] }
+        ];
+
+        for (const item of logs) {
+            const dayNum = parseInt(item.date.slice(8, 10), 10) || 1;
+            const w = weeks.find(wk => dayNum >= wk.min && dayNum <= wk.max) || weeks[3];
+            w.items.push(item);
+        }
+
+        for (const w of weeks) {
+            if (w.items.length === 0) continue;
+            content.push(`[${w.name}]`);
+            for (const item of w.items) {
+                content.push(`  • ${item.date} (${item.time}) [${item.category}] ${item.content}`);
+            }
+            content.push("");
+        }
+    } else {
+        let currentDate = "";
+        for (const item of logs) {
+            if (item.date !== currentDate) {
+                currentDate = item.date;
+                content.push(`[${currentDate}]`);
+            }
+            content.push(`  • ${item.time} [${item.category}] ${item.content}`);
+        }
+        content.push("");
+    }
+
+    content.push("================================================================================");
+    content.push("Generated by Personal Assistant Bot");
+    content.push("================================================================================");
+
+    const textFileStr = content.join("\n");
+    const filename = `work_report_${fileSuffix}.txt`;
+
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    const file = new File([textFileStr], filename, { type: "text/plain" });
+    formData.append("document", file);
+    formData.append("caption", `📄 Monthly Accomplishment Report (${label})\n${logs.length} tasks ready for your manager! 🚀`);
+
+    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!resp.ok) {
+        const detail = await resp.text();
+        console.error("sendDocument error:", detail);
+        await sendMessage(env, chatId, "❌ Failed to upload report file. Please try viewing it in chat with /report.");
+    }
+}
+
+async function sendWorkDeletePicker(env, chatId, userId) {
+    await ensureTables(env.DB);
+    const { results } = await env.DB.prepare(
+        "SELECT id, date, content, category FROM work_logs WHERE user_id = ? ORDER BY id DESC LIMIT 5"
+    ).bind(userId).all();
+
+    const logs = results || [];
+    if (logs.length === 0) {
+        await sendMessage(env, chatId, "No recent tasks found to delete.");
+        return;
+    }
+
+    const buttons = logs.map(item => [
+        {
+            text: `🗑️ ${item.date}: ${item.content.slice(0, 30)}${item.content.length > 30 ? "..." : ""}`,
+            callback_data: `work_del:${item.id}`
+        }
+    ]);
+
+    buttons.push([
+        { text: "⬅️ Back to Work Workspace", callback_data: "work_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
+
+    await sendMessage(env, chatId, [
+        `🗑️ *DELETE RECENT TASK*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Select an accomplishment below to remove from your log:`
+    ].join("\n"), {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons }
     });
 }
 
@@ -1644,10 +2327,18 @@ async function sendHelpMessage(env, chatId) {
         `🌟 *Workspaces & Navigation*`,
         `• /hub or /menu — Personal Assistant Hub`,
         `• /finance — Cashflow & Finance Workspace`,
+        `• /work — Work Journal & Manager Reports`,
         `• /reminders — Reminders & Habits Workspace`,
         `• /settings — Currency toggle & budget limit`,
         ``,
-        `🍱 *Lunch Box & Reminders*`,
+        `💼 *Work Journal & Manager Reports*`,
+        `• /done <task> — Log a completed work task`,
+        `• /work — View today's & month's accomplishment stats`,
+        `• /report — Generate this month's manager report`,
+        `• /report last — Generate last month's report`,
+        `• /report export — Export report as downloadable .txt file`,
+        ``,
+        `🍱 *Lunch Box & Departure Reminders*`,
         `• /lunchbox — Lunch box alarm control`,
         `• /lunchbox 17:30 — Set departure alarm time`,
         `• /lunchbox on / off — Enable or disable alarm`,
@@ -1673,9 +2364,10 @@ async function sendHelpMessage(env, chatId) {
             inline_keyboard: [
                 [
                     { text: "💰 Finance Hub", callback_data: "finance_hub" },
-                    { text: "⏰ Reminders Hub", callback_data: "reminders" }
+                    { text: "💼 Work Workspace", callback_data: "work_hub" }
                 ],
                 [
+                    { text: "⏰ Reminders Hub", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1753,6 +2445,8 @@ async function sendLunchboxNotification(env, chatId, reminderId = 0) {
         ``,
         `Friendly reminder: Don't leave your *lunch box* behind in the office fridge or pantry! Grab it before you leave! 🥪✨`,
         ``,
+        `💼 *End of Day Habit:* Take 10 seconds to log what you accomplished today: \`/done <task>\` so your monthly manager report is always ready!`,
+        ``,
         `Have a great evening and safe travels home! 🏡`
     ].join("\n");
 
@@ -1763,6 +2457,10 @@ async function sendLunchboxNotification(env, chatId, reminderId = 0) {
                 [
                     { text: "✅ Got it, Packed!", callback_data: `lb_ack:${reminderId}` },
                     { text: "⏰ Snooze 15m", callback_data: `lb_snooze:${reminderId}` }
+                ],
+                [
+                    { text: "💼 Log Work Done", callback_data: "work_log_prompt" },
+                    { text: "📋 Today's Work", callback_data: "work_today" }
                 ]
             ]
         }
@@ -2105,6 +2803,45 @@ function monthLabel() {
         year: "numeric",
         month: "long",
     }).format(new Date());
+}
+
+function currentTime() {
+    return new Intl.DateTimeFormat("en-GB", {
+        timeZone: TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).format(new Date());
+}
+
+function lastMonthPrefix() {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+}
+
+function lastMonthLabel() {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        year: "numeric",
+        month: "long",
+    }).format(d);
+}
+
+function getWorkCategoryIcon(category) {
+    const cat = (category || "").toLowerCase();
+    if (cat.includes("bug")) return "🐞";
+    if (cat.includes("meet") || cat.includes("call") || cat.includes("sync") || cat.includes("standup")) return "👥";
+    if (cat.includes("release") || cat.includes("deploy") || cat.includes("ship")) return "🚀";
+    if (cat.includes("doc") || cat.includes("spec") || cat.includes("report") || cat.includes("manual")) return "📝";
+    if (cat.includes("test") || cat.includes("qa") || cat.includes("audit")) return "🧪";
+    if (cat.includes("design") || cat.includes("ui") || cat.includes("ux") || cat.includes("figma")) return "🎨";
+    if (cat.includes("dev") || cat.includes("code") || cat.includes("api") || cat.includes("feature") || cat.includes("refactor")) return "💻";
+    return "✅";
 }
 
 function formatMoney(value) {
