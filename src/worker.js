@@ -439,6 +439,126 @@ async function handleMessage(message, env, origin) {
         return;
     }
 
+    // =========================================================================
+    // Smart Natural Text Detection (Zero Command Friction!)
+    // =========================================================================
+    if (!text.startsWith("/")) {
+        const lower = text.toLowerCase();
+
+        // 1. Natural Navigation Keywords
+        if (lower === "menu" || lower === "hub" || lower === "start" || lower === "hi" || lower === "hello" || lower === "hey") {
+            await sendMainHub(env, chatId, userId, message.from, origin);
+            return;
+        }
+
+        if (lower === "work" || lower === "tasks" || lower === "task") {
+            await sendWorkHub(env, chatId, userId, message.from);
+            return;
+        }
+
+        if (lower === "report") {
+            await sendWorkReport(env, chatId, userId, "this_month", message.from);
+            return;
+        }
+
+        if (lower === "today" || lower === "spent" || lower === "ledger") {
+            await sendTransactions(env, chatId, userId);
+            return;
+        }
+
+        if (lower === "finance" || lower === "money" || lower === "cashflow" || lower === "balance") {
+            await sendFinanceHub(env, chatId, userId);
+            return;
+        }
+
+        if (lower === "lunchbox" || lower === "alarm" || lower === "lunch") {
+            await sendLunchboxMenu(env, chatId, userId);
+            return;
+        }
+
+        if (lower === "help") {
+            await sendHelpMessage(env, chatId);
+            return;
+        }
+
+        // 2. Natural Work Logging: e.g. "done fixed checkout bug", "did code review", "finished report"
+        if (
+            lower.startsWith("done ") || 
+            lower.startsWith("did ") || 
+            lower.startsWith("finished ") || 
+            lower.startsWith("completed ") ||
+            lower.startsWith("log ")
+        ) {
+            const cleanContent = text.replace(/^(done|did|finished|completed|log)\s+/i, "").trim();
+            if (cleanContent) {
+                await handleAddWorkLogCommand(env, chatId, userId, `/done ${cleanContent}`, message.from);
+                return;
+            }
+        }
+
+        // 3. Natural Income: e.g. "+500 salary" or "income 500 salary"
+        const incMatch = text.match(/^\+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i) ||
+                         text.match(/^income\s+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i);
+        if (incMatch) {
+            const amount = Number(incMatch[1]);
+            const currencyStr = (incMatch[3] || "").toUpperCase();
+            const cat = incMatch[4].trim() || "Income";
+            let curr = await getDisplayCurrency(env.DB, userId);
+            if (currencyStr === "$" || currencyStr === "USD") curr = "USD";
+            else if (currencyStr === "KHR") curr = "KHR";
+            else if (amount < 100) curr = "USD";
+            await addExpenseRecord(env.DB, userId, amount, cat, "income", curr);
+            await sendTransactionReceipt(env, chatId, userId, "income", amount, curr, cat);
+            return;
+        }
+
+        // 4. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5"
+        const expMatch1 = text.match(/^(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
+        const expMatch2 = text.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
+
+        let amount = null;
+        let category = null;
+        let currencyHint = null;
+
+        if (expMatch1) {
+            amount = Number(expMatch1[1].replace("$", ""));
+            currencyHint = expMatch1[3] || (expMatch1[1].includes("$") ? "USD" : null);
+            category = expMatch1[4].trim();
+        } else if (expMatch2) {
+            amount = Number(expMatch2[2].replace("$", ""));
+            currencyHint = expMatch2[4] || (expMatch2[2].includes("$") ? "USD" : null);
+            category = expMatch2[1].trim();
+        }
+
+        if (amount && Number.isFinite(amount) && amount > 0 && category && category.length < 30) {
+            let curr = await getDisplayCurrency(env.DB, userId);
+            if (currencyHint) {
+                const cUpper = currencyHint.toUpperCase();
+                if (cUpper === "$" || cUpper === "USD") curr = "USD";
+                else if (cUpper === "KHR") curr = "KHR";
+            } else {
+                if (amount >= 500) curr = "KHR";
+                else curr = "USD";
+            }
+            await addExpenseRecord(env.DB, userId, amount, category, "expense", curr);
+            await sendTransactionReceipt(env, chatId, userId, "expense", amount, curr, category);
+            return;
+        }
+
+        // 5. Friendly guidance if casual text doesn't match
+        await sendMessage(
+            env,
+            chatId,
+            `💡 *Quick Shortcuts:*\n` +
+            `• Log work: \`done <task>\`\n` +
+            `• Log spend: \`5 coffee\` or \`10000 lunch\`\n` +
+            `• Manager report: \`report\`\n` +
+            `• Menu: /menu`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
     if (text.startsWith("/")) {
         await sendMessage(env, chatId, "⚠️ Unknown command. Type /help to see all available commands, or /hub to open your Personal Assistant Hub.");
     }
@@ -1084,16 +1204,9 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
     const monthCount = countRow?.count || 1;
 
     const icon = getWorkCategoryIcon(category);
-
     const message = [
-        `💼 *WORK TASK RECORDED!*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `📌 *Task:* ${finalContent}`,
-        `🏷️ *Category:* ${icon} ${category}`,
-        `📅 *Logged:* \`${todayDate}\` • \`${timeStr}\` (Asia/Bangkok)`,
-        `🏆 *Month Accomplishments:* \`${monthCount}\` tasks logged`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💡 _Your monthly manager report is automatically updated!_`
+        `✅ *Logged:* ${finalContent}`,
+        `🏆 *${monthCount} tasks* this month (${icon} ${category})`
     ].join("\n");
 
     await sendMessage(env, chatId, message, {
@@ -1105,7 +1218,6 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
                     { text: "📊 Monthly Report", callback_data: "work_report_this" }
                 ],
                 [
-                    { text: "💼 Work Workspace", callback_data: "work_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1192,14 +1304,33 @@ async function sendMainHub(env, chatId, userId, from, origin) {
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "Friend";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
+    const displayCurrency = await getDisplayCurrency(env.DB, userId);
+    const todaySummary = await getFinancialSummary(env.DB, userId, "today");
+    const allSummary = await getFinancialSummary(env.DB, userId, "all");
+    const monthStr = monthPrefix();
+
+    const workRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
+    ).bind(userId, `${monthStr}%`).first();
+    const workCount = workRow?.count || 0;
+
+    const lbRow = await env.DB.prepare(
+        "SELECT reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
+    ).bind(userId).first();
+
+    let lbStatus = "⚪ Off";
+    if (lbRow && lbRow.is_active) {
+        lbStatus = `🟢 ${lbRow.reminder_time}`;
+    }
 
     const text = [
-        `🌟 *PERSONAL ASSISTANT HUB*`,
-        `Hello *${cleanUsername}* 👋`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Welcome to your personal assistant & productivity hub. Manage your finances, automated reminders, and daily habits seamlessly.`,
+        `👋 *Hi ${cleanUsername}*`,
         ``,
-        `📂 *Select a Workspace:*`
+        `💼 *Work:* \`${workCount} tasks\` logged this month`,
+        `💰 *Money:* \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\` today • Balance: \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
+        `🍱 *Lunchbox:* ${lbStatus}`,
+        ``,
+        `_What would you like to do?_`
     ].join("\n");
 
     const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
@@ -1209,12 +1340,12 @@ async function sendMainHub(env, chatId, userId, from, origin) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💰 Cashflow & Finance", callback_data: "finance_hub" },
-                    { text: "💼 Work Log & Reports", callback_data: "work_hub" }
+                    { text: "💼 Work & Report", callback_data: "work_hub" },
+                    { text: "💰 Money & Budget", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders & Habits", callback_data: "reminders" },
-                    { text: "📱 Open Web Dashboard", web_app: { url: webAppUrl } }
+                    { text: "🍱 Lunchbox Alarm", callback_data: "lunchbox" },
+                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
                     { text: "⚙️ Settings", callback_data: "settings" },
@@ -1237,14 +1368,12 @@ async function sendFinanceHub(env, chatId, userId) {
     const allSummary = await getFinancialSummary(env.DB, userId, "all");
 
     const text = [
-        `💰 *CASHFLOW & FINANCE WORKSPACE*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💳 *Financial Overview (${displayCurrency}):*`,
-        `├ 💰 *Balance:* \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
-        `├ 📈 *This Month:* \`${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}\``,
-        `└ 📅 *Today Spent:* \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Choose an action below, or type commands like \`/add 5 usd coffee\``
+        `💰 *Finance & Cashflow*`,
+        `• Balance: *${formatAmount(allSummary.balanceKhr, displayCurrency)}*`,
+        `• Spent This Month: *${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}*`,
+        `• Spent Today: *${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}*`,
+        ``,
+        `💡 _Tip: Just type \`5 coffee\` or \`10000 lunch\` anytime!_`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -1256,14 +1385,11 @@ async function sendFinanceHub(env, chatId, userId) {
                     { text: "📥 Add Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📊 Today Summary", callback_data: "summary_today" },
-                    { text: "📜 Daily Ledger", callback_data: "view_transactions" }
+                    { text: "📜 Today's Ledger", callback_data: "view_transactions" },
+                    { text: "📊 Summary", callback_data: "summary_today" }
                 ],
                 [
-                    { text: "🎯 Monthly Budget", callback_data: "budget_help" },
-                    { text: "📈 View History", callback_data: "history:1" }
-                ],
-                [
+                    { text: "🎯 Budget", callback_data: "budget_help" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1282,37 +1408,30 @@ async function sendWorkHub(env, chatId, userId, from) {
 
     const todayDate = today();
     const monthStr = monthPrefix();
-    const sevenDaysAgo = dateDaysAgo(6);
 
-    const todayRow = await env.DB.prepare(
-        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date = ?"
-    ).bind(userId, todayDate).first();
-
-    const weekRow = await env.DB.prepare(
-        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date >= ? AND date <= ?"
-    ).bind(userId, sevenDaysAgo, todayDate).first();
+    const todayRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, todayDate).all();
+    const todayLogs = todayRows.results || [];
 
     const monthRow = await env.DB.prepare(
         "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
     ).bind(userId, `${monthStr}%`).first();
 
-    const todayCount = todayRow?.count || 0;
-    const weekCount = weekRow?.count || 0;
     const monthCount = monthRow?.count || 0;
     const mLabel = monthLabel();
 
+    const todayList = todayLogs.length > 0
+        ? todayLogs.map((item, idx) => `• ${getWorkCategoryIcon(item.category)} *${item.content}* \`${item.time}\``).join("\n")
+        : "_No tasks logged today yet._";
+
     const text = [
-        `💼 *WORK JOURNAL & MANAGER REPORTS*`,
-        `Hi *${cleanUsername}* 👋`,
+        `💼 *Work Journal*`,
+        `*${monthCount} tasks* logged in ${mLabel} • *${todayLogs.length} today*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `Record your daily accomplishments so you never stress about writing monthly reports for your manager again! 🚀`,
-        ``,
-        `📊 *Your Logged Accomplishments:*`,
-        `├ 📅 *Today:* \`${todayCount} tasks\``,
-        `├ 🗓️ *Rolling 7 Days:* \`${weekCount} tasks\``,
-        `└ 🏆 *This Month (${mLabel}):* \`${monthCount} tasks\``,
+        todayList,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `💡 *Quick Command:* \`/done <what you did>\``
+        `💡 _Type \`done <task>\` to log accomplishment._`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -1320,19 +1439,14 @@ async function sendWorkHub(env, chatId, userId, from) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "➕ How to Log Work", callback_data: "work_log_prompt" },
-                    { text: "📋 Today's Work", callback_data: "work_today" }
+                    { text: "📊 Monthly Report", callback_data: "work_report_this" },
+                    { text: "📄 Export .txt", callback_data: "work_export_this" }
                 ],
                 [
-                    { text: "📊 This Month's Report", callback_data: "work_report_this" },
-                    { text: "⏪ Last Month's Report", callback_data: "work_report_last" }
+                    { text: "⏪ Last Month", callback_data: "work_report_last" },
+                    { text: "🗑️ Delete Task", callback_data: "work_delete_menu" }
                 ],
                 [
-                    { text: "🗓️ Rolling 7 Days", callback_data: "work_week" },
-                    { text: "📄 Export Report (.txt)", callback_data: "work_export_this" }
-                ],
-                [
-                    { text: "🗑️ Delete Recent Task", callback_data: "work_delete_menu" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1340,65 +1454,8 @@ async function sendWorkHub(env, chatId, userId, from) {
     });
 }
 
-async function sendTodayWork(env, chatId, userId) {
-    await ensureTables(env.DB);
-    const todayDate = today();
-    const { results } = await env.DB.prepare(
-        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    ).bind(userId, todayDate).all();
-
-    const logs = results || [];
-
-    if (logs.length === 0) {
-        await sendMessage(env, chatId, [
-            `📋 *TODAY'S WORK LOGS*`,
-            `📅 \`${todayDate}\``,
-            `━━━━━━━━━━━━━━━━━━━━`,
-            `_No tasks recorded today yet._`,
-            ``,
-            `💡 Type \`/done <task>\` to log your first accomplishment today!`,
-            `Example: \`/done Fixed checkout payment failure bug\``
-        ].join("\n"), {
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: "💼 Work Workspace", callback_data: "work_hub" },
-                        { text: "🏠 Main Hub", callback_data: "hub" }
-                    ]
-                ]
-            }
-        });
-        return;
-    }
-
-    const lines = [
-        `📋 *TODAY'S WORK LOGS*`,
-        `📅 \`${todayDate}\``,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        ...logs.map((item, idx) => {
-            const icon = getWorkCategoryIcon(item.category);
-            return `${idx + 1}. \`${item.time}\` • ${icon} *${item.content}*`;
-        }),
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Total logged today: *${logs.length} tasks*`
-    ];
-
-    await sendMessage(env, chatId, lines.join("\n"), {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "📊 This Month's Report", callback_data: "work_report_this" },
-                    { text: "🗑️ Delete Task", callback_data: "work_delete_menu" }
-                ],
-                [
-                    { text: "💼 Work Workspace", callback_data: "work_hub" },
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
-        }
-    });
+async function sendTodayWork(env, chatId, userId, from) {
+    return sendWorkHub(env, chatId, userId, from);
 }
 
 async function sendWorkReport(env, chatId, userId, period = "this_month", from) {
@@ -1532,25 +1589,25 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from) 
     }
 
     lines.push(`━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`💡 _Ready to copy & paste into your monthly email, Slack, or manager 1-on-1 doc!_`);
+    lines.push(`💡 _Ready for your monthly review or manager 1-on-1!_`);
 
     const fullMessage = lines.join("\n");
     const exportCb = period === "last_month" ? "work_export_last" : "work_export_this";
-    const switchMonthText = period === "last_month" ? "⏩ This Month's Report" : "⏪ Last Month's Report";
+    const switchMonthText = period === "last_month" ? "⏩ This Month" : "⏪ Last Month";
     const switchMonthCb = period === "last_month" ? "work_report_this" : "work_report_last";
 
     if (fullMessage.length > 3800) {
-        const preview = lines.slice(0, 30).join("\n") + "\n\n⚠️ _Report is extensive. Full report generated as a downloadable text document below..._";
+        const preview = lines.slice(0, 30).join("\n") + "\n\n⚠️ _Report is extensive. Full report sent as file below..._";
         await sendMessage(env, chatId, preview, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "📄 Download Report (.txt)", callback_data: exportCb },
+                        { text: "📄 Export .txt", callback_data: exportCb },
                         { text: switchMonthText, callback_data: switchMonthCb }
                     ],
                     [
-                        { text: "💼 Work Workspace", callback_data: "work_hub" },
+                        { text: "💼 Work Journal", callback_data: "work_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -1565,14 +1622,11 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from) 
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "📄 Export as File (.txt)", callback_data: exportCb },
+                    { text: "📄 Export .txt", callback_data: exportCb },
                     { text: switchMonthText, callback_data: switchMonthCb }
                 ],
                 [
-                    { text: "➕ Log Work Done", callback_data: "work_log_prompt" },
-                    { text: "💼 Work Workspace", callback_data: "work_hub" }
-                ],
-                [
+                    { text: "💼 Work Journal", callback_data: "work_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1745,26 +1799,22 @@ async function sendLunchboxMenu(env, chatId, userId) {
     const isActive = lbRow ? Boolean(lbRow.is_active) : false;
     const time = lbRow?.reminder_time || "17:30";
     const freq = lbRow?.frequency || "weekdays";
-    const freqLabel = freq === "weekdays" ? "🗓️ Weekdays (Mon–Fri)" : "🗓️ Everyday";
+    const freqLabel = freq === "weekdays" ? "Mon–Fri" : "Daily";
 
-    const statusBadge = isActive ? "🟢 *ACTIVE*" : "⚪ *DISABLED*";
+    const statusBadge = isActive ? "🟢 *Active*" : "⚪ *Off*";
 
     const text = [
-        `🍱 *LUNCH BOX REMINDER*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Never leave your lunch box behind at the office again! When activated, the bot alerts you before you head home so you remember to pack your box from the fridge or pantry. 🥪✨`,
+        `🍱 *Lunchbox Departure Alarm*`,
+        `• Status: ${statusBadge}`,
+        `• Time: *${time}* (${freqLabel})`,
         ``,
-        `📌 *Current Status:* ${statusBadge}`,
-        `⏰ *Reminder Time:* *${time}* (Asia/Bangkok)`,
-        `🗓️ *Schedule:* *${freqLabel}*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Tap below to toggle or change time:`
+        `_Alerts you before heading home so you never forget your lunchbox!_ 🥪`
     ].join("\n");
 
     const toggleText = isActive ? "🔴 Turn Alarm OFF" : "🟢 Turn Alarm ON";
     const toggleVal = isActive ? "0" : "1";
     const nextFreq = freq === "weekdays" ? "daily" : "weekdays";
-    const nextFreqText = freq === "weekdays" ? "Switch to: Everyday 🔁" : "Switch to: Weekdays only 🔁";
+    const nextFreqText = freq === "weekdays" ? "🔁 Switch to Daily" : "🔁 Switch to Mon–Fri";
 
     await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
@@ -1780,13 +1830,10 @@ async function sendLunchboxMenu(env, chatId, userId) {
                     { text: "⏰ 18:00", callback_data: "lb_time:18:00" }
                 ],
                 [
-                    { text: nextFreqText, callback_data: `lb_freq:${nextFreq}` }
+                    { text: nextFreqText, callback_data: `lb_freq:${nextFreq}` },
+                    { text: "🔔 Test Alarm", callback_data: "lb_test" }
                 ],
                 [
-                    { text: "🔔 Test Notification Now", callback_data: "lb_test" }
-                ],
-                [
-                    { text: "⬅️ Back to Reminders", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -1993,7 +2040,6 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId)
 
 async function sendTransactionReceipt(env, chatId, userId, type, amount, currency, category) {
     const isIncome = type === "income";
-    const title = isIncome ? "🎉 *INCOME LOGGED!*" : "✅ *EXPENSE LOGGED!*";
     const sign = isIncome ? "+" : "-";
     const symbol = currency === "USD" ? "$" : "";
     const suffix = currency === "KHR" ? " ៛" : "";
@@ -2008,23 +2054,24 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
     }
 
     const icon = getCategoryIcon(category, type);
+    const displayCurrency = await getDisplayCurrency(env.DB, userId);
+    
+    const todayTotalRow = await env.DB.prepare(
+        "SELECT COALESCE(SUM(amount_in_khr), 0) as total FROM expenses WHERE user_id = ? AND date = ? AND type = 'expense'"
+    ).bind(userId, today()).first();
+    const todaySpentKhr = todayTotalRow?.total || 0;
+    const todaySpentStr = formatAmount(todaySpentKhr, displayCurrency);
+
+    const warn = !isIncome ? await getBudgetWarningText(env.DB, userId) : "";
+
     const lines = [
-        title,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🏷️ *Category:* ${icon} ${capitalize(category)}`,
-        `💵 *Amount:* \`${mainAmt}\`${altAmt}`,
-        `📅 *Date:* \`${today()}\``,
+        `${isIncome ? "🎉" : "💸"} *${icon} ${capitalize(category)}:* \`${mainAmt}\`${altAmt}`,
+        `📅 Today's total spent: \`${todaySpentStr}\``
     ];
-
-    if (!isIncome) {
-        const warn = await getBudgetWarningText(env.DB, userId);
-        if (warn) lines.push(warn);
-    }
-
-    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    if (warn) lines.push(warn);
 
     const addAnotherCb = isIncome ? "add_income" : "add_expense";
-    const addAnotherText = isIncome ? "📥 Add More Income" : "➕ Add Another Expense";
+    const addAnotherText = isIncome ? "📥 Add More" : "➕ Add Another";
 
     await sendMessage(env, chatId, lines.join("\n"), {
         parse_mode: "Markdown",
@@ -2324,38 +2371,32 @@ async function sendHelpMessage(env, chatId) {
     const text = [
         `💡 *PERSONAL ASSISTANT GUIDE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `🌟 *Workspaces & Navigation*`,
-        `• /hub or /menu — Personal Assistant Hub`,
-        `• /finance — Cashflow & Finance Workspace`,
-        `• /work — Work Journal & Manager Reports`,
-        `• /reminders — Reminders & Habits Workspace`,
-        `• /settings — Currency toggle & budget limit`,
+        `✨ *Effortless Natural Typing (No Commands Needed!)*`,
+        `• Spend: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
+        `• Income: \`+500 salary\` or \`+50 bonus\``,
+        `• Work log: \`done Fixed checkout bug\` or \`done Team sprint planning\``,
+        `• Manager report: \`report\` or \`work\``,
+        `• Today's spend: \`today\` or \`ledger\``,
+        `• Open Hub: \`menu\` or \`hub\``,
         ``,
-        `💼 *Work Journal & Manager Reports*`,
-        `• /done <task> — Log a completed work task`,
-        `• /work — View today's & month's accomplishment stats`,
+        `💼 *Work Journal & Monthly Manager Reports*`,
+        `• \`done <task>\` — Record an accomplishment instantly`,
         `• /report — Generate this month's manager report`,
         `• /report last — Generate last month's report`,
         `• /report export — Export report as downloadable .txt file`,
+        `• /work — Open your Work Journal & today's tasks`,
         ``,
-        `🍱 *Lunch Box & Departure Reminders*`,
-        `• /lunchbox — Lunch box alarm control`,
+        `🍱 *Lunchbox Departure Alarm*`,
+        `• /lunchbox — Lunchbox alarm settings`,
         `• /lunchbox 17:30 — Set departure alarm time`,
         `• /lunchbox on / off — Enable or disable alarm`,
-        `• /remind 17:30 <Title> — Set custom alert`,
         ``,
-        `💳 *Logging Transactions*`,
-        `• /add 5 usd coffee — Log expense in USD`,
-        `• /add 10000 lunch — Log expense in KHR`,
-        `• /income 500 usd salary — Log income`,
-        `• /a or /i — Interactive category & amount picker`,
-        ``,
-        `📊 *Summaries & Insights*`,
-        `• /today or /t — Today's transactions ledger`,
-        `• /summary — Spending stats & breakdown`,
-        `• /week — 7-day visual report & doughnut chart`,
-        `• /month — Current month spending overview`,
-        `• /history — Full paginated transaction ledger`
+        `💰 *Cashflow & Finance*`,
+        `• /add 5 usd coffee or /income 500 usd salary`,
+        `• /today — Today's transactions list`,
+        `• /summary — Spending stats & category breakdown`,
+        `• /week — 7-day visual spending trend & chart`,
+        `• /settings — Currency toggle & monthly budget`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -2363,11 +2404,11 @@ async function sendHelpMessage(env, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
-                    { text: "💼 Work Workspace", callback_data: "work_hub" }
+                    { text: "💼 Work Journal", callback_data: "work_hub" },
+                    { text: "💰 Money & Budget", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders Hub", callback_data: "reminders" },
+                    { text: "🍱 Lunchbox Alarm", callback_data: "lunchbox" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
