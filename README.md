@@ -8,6 +8,7 @@ Cloudflare Workers do not run as a permanent process. Telegram sends each bot up
 
 The bot is structured as an extensible **Personal Assistant Hub**:
 - 🌟 **Main Assistant Hub (`/hub` or `/menu`):** Clean top-level portal with quick access to workspaces. Designed to easily scale with future tools.
+- 🧾 **Smart Bank Slip & Receipt Scanner (`/scan` or send photo):** Snap or forward any ABA Bank, Bakong, KHQR, or receipt screenshot. AI automatically extracts the amount, currency (USD/KHR), merchant, and category with 1-tap confirmation.
 - 💼 **Work Journal & Manager Reports (`/work`, `/done`):** Track daily accomplishments and automatically generate structured, professional monthly accomplishment reports for your manager or 1-on-1s.
 - 💰 **Cashflow & Finance Workspace (`/finance`):** Expense & income tracking, daily ledger, monthly budgets, category breakdowns, and paginated transaction history.
 - ⏰ **Reminders & Habits Workspace (`/reminders`):** Automated departure alarms (lunch box reminder), custom reminders (`/remind`), and daily check-ins.
@@ -18,6 +19,7 @@ The bot is structured as an extensible **Personal Assistant Hub**:
 
 ```text
 /hub or /menu     - Open Personal Assistant Hub
+/scan             - Open Smart Bank Slip & Receipt Scanner guide (or just send an image)
 /work             - Open Work Journal & Accomplishment Workspace
 /done <task>      - Log a completed work task (e.g. /done Fixed checkout bug)
 /report           - Generate this month's manager accomplishment report
@@ -43,6 +45,7 @@ The bot is structured as an extensible **Personal Assistant Hub**:
 
 ## Bot Highlights & Flow
 
+- **🧾 Smart KHQR & Bank Slip Scanner:** No typing required! Send or forward any ABA Mobile, Bakong KHQR, Acleda, Wing, or restaurant receipt photo. Smart AI OCR parses the amount (USD/KHR), recipient, and category, offering instant `[✅ Confirm]`, `[🏷️ Category]`, and `[🔄 Make Income]` controls.
 - **💼 Work Journal & Manager Reports:** Never struggle to recall what you did this month. Type `/done <task>` whenever you finish something. At month-end, type `/report` to get a structured weekly breakdown with active days and categories, ready to copy-paste or download as `.txt`.
 - **🌟 Modular Assistant Hub:** An uncluttered, minimalist portal where features are neatly separated into dedicated workspaces.
 - **🍱 Lunch Box Departure Alarm:** Set a weekday reminder (e.g. at 5:30 PM before heading home) so you never leave your lunch box behind at the office. Comes with `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
@@ -84,9 +87,10 @@ npm run db:migrate:remote
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
+npx wrangler secret put GEMINI_API_KEY # (Recommended: free key from https://aistudio.google.com for Khmer/ABA/Bakong slip OCR)
 ```
 
-Use any random long string for `WEBHOOK_SECRET`.
+Use any random long string for `WEBHOOK_SECRET`. Cloudflare Workers AI is also automatically supported as a built-in fallback.
 
 7. Deploy:
 

@@ -253,6 +253,28 @@ async function ensureTables(db) {
     } catch (e) {
         console.error("ensureTables work_logs error:", e);
     }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS pending_scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                category TEXT NOT NULL DEFAULT 'Other',
+                type TEXT NOT NULL DEFAULT 'expense',
+                merchant TEXT,
+                bank TEXT,
+                note TEXT,
+                date TEXT,
+                message_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables pending_scans error:", e);
+    }
 }
 
 async function handleUpdateSafely(update, env, origin) {
@@ -301,6 +323,17 @@ async function handleMessage(message, env, origin) {
     const text = (message.text || "").trim();
     const chatId = message.chat.id;
     const userId = String(message.from?.id || chatId);
+
+    // 0. Smart Bank Slip & Receipt Scanner (Photo or Image Document)
+    if (message.photo || (message.document && message.document.mime_type && message.document.mime_type.startsWith("image/"))) {
+        await handleImageReceipt(message, env, origin);
+        return;
+    }
+
+    if (text === "/scan" || text === "/receipt" || text === "/ocr" || text === "/slip") {
+        await sendScanHelp(env, chatId);
+        return;
+    }
 
     // 1. Main Navigation & Workspaces
     if (text.startsWith("/start") || text === "/menu" || text.startsWith("/menu@") || text === "/hub" || text.startsWith("/hub@") || text === "/s" || text === "/m") {
@@ -475,6 +508,11 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
+        if (lower === "scan" || lower === "receipt" || lower === "slip" || lower === "ocr") {
+            await sendScanHelp(env, chatId);
+            return;
+        }
+
         if (lower === "help") {
             await sendHelpMessage(env, chatId);
             return;
@@ -555,6 +593,7 @@ async function handleMessage(message, env, origin) {
             env,
             chatId,
             `💡 *Quick Shortcuts:*\n` +
+            `• Scan slip: Send any ABA/Bakong/KHQR payment screenshot!\n` +
             `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\`\n` +
             `• Log work: \`done <task>\`\n` +
             `• Log spend: \`5 coffee\` or \`10000 lunch\`\n` +
@@ -1191,6 +1230,720 @@ async function handleCallback(callback, env, origin) {
         await sendMessage(env, chatId, "Clear cancelled. Your data remains safe.");
         return;
     }
+
+    // --- Bank Slip / Receipt Scanner Callbacks ---
+    if (data === "scan_prompt") {
+        await sendScanHelp(env, chatId);
+        return;
+    }
+
+    if (data.startsWith("scan_ok:")) {
+        const scanId = parseInt(data.slice(8), 10);
+        await handleScanConfirm(env, chatId, userId, scanId, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    if (data.startsWith("scan_cat:")) {
+        const scanId = parseInt(data.slice(9), 10);
+        await sendScanCategoryPicker(env, chatId, scanId, callback.message?.message_id);
+        return;
+    }
+
+    if (data.startsWith("scan_set_cat:")) {
+        const parts = data.split(":");
+        const scanId = parseInt(parts[1], 10);
+        const newCat = parts[2];
+        await handleScanSetCategory(env, chatId, userId, scanId, newCat, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    if (data.startsWith("scan_type:")) {
+        const scanId = parseInt(data.slice(10), 10);
+        await handleScanToggleType(env, chatId, userId, scanId, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    if (data.startsWith("scan_view:")) {
+        const scanId = parseInt(data.slice(10), 10);
+        await renderPendingScanCard(env, chatId, scanId, callback.message?.message_id);
+        return;
+    }
+
+    if (data.startsWith("scan_del:")) {
+        const scanId = parseInt(data.slice(9), 10);
+        await handleScanDiscard(env, chatId, userId, scanId, callback.message?.message_id, callback.id);
+        return;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Smart Bank Slip & Receipt Scanner (AI OCR)
+// ---------------------------------------------------------------------------
+
+function cleanMd(text) {
+    if (!text) return "";
+    return String(text).replace(/[_*`[\]]/g, " ").trim();
+}
+
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const len = bytes.byteLength;
+    const chunkSize = 8192;
+    for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+}
+
+function parseExtractedJson(text) {
+    if (!text) return null;
+    try {
+        let cleaned = text.trim();
+        const match = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (match) {
+            cleaned = match[1].trim();
+        } else {
+            const start = cleaned.indexOf("{");
+            const end = cleaned.lastIndexOf("}");
+            if (start !== -1 && end !== -1 && end > start) {
+                cleaned = cleaned.substring(start, end + 1);
+            }
+        }
+        const parsed = JSON.parse(cleaned);
+        if (parsed.is_slip === false) {
+            return { is_slip: false };
+        }
+
+        let amount = null;
+        let currency = (parsed.currency || "").toUpperCase();
+
+        if (typeof parsed.amount === "number" && parsed.amount > 0) {
+            amount = parsed.amount;
+        } else if (parsed.amount) {
+            const strAmt = String(parsed.amount);
+            if (strAmt.includes("$")) currency = "USD";
+            else if (strAmt.includes("៛") || strAmt.toUpperCase().includes("KHR") || strAmt.toUpperCase().includes("RIEL")) currency = "KHR";
+            const cleanAmt = strAmt.replace(/[^0-9.]/g, "");
+            const num = parseFloat(cleanAmt);
+            if (!isNaN(num) && num > 0) {
+                amount = num;
+            }
+        }
+
+        if (!amount) return null;
+
+        if (currency !== "USD" && currency !== "KHR") {
+            currency = amount >= 500 ? "KHR" : "USD";
+        }
+
+        return {
+            is_slip: true,
+            type: parsed.type === "income" ? "income" : "expense",
+            amount,
+            currency,
+            merchant: cleanMd(parsed.merchant || ""),
+            bank: cleanMd(parsed.bank || "Bank Transfer"),
+            category: normalizeCategory(parsed.category || "Other"),
+            note: cleanMd(parsed.note || ""),
+            date: parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : null
+        };
+    } catch (e) {
+        console.error("parseExtractedJson error:", e.message);
+        return null;
+    }
+}
+
+async function parseReceiptWithGemini(env, base64Data, mimeType = "image/jpeg", caption = "") {
+    const apiKey = env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+
+    const candidateModels = [
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-flash"
+    ];
+
+    const prompt = `You are an expert OCR financial receipt and bank slip analyzer for Cambodia and international transactions.
+Examine this image carefully. Common types include:
+- ABA Bank mobile payment / KHQR transfer slip
+- Bakong KHQR transfer or payment slip
+- Acleda ToanChet, Wing, TrueMoney, Canadia Bank, Prince Bank, Chip Mong Bank
+- Store, cafe, restaurant, or supermarket receipts (e.g., Brown Coffee, Starbucks, Tube Coffee, Amazon Cafe, Lucky, Chip Mong, Aeon, Makro, KOI The)
+- Invoices or utility bills (EDC, water, internet)
+
+Extract the financial data and output ONLY valid JSON matching this schema:
+{
+  "is_slip": boolean (true if image is a payment slip, bank transfer, invoice, or receipt; false if unrelated photo),
+  "amount": number (positive numeric value paid or transferred, e.g. 4.50 or 18000. No currency symbol in amount),
+  "currency": "USD" or "KHR" (detect whether US Dollars $ or Cambodian Riel ៛/KHR),
+  "merchant": string (the recipient name, business name, or merchant, e.g. "Brown Coffee", "Grab", "PassApp", "Sokha Heng"),
+  "bank": string (bank or source, e.g. "ABA Bank", "Bakong KHQR", "Acleda", "Wing", "Store Receipt"),
+  "category": string (best category: "Food", "Coffee", "Transport", "Taxi", "Shopping", "Bills", "Rent", or "Other"),
+  "type": "expense" or "income" (default "expense" for payments/transfers sent; "income" only if money was received/transferred to user),
+  "note": string (short description, e.g. item purchased, transfer remark, or reference number),
+  "date": string (YYYY-MM-DD if date is visible, or null)
+}
+${caption ? `User caption note: "${caption}"` : ""}
+Return ONLY pure JSON.`;
+
+    const requestBody = JSON.stringify({
+        contents: [
+            {
+                parts: [
+                    { text: prompt },
+                    {
+                        inline_data: {
+                            mime_type: mimeType,
+                            data: base64Data
+                        }
+                    }
+                ]
+            }
+        ],
+        generationConfig: {
+            response_mime_type: "application/json",
+            temperature: 0.1
+        }
+    });
+
+    for (const model of candidateModels) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: requestBody
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.warn(`Gemini OCR model ${model} failed (${response.status}):`, errText);
+                continue;
+            }
+
+            const resJson = await response.json();
+            const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (rawText) {
+                const parsed = parseExtractedJson(rawText);
+                if (parsed) return parsed;
+            }
+        } catch (e) {
+            console.warn(`Gemini OCR fetch error for ${model}:`, e.message);
+        }
+    }
+
+    return null;
+}
+
+async function parseReceiptWithWorkersAI(env, base64Data, mimeType = "image/jpeg", caption = "") {
+    if (!env.AI) return null;
+
+    const prompt = `You are a financial receipt and bank slip analyzer. Examine this image (ABA Bank, Bakong, KHQR, Acleda, Wing, or restaurant receipt).
+Extract transaction details into JSON:
+{
+  "is_slip": true,
+  "amount": 3.50,
+  "currency": "USD",
+  "merchant": "merchant or recipient name",
+  "bank": "ABA Bank or bank name",
+  "category": "Coffee",
+  "type": "expense",
+  "note": "short note or remark",
+  "date": "YYYY-MM-DD or null"
+}
+If this image is not a payment slip or receipt, set "is_slip": false.
+${caption ? `User caption note: "${caption}"` : ""}
+Output valid JSON only without explanations.`;
+
+    try {
+        const imageUri = `data:${mimeType};base64,${base64Data}`;
+        const response = await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        { type: "image", image: imageUri }
+                    ]
+                }
+            ],
+            max_tokens: 512,
+            temperature: 0.1
+        });
+
+        const outputText = response?.response || response?.description || (typeof response === "string" ? response : JSON.stringify(response));
+        return parseExtractedJson(outputText);
+    } catch (err) {
+        console.error("Workers AI vision error:", err);
+        return null;
+    }
+}
+
+async function parseReceiptImage(env, base64Data, mimeType = "image/jpeg", caption = "") {
+    if (!env.GEMINI_API_KEY && !env.AI) {
+        throw new Error(
+            "AI OCR is not configured.\n\n" +
+            "To enable receipt & KHQR bank slip scanning, set your free Google Gemini API key:\n" +
+            "`npx wrangler secret put GEMINI_API_KEY`\n" +
+            "(Get a free key at https://aistudio.google.com)"
+        );
+    }
+
+    if (env.GEMINI_API_KEY) {
+        try {
+            const geminiResult = await parseReceiptWithGemini(env, base64Data, mimeType, caption);
+            if (geminiResult && geminiResult.amount) {
+                return geminiResult;
+            }
+        } catch (e) {
+            console.warn("Gemini vision error, trying Workers AI:", e.message);
+        }
+    }
+
+    if (env.AI) {
+        try {
+            const aiResult = await parseReceiptWithWorkersAI(env, base64Data, mimeType, caption);
+            if (aiResult && aiResult.amount) {
+                return aiResult;
+            }
+        } catch (e) {
+            console.warn("Workers AI vision error:", e.message);
+        }
+    }
+
+    return null;
+}
+
+function formatPendingScanText(scan) {
+    const isIncome = scan.type === "income";
+    const sign = isIncome ? "+" : "-";
+    const symbol = scan.currency === "USD" ? "$" : "";
+    const suffix = scan.currency === "KHR" ? " ៛" : "";
+    const mainAmt = `${sign}${symbol}${formatMoney(scan.amount)}${suffix}`;
+
+    let altAmt = "";
+    if (scan.currency === "USD") {
+        altAmt = ` (~${formatMoney(scan.amount * EXCHANGE_RATE)} ៛)`;
+    } else {
+        altAmt = ` (~$${formatMoney(scan.amount / EXCHANGE_RATE)})`;
+    }
+
+    const icon = getCategoryIcon(scan.category, scan.type);
+    const bankName = scan.bank || "Bank Transfer";
+    const merchant = scan.merchant ? scan.merchant : "Merchant / Store";
+    const note = scan.note ? `\n📝 *Note:* ${cleanMd(scan.note)}` : "";
+    const date = scan.date || today();
+
+    return [
+        `🧾 *BANK SLIP / RECEIPT DETECTED*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🏦 *Bank:* ${cleanMd(bankName)}`,
+        `🏪 *${isIncome ? "From / Payer" : "To / Merchant"}:* *${cleanMd(merchant)}*`,
+        `💰 *Amount:* \`${mainAmt}\`${altAmt}`,
+        `🏷️ *Category:* ${icon} *${capitalize(scan.category)}*`,
+        `📅 *Date:* \`${date}\`${note}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `_Tap below to confirm and record to cashflow:_`
+    ].join("\n");
+}
+
+function getPendingScanKeyboard(scan) {
+    const isIncome = scan.type === "income";
+    const symbol = scan.currency === "USD" ? "$" : "";
+    const suffix = scan.currency === "KHR" ? " ៛" : "";
+    const amtStr = `${symbol}${formatMoney(scan.amount)}${suffix}`;
+
+    return {
+        inline_keyboard: [
+            [
+                {
+                    text: `✅ Confirm & Record (${amtStr})`,
+                    callback_data: `scan_ok:${scan.id}`
+                }
+            ],
+            [
+                {
+                    text: `🏷️ ${getCategoryIcon(scan.category, scan.type)} ${capitalize(scan.category)}`,
+                    callback_data: `scan_cat:${scan.id}`
+                },
+                {
+                    text: isIncome ? "🔄 Make Expense" : "🔄 Make Income",
+                    callback_data: `scan_type:${scan.id}`
+                }
+            ],
+            [
+                {
+                    text: "❌ Discard",
+                    callback_data: `scan_del:${scan.id}`
+                }
+            ]
+        ]
+    };
+}
+
+async function safeEditOrSendMessage(env, chatId, messageId, text, extra = {}) {
+    if (messageId) {
+        try {
+            return await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: messageId,
+                text,
+                ...extra
+            });
+        } catch (err) {
+            console.warn("editMessageText failed with error:", err.message);
+            if (extra.parse_mode) {
+                try {
+                    const { parse_mode, ...fallbackExtra } = extra;
+                    const cleanText = text.replace(/[*`_]/g, "");
+                    return await telegram(env, "editMessageText", {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        text: cleanText,
+                        ...fallbackExtra
+                    });
+                } catch (err2) {
+                    console.warn("editMessageText plain fallback failed:", err2.message);
+                }
+            }
+        }
+    }
+
+    return await sendMessage(env, chatId, text, extra);
+}
+
+async function renderPendingScanCard(env, chatId, scanOrId, messageId) {
+    let scan = null;
+    if (scanOrId && typeof scanOrId === "object") {
+        scan = scanOrId;
+    } else {
+        const idToFind = scanOrId || 0;
+        if (idToFind) {
+            scan = await env.DB.prepare(
+                "SELECT * FROM pending_scans WHERE id = ?"
+            ).bind(idToFind).first();
+        }
+        if (!scan) {
+            scan = await env.DB.prepare(
+                "SELECT * FROM pending_scans WHERE chat_id = ? ORDER BY id DESC LIMIT 1"
+            ).bind(String(chatId)).first();
+        }
+    }
+
+    if (!scan) {
+        console.error("renderPendingScanCard: No pending scan found for chat", chatId);
+        await safeEditOrSendMessage(env, chatId, messageId, "⚠️ Could not display receipt details. Please try sending the image again.");
+        return;
+    }
+
+    const text = formatPendingScanText(scan);
+    const markup = getPendingScanKeyboard(scan);
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: markup
+    });
+}
+
+async function sendScanHelp(env, chatId) {
+    const text = [
+        `📸 *Smart Receipt & Bank Slip Scanner*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Simply send or forward any payment screenshot or receipt photo directly into this chat!`,
+        ``,
+        `✅ *Supported Slips & Receipts:*`,
+        `• 🏦 *ABA Mobile* (KHQR transfers & merchant payments)`,
+        `• 🇰🇭 *Bakong* (KHQR payments & transfers)`,
+        `• 💳 *Acleda ToanChet, Wing, TrueMoney, Canadia*`,
+        `• 🧾 *Store & Cafe Receipts* (Brown Coffee, Starbucks, Supermarkets)`,
+        ``,
+        `💡 *How it works:*`,
+        `1. Send your bank slip screenshot`,
+        `2. AI automatically detects the amount, merchant, and category`,
+        `3. Tap *[✅ Confirm]* to record it to your cashflow!`
+    ].join("\n");
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleScanConfirm(env, chatId, userId, scanId, messageId, callbackId) {
+    await ensureTables(env.DB);
+    const scan = await env.DB.prepare(
+        "SELECT * FROM pending_scans WHERE id = ? AND user_id = ?"
+    ).bind(scanId, userId).first();
+
+    if (!scan) {
+        if (callbackId) await answerCallback(env, callbackId, { text: "⚠️ Scan not found or already processed." });
+        if (messageId) {
+            try {
+                await telegram(env, "editMessageText", {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text: "⚠️ *This scan was already processed or has expired.*",
+                    parse_mode: "Markdown"
+                });
+            } catch (e) {}
+        }
+        return;
+    }
+
+    await addExpenseRecord(
+        env.DB,
+        userId,
+        scan.amount,
+        scan.category,
+        scan.type,
+        scan.currency,
+        scan.date
+    );
+
+    await env.DB.prepare("DELETE FROM pending_scans WHERE id = ?").bind(scanId).run();
+
+    if (callbackId) await answerCallback(env, callbackId, { text: "✅ Slip recorded to cashflow!" });
+
+    const symbol = scan.currency === "USD" ? "$" : "";
+    const suffix = scan.currency === "KHR" ? " ៛" : "";
+    const amtStr = `${symbol}${formatMoney(scan.amount)}${suffix}`;
+    const icon = getCategoryIcon(scan.category, scan.type);
+
+    if (messageId) {
+        try {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: messageId,
+                text: [
+                    `✅ *BANK SLIP RECORDED*`,
+                    `━━━━━━━━━━━━━━━━━━━━`,
+                    `💰 Amount: \`${amtStr}\``,
+                    `🏷️ Category: ${icon} *${capitalize(scan.category)}*`,
+                    `🏦 Source: ${cleanMd(scan.bank || "Bank Transfer")}`,
+                    scan.merchant ? `🏪 Merchant: *${cleanMd(scan.merchant)}*` : "",
+                    `📅 Date: \`${scan.date || today()}\``,
+                    `━━━━━━━━━━━━━━━━━━━━`,
+                    `_Saved successfully to your cashflow!_`
+                ].filter(Boolean).join("\n"),
+                parse_mode: "Markdown"
+            });
+        } catch (e) {}
+    }
+
+    await sendTransactionReceipt(
+        env,
+        chatId,
+        userId,
+        scan.type,
+        scan.amount,
+        scan.currency,
+        scan.category
+    );
+}
+
+async function sendScanCategoryPicker(env, chatId, scanId, messageId) {
+    const scan = await env.DB.prepare(
+        "SELECT * FROM pending_scans WHERE id = ?"
+    ).bind(scanId).first();
+
+    if (!scan) return;
+
+    const rows = [];
+    for (let i = 0; i < QUICK_EXPENSE_CATS.length; i += 2) {
+        const row = [
+            {
+                text: `${QUICK_EXPENSE_CATS[i].icon} ${QUICK_EXPENSE_CATS[i].name}`,
+                callback_data: `scan_set_cat:${scanId}:${QUICK_EXPENSE_CATS[i].name}`
+            }
+        ];
+        if (i + 1 < QUICK_EXPENSE_CATS.length) {
+            row.push({
+                text: `${QUICK_EXPENSE_CATS[i + 1].icon} ${QUICK_EXPENSE_CATS[i + 1].name}`,
+                callback_data: `scan_set_cat:${scanId}:${QUICK_EXPENSE_CATS[i + 1].name}`
+            });
+        }
+        rows.push(row);
+    }
+    rows.push([
+        { text: "⬅️ Back to Slip", callback_data: `scan_view:${scanId}` }
+    ]);
+
+    await telegram(env, "editMessageText", {
+        chat_id: chatId,
+        message_id: messageId,
+        text: `🏷️ *Select Category for this Slip:*\nCurrent: *${getCategoryIcon(scan.category, scan.type)} ${capitalize(scan.category)}*`,
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: rows }
+    });
+}
+
+async function handleScanSetCategory(env, chatId, userId, scanId, newCat, messageId, callbackId) {
+    await env.DB.prepare(
+        "UPDATE pending_scans SET category = ? WHERE id = ? AND user_id = ?"
+    ).bind(normalizeCategory(newCat), scanId, userId).run();
+
+    if (callbackId) await answerCallback(env, callbackId, { text: `Category set to ${newCat}!` });
+    await renderPendingScanCard(env, chatId, scanId, messageId);
+}
+
+async function handleScanToggleType(env, chatId, userId, scanId, messageId, callbackId) {
+    const scan = await env.DB.prepare(
+        "SELECT type FROM pending_scans WHERE id = ? AND user_id = ?"
+    ).bind(scanId, userId).first();
+
+    if (!scan) return;
+    const newType = scan.type === "income" ? "expense" : "income";
+    await env.DB.prepare(
+        "UPDATE pending_scans SET type = ? WHERE id = ? AND user_id = ?"
+    ).bind(newType, scanId, userId).run();
+
+    if (callbackId) await answerCallback(env, callbackId, { text: `Switched to ${newType === "income" ? "Income" : "Expense"}!` });
+    await renderPendingScanCard(env, chatId, scanId, messageId);
+}
+
+async function handleScanDiscard(env, chatId, userId, scanId, messageId, callbackId) {
+    await env.DB.prepare(
+        "DELETE FROM pending_scans WHERE id = ? AND user_id = ?"
+    ).bind(scanId, userId).run();
+
+    if (callbackId) await answerCallback(env, callbackId, { text: "🗑️ Scan discarded." });
+    if (messageId) {
+        try {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: messageId,
+                text: "🗑️ *Bank slip scan discarded.*",
+                parse_mode: "Markdown"
+            });
+        } catch (e) {}
+    }
+}
+
+async function handleImageReceipt(message, env, origin) {
+    const chatId = message.chat.id;
+    const userId = String(message.from?.id || chatId);
+    const caption = (message.caption || "").trim();
+
+    await ensureTables(env.DB);
+
+    let fileId = null;
+    let mimeType = "image/jpeg";
+    if (message.photo && Array.isArray(message.photo) && message.photo.length > 0) {
+        fileId = message.photo[message.photo.length - 1].file_id;
+    } else if (message.document && message.document.mime_type && message.document.mime_type.startsWith("image/")) {
+        fileId = message.document.file_id;
+        mimeType = message.document.mime_type;
+    }
+
+    if (!fileId) return;
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    let statusMsg = null;
+    try {
+        statusMsg = await sendMessage(
+            env,
+            chatId,
+            `🔍 *Scanning bank slip / receipt...*\n_Reading transaction details with AI OCR..._`,
+            { parse_mode: "Markdown" }
+        );
+    } catch (e) {}
+    const statusMsgId = statusMsg?.result?.message_id;
+
+    try {
+        const fileInfo = await telegram(env, "getFile", { file_id: fileId });
+        const filePath = fileInfo.result?.file_path;
+        if (!filePath) {
+            throw new Error("Could not retrieve file path from Telegram.");
+        }
+
+        if (filePath.endsWith(".png")) mimeType = "image/png";
+        else if (filePath.endsWith(".webp")) mimeType = "image/webp";
+
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+        const imgResponse = await fetch(fileUrl);
+        if (!imgResponse.ok) {
+            throw new Error("Failed to download image file from Telegram.");
+        }
+
+        const arrayBuffer = await imgResponse.arrayBuffer();
+        const base64Data = arrayBufferToBase64(arrayBuffer);
+
+        const parsed = await parseReceiptImage(env, base64Data, mimeType, caption);
+
+        if (!parsed || !parsed.amount || parsed.amount <= 0) {
+            const notFoundText = [
+                `⚠️ *Could not detect payment amount.*`,
+                `━━━━━━━━━━━━━━━━━━━━`,
+                `We couldn't clearly identify an amount or bank slip in this image.`,
+                ``,
+                `💡 *Tips for best results:*`,
+                `• Send a clear screenshot of your ABA Bank, Bakong, or KHQR transfer slip.`,
+                `• For restaurant/store receipts, ensure the total amount is visible.`,
+                `• Or type directly: \`5 coffee\` or \`/add 5 usd lunch\``
+            ].join("\n");
+
+            await safeEditOrSendMessage(env, chatId, statusMsgId, notFoundText, { parse_mode: "Markdown" });
+            return;
+        }
+
+        const insertResult = await env.DB.prepare(`
+            INSERT INTO pending_scans (user_id, chat_id, amount, currency, category, type, merchant, bank, note, date, message_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+            userId,
+            String(chatId),
+            parsed.amount,
+            parsed.currency,
+            parsed.category,
+            parsed.type,
+            parsed.merchant || null,
+            parsed.bank || null,
+            parsed.note || null,
+            parsed.date || today(),
+            statusMsgId || null
+        ).run();
+
+        const scanId = insertResult.meta?.last_row_id || 
+            (await env.DB.prepare("SELECT id FROM pending_scans WHERE user_id = ? ORDER BY id DESC LIMIT 1").bind(userId).first())?.id;
+
+        const scanObj = {
+            id: scanId,
+            user_id: userId,
+            chat_id: String(chatId),
+            amount: parsed.amount,
+            currency: parsed.currency,
+            category: parsed.category,
+            type: parsed.type,
+            merchant: parsed.merchant || null,
+            bank: parsed.bank || null,
+            note: parsed.note || null,
+            date: parsed.date || today()
+        };
+
+        await renderPendingScanCard(env, chatId, scanObj, statusMsgId);
+
+    } catch (err) {
+        console.error("Receipt scan error:", err);
+        const errMsg = [
+            `⚠️ *Scan processing error:* ${cleanMd(err.message)}`,
+            ``,
+            `💡 You can still log manually: \`5 coffee\` or \`/add 5 usd lunch\``
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, statusMsgId, errMsg, { parse_mode: "Markdown" });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1632,7 +2385,7 @@ async function sendFinanceHub(env, chatId, userId) {
         `• Spent This Month: *${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}*`,
         `• Spent Today: *${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}*`,
         ``,
-        `💡 _Tip: Just type \`5 coffee\` or \`10000 lunch\` anytime!_`
+        `💡 _Tip: Send an ABA / KHQR slip screenshot or type \`5 coffee\`!_`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -1640,15 +2393,18 @@ async function sendFinanceHub(env, chatId, userId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "➕ Add Expense", callback_data: "add_expense" },
-                    { text: "📥 Add Income", callback_data: "add_income" }
+                    { text: "📸 Scan Slip / Receipt", callback_data: "scan_prompt" },
+                    { text: "➕ Add Expense", callback_data: "add_expense" }
                 ],
                 [
-                    { text: "📜 Today's Ledger", callback_data: "view_transactions" },
-                    { text: "📊 Summary", callback_data: "summary_today" }
+                    { text: "📥 Add Income", callback_data: "add_income" },
+                    { text: "📜 Today's Ledger", callback_data: "view_transactions" }
                 ],
                 [
-                    { text: "🎯 Budget", callback_data: "budget_help" },
+                    { text: "📊 Summary", callback_data: "summary_today" },
+                    { text: "🎯 Budget", callback_data: "budget_help" }
+                ],
+                [
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -2697,6 +3453,11 @@ async function sendHelpMessage(env, chatId) {
         `• /report export — Export report as downloadable .txt file`,
         `• /work — Open your Work Journal & today's tasks`,
         ``,
+        `🧾 *Smart Bank Slip & Receipt Scanner (OCR)*`,
+        `• Send or forward any ABA Bank, Bakong, or KHQR screenshot to record automatically!`,
+        `• Send restaurant/supermarket receipt photos to parse totals & categories`,
+        `• /scan — Scanner guide & tips`,
+        ``,
         `💰 *Cashflow & Finance*`,
         `• /add 5 usd coffee or /income 500 usd salary`,
         `• /today — Today's transactions list`,
@@ -3025,10 +3786,11 @@ async function getCategoryRows(db, userId, period, limit) {
     return results || [];
 }
 
-async function addExpenseRecord(db, userId, amount, category, type = "expense", currency = "KHR") {
+async function addExpenseRecord(db, userId, amount, category, type = "expense", currency = "KHR", customDate = null) {
+    const recordDate = (customDate && /^\d{4}-\d{2}-\d{2}$/.test(customDate)) ? customDate : today();
     await db
         .prepare("INSERT INTO expenses (user_id, date, amount, category, type, currency) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(userId, today(), amount, normalizeCategory(category), type, currency)
+        .bind(userId, recordDate, amount, normalizeCategory(category), type, currency)
         .run();
 }
 

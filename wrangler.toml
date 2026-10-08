@@ -9,3 +9,6 @@ database_id = "7419dbb1-5978-4d6d-b471-4546ea9bd0d6"
 
 [triggers]
 crons = ["* * * * *", "0 1 * * 1"] # Every minute (for reminders) and weekly on Monday (8:00 AM ICT)
+
+[ai]
+binding = "AI"

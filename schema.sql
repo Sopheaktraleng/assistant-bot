@@ -62,3 +62,22 @@ ON work_logs (user_id, date);
 CREATE INDEX IF NOT EXISTS idx_work_logs_user_created
 ON work_logs (user_id, created_at);
 
+CREATE TABLE IF NOT EXISTS pending_scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    amount REAL NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    category TEXT NOT NULL DEFAULT 'Other',
+    type TEXT NOT NULL DEFAULT 'expense',
+    merchant TEXT,
+    bank TEXT,
+    note TEXT,
+    date TEXT,
+    message_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_scans_user
+ON pending_scans (user_id);
+
