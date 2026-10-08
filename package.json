@@ -1,7 +1,7 @@
 {
-    "name": "cashflow-bot",
+    "name": "personal-assistant-bot",
     "version": "2.0.0",
-    "description": "Telegram cashflow bot hosted on Cloudflare Workers and D1.",
+    "description": "Telegram personal assistant bot hosted on Cloudflare Workers and D1.",
     "type": "module",
     "main": "src/worker.js",
     "scripts": {
