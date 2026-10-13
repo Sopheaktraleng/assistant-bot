@@ -757,19 +757,19 @@ async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `💼 *HOW TO LOG WORK TASKS*\n` +
-            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `⚡ *How to Log Work Tasks*\n` +
+            `────────────────────\n` +
             `Whenever you finish a task, meeting, or bugfix, type:\n` +
             `• \`/done Fixed customer checkout payment failure\`\n` +
             `• \`/done Prepared Q3 API migration roadmap\`\n` +
             `• \`/done Weekly team sprint planning meeting\`\n` +
             `• \`/done [Bugfix] Fixed mobile crash on iOS 18\`\n\n` +
-            `At the end of the month, type \`/report\` or tap *This Month's Report* to generate your complete monthly manager accomplishment report ready to copy & paste! 🚀`,
+            `_At month's end, type \`/report\` or tap **This Month's Report** to generate your manager accomplishment report!_`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "⬅️ Back to Work Hub", callback_data: "work_hub" }]
+                        [{ text: "‹ Back to Work Log", callback_data: "work_hub" }]
                     ]
                 }
             }
@@ -807,18 +807,18 @@ async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `🎯 *HOW TO SET YOUR MONTHLY BUDGET*\n` +
-            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `🎯 *Monthly Budget Setting*\n` +
+            `────────────────────\n` +
             `Use the command:\n` +
             `• \`/budget 300 usd\` (Sets limit to $300)\n` +
             `• \`/budget 1200000 khr\` (Sets limit in Riel)\n` +
             `• \`/budget 0\` (Disables budget tracking)\n\n` +
-            `You will receive visual progress alerts whenever you log an expense!`,
+            `_You will receive progress alerts whenever you log an expense!_`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "⬅️ Back to Settings", callback_data: "settings" }]
+                        [{ text: "‹ Back to Settings", callback_data: "settings" }]
                     ]
                 }
             }
@@ -900,16 +900,16 @@ async function handleCallback(callback, env, origin) {
 
 
     if (data.startsWith("lb_ack")) {
-        await answerCallback(env, callback.id, { text: "🎉 Great job! Have a safe trip home! 🏠" });
+        await answerCallback(env, callback.id, { text: "Safe travels home!" });
         try {
             await telegram(env, "editMessageText", {
                 chat_id: chatId,
                 message_id: callback.message.message_id,
                 text: [
-                    `🍱🔔 *LUNCH BOX REMINDER*`,
-                    `━━━━━━━━━━━━━━━━━━━━`,
-                    `✅ *Lunch box packed and ready!*`,
-                    `Have a wonderful evening and safe trip home! 🏡✨`
+                    `🎒 *Departure Reminder*`,
+                    `────────────────────`,
+                    `✅ *Lunch box packed and ready.*`,
+                    `_Have a wonderful evening and safe trip home!_`
                 ].join("\n"),
                 parse_mode: "Markdown"
             });
@@ -933,16 +933,16 @@ async function handleCallback(callback, env, origin) {
             VALUES (?, ?, 'Lunch Box (Snoozed)', ?, 'once', 'lunchbox', 1)
         `).bind(userId, String(chatId), snoozeStr).run();
 
-        await answerCallback(env, callback.id, { text: `⏰ Snoozed for 15 mins! We will alert you at ${snoozeStr}.` });
+        await answerCallback(env, callback.id, { text: `⏰ Snoozed 15 mins (until ${snoozeStr})` });
         try {
             await telegram(env, "editMessageText", {
                 chat_id: chatId,
                 message_id: callback.message.message_id,
                 text: [
-                    `🍱🔔 *LUNCH BOX REMINDER (SNOOZED)*`,
-                    `━━━━━━━━━━━━━━━━━━━━`,
-                    `⏰ Snoozed for 15 minutes!`,
-                    `We will remind you again at *${snoozeStr}*. Don't forget it before leaving! 🥪`
+                    `⏰ *Reminder Snoozed*`,
+                    `────────────────────`,
+                    `Snoozed for 15 minutes.`,
+                    `We will remind you again at \`${snoozeStr}\`.`
                 ].join("\n"),
                 parse_mode: "Markdown"
             });
@@ -1122,17 +1122,17 @@ async function handleCallback(callback, env, origin) {
             VALUES (?, ?, ?, ?, 'once', 'custom', 1)
         `).bind(userId, String(chatId), `${title} (Snoozed)`, snoozeStr).run();
 
-        await answerCallback(env, callback.id, { text: `⏰ Snoozed 15 mins (until ${snoozeStr})!` });
+        await answerCallback(env, callback.id, { text: `⏰ Snoozed 15 mins (until ${snoozeStr})` });
         try {
             await telegram(env, "editMessageText", {
                 chat_id: chatId,
                 message_id: callback.message.message_id,
                 text: [
-                    `⏰🔔 *REMINDER SNOOZED*`,
-                    `━━━━━━━━━━━━━━━━━━━━`,
+                    `⏰ *Reminder Snoozed*`,
+                    `────────────────────`,
                     `📌 *${title}*`,
-                    `⏰ Alert snoozed for 15 minutes!`,
-                    `We will alert you again at *${snoozeStr}*. ✨`
+                    `Alert snoozed for 15 minutes.`,
+                    `We will alert you again at \`${snoozeStr}\`.`
                 ].join("\n"),
                 parse_mode: "Markdown"
             });
@@ -1147,9 +1147,9 @@ async function handleCallback(callback, env, origin) {
                 chat_id: chatId,
                 message_id: callback.message.message_id,
                 text: [
-                    `⏰🔔 *REMINDER COMPLETED*`,
-                    `━━━━━━━━━━━━━━━━━━━━`,
-                    `✅ *Marked as done! Keep up the great work!* 🎉`
+                    `⏰ *Reminder Completed*`,
+                    `────────────────────`,
+                    `✅ *Marked as done!*`
                 ].join("\n"),
                 parse_mode: "Markdown"
             });
@@ -1219,26 +1219,25 @@ async function handleCallback(callback, env, origin) {
         }
 
         const warningMsg = [
-            `⚠️ *PERMANENT DATABASE RESET* ⚠️`,
-            `━━━━━━━━━━━━━━━━━━━━`,
-            `This action will delete all transaction records matching your user account.`,
+            `⚠️ *Database Reset Warning*`,
+            `────────────────────`,
+            `This action will permanently delete all transaction records for your account.`,
             ``,
-            `📊 *Wipe Stats:*`,
-            `├ Total transactions: \`${count}\``,
-            `└ Total spent: \`${formatMoney(total)} ៛\` (~$${formatMoney(total / EXCHANGE_RATE)})`,
+            `● *Transactions:* \`${count}\``,
+            `● *Total Volume:* \`${formatMoney(total)} ៛\` (~$${formatMoney(total / EXCHANGE_RATE)})`,
             ``,
             `🔒 *Backup Safety:*`,
-            `We will auto-generate and send you a *CSV backup file* in this chat before deleting anything.`,
+            `A CSV backup file will be auto-generated and sent to this chat before deletion.`,
             ``,
-            `Do you wish to proceed?`
+            `_Do you wish to proceed?_`
         ].join("\n");
 
         await safeEditOrSendMessage(env, chatId, messageId, warningMsg, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "✅ Yes, Backup & Wipe All", callback_data: "confirm_clear_all" }],
-                    [{ text: "❌ Cancel", callback_data: "cancel_clear" }],
+                    [{ text: "⚠️ Yes, Backup & Wipe All", callback_data: "confirm_clear_all" }],
+                    [{ text: "✕ Cancel", callback_data: "cancel_clear" }],
                 ],
             },
         });
@@ -1829,11 +1828,11 @@ async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId 
 
     if (!cleanQuery) {
         const text = [
-            `🤖 *AI FINANCIAL & WORK COPILOT*`,
-            `━━━━━━━━━━━━━━━━━━━━`,
-            `I have real-time access to your cashflow ledger, work journal, monthly budget, and reminders!`,
+            `✨ *AI Copilot*`,
+            `────────────────────`,
+            `Real-time intelligence for your cashflow ledger, work journal, budget, and reminders.`,
             ``,
-            `💡 *Things you can ask me:*`,
+            `💡 *Example questions:*`,
             `• *"How much did I spend this week?"*`,
             `• *"What's my biggest expense category this month?"*`,
             `• *"Can I afford a $50 dinner based on my budget?"*`,
@@ -1842,8 +1841,7 @@ async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId 
             `• *"What active reminders do I have?"*`,
             `• *"ថ្ងៃនេះខ្ញុំចាយអស់ប៉ុន្មាន?"* _(Khmer supported!)_`,
             ``,
-            `💬 *How to use:*`,
-            `Just type your question directly in the chat, or use \`/ask <your question>\`!`
+            `_Type your question directly, or use \`/ask <question>\`_`
         ].join("\n");
 
         await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -1852,9 +1850,10 @@ async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId 
                 inline_keyboard: [
                     [
                         { text: "📊 Summary", callback_data: "summary_today" },
-                        { text: "💼 Work Tasks", callback_data: "work_today" }
+                        { text: "⚡ Work Tasks", callback_data: "work_today" }
                     ],
                     [
+                        { text: "💳 Finance", callback_data: "finance_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -1968,15 +1967,15 @@ function formatPendingScanText(scan) {
     const date = scan.date || today();
 
     return [
-        `🧾 *BANK SLIP / RECEIPT DETECTED*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🏦 *Bank:* ${cleanMd(bankName)}`,
-        `🏪 *${isIncome ? "From / Payer" : "To / Merchant"}:* *${cleanMd(merchant)}*`,
-        `💰 *Amount:* \`${mainAmt}\`${altAmt}`,
-        `🏷️ *Category:* ${icon} *${capitalize(scan.category)}*`,
-        `📅 *Date:* \`${date}\`${note}`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `_Tap below to confirm and record to cashflow:_`
+        `🧾 *Slip / Receipt Detected*`,
+        `────────────────────`,
+        `● *Bank:*     ${cleanMd(bankName)}`,
+        `● *${isIncome ? "Payer" : "Merchant"}:*  ${cleanMd(merchant)}`,
+        `● *Amount:*   \`${mainAmt}\`${altAmt}`,
+        `● *Category:* ${icon} *${capitalize(scan.category)}*`,
+        `● *Date:*     \`${date}\`${note}`,
+        `────────────────────`,
+        `_Tap below to confirm and record:_`
     ].join("\n");
 }
 
@@ -1990,7 +1989,7 @@ function getPendingScanKeyboard(scan) {
         inline_keyboard: [
             [
                 {
-                    text: `✅ Confirm & Record (${amtStr})`,
+                    text: `✓ Confirm (${amtStr})`,
                     callback_data: `scan_ok:${scan.id}`
                 }
             ],
@@ -2000,13 +1999,13 @@ function getPendingScanKeyboard(scan) {
                     callback_data: `scan_cat:${scan.id}`
                 },
                 {
-                    text: isIncome ? "🔄 Make Expense" : "🔄 Make Income",
+                    text: isIncome ? "⇄ To Expense" : "⇄ To Income",
                     callback_data: `scan_type:${scan.id}`
                 }
             ],
             [
                 {
-                    text: "❌ Discard",
+                    text: "✕ Discard",
                     callback_data: `scan_del:${scan.id}`
                 }
             ]
@@ -2080,8 +2079,8 @@ async function renderPendingScanCard(env, chatId, scanOrId, messageId) {
 
 async function sendScanHelp(env, chatId, messageId = null) {
     const text = [
-        `📸 *Smart Receipt & Bank Slip Scanner*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `📸 *Receipt & Slip Scanner*`,
+        `────────────────────`,
         `Simply send or forward any payment screenshot or receipt photo directly into this chat!`,
         ``,
         `✅ *Supported Slips & Receipts:*`,
@@ -2093,7 +2092,7 @@ async function sendScanHelp(env, chatId, messageId = null) {
         `💡 *How it works:*`,
         `1. Send your bank slip screenshot`,
         `2. AI automatically detects the amount, merchant, and category`,
-        `3. Tap *[✅ Confirm]* to record it to your cashflow!`
+        `3. Tap *[✓ Confirm]* to record it to your ledger!`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -2101,7 +2100,7 @@ async function sendScanHelp(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "💳 Finance", callback_data: "finance_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -2155,15 +2154,15 @@ async function handleScanConfirm(env, chatId, userId, scanId, messageId, callbac
                 chat_id: chatId,
                 message_id: messageId,
                 text: [
-                    `✅ *BANK SLIP RECORDED*`,
-                    `━━━━━━━━━━━━━━━━━━━━`,
-                    `💰 Amount: \`${amtStr}\``,
-                    `🏷️ Category: ${icon} *${capitalize(scan.category)}*`,
-                    `🏦 Source: ${cleanMd(scan.bank || "Bank Transfer")}`,
-                    scan.merchant ? `🏪 Merchant: *${cleanMd(scan.merchant)}*` : "",
-                    `📅 Date: \`${scan.date || today()}\``,
-                    `━━━━━━━━━━━━━━━━━━━━`,
-                    `_Saved successfully to your cashflow!_`
+                    `✅ *Receipt Recorded*`,
+                    `────────────────────`,
+                    `● *Amount:*   \`${amtStr}\``,
+                    `● *Category:* ${icon} *${capitalize(scan.category)}*`,
+                    `● *Source:*   ${cleanMd(scan.bank || "Bank Transfer")}`,
+                    scan.merchant ? `● *Merchant:* *${cleanMd(scan.merchant)}*` : "",
+                    `● *Date:*     \`${scan.date || today()}\``,
+                    `────────────────────`,
+                    `_Saved to your ledger._`
                 ].filter(Boolean).join("\n"),
                 parse_mode: "Markdown"
             });
@@ -2315,8 +2314,8 @@ async function handleImageReceipt(message, env, origin) {
 
         if (!parsed || !parsed.amount || parsed.amount <= 0) {
             const notFoundText = [
-                `⚠️ *Could not detect payment amount.*`,
-                `━━━━━━━━━━━━━━━━━━━━`,
+                `⚠️ *Amount Not Detected*`,
+                `────────────────────`,
                 `We couldn't clearly identify an amount or bank slip in this image.`,
                 ``,
                 `💡 *Tips for best results:*`,
@@ -2436,9 +2435,9 @@ async function handleLunchboxCommand(env, chatId, userId, text) {
 
 async function sendPromptAddReminder(env, chatId, messageId = null) {
     const text = [
-        `⏰ *SET A NEW REMINDER*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `You can remind *whatever you want* with any time! Just type:`,
+        `⏰ *New Reminder*`,
+        `────────────────────`,
+        `You can remind *anything at any time*! Type naturally:`,
         ``,
         `1️⃣ *Exact Time:*`,
         `• \`remind 17:30 Bring lunch box / bag home\``,
@@ -2451,7 +2450,7 @@ async function sendPromptAddReminder(env, chatId, messageId = null) {
         `• \`remind in 30m Take medicine\``,
         `• \`remind in 1h Call the client\``,
         ``,
-        `Or choose a quick preset below:`
+        `_Or choose a preset below:_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -2460,10 +2459,10 @@ async function sendPromptAddReminder(env, chatId, messageId = null) {
             inline_keyboard: [
                 [
                     { text: "🎒 17:30 Departure Preset", callback_data: "remind_add_lunchbox" },
-                    { text: "💰 Spending Check (21:00)", callback_data: "toggle_expense_reminder" }
+                    { text: "💳 Spending Check (21:00)", callback_data: "toggle_expense_reminder" }
                 ],
                 [
-                    { text: "⬅️ Back to Reminders", callback_data: "reminders" },
+                    { text: "‹ Back to Reminders", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -2560,23 +2559,24 @@ async function handleRemindCommand(env, chatId, userId, text) {
     const icon = isLunch ? "🍱" : "⏰";
 
     const textResponse = [
-        `${icon} *REMINDER SET!*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `📌 *Title:* *${title}*`,
-        `⏰ *Time:* \`${timeStr}\` (${freqLabel}, Phnom Penh)`,
-        `🔔 We will alert you on Telegram when it's time!`
+        `${icon} *Reminder Set*`,
+        `────────────────────`,
+        `● *Title:* *${title}*`,
+        `● *Time:*  \`${timeStr}\` (${freqLabel})`,
+        `────────────────────`,
+        `_You will be alerted on Telegram when it's time._`
     ].join("\n");
 
     const buttons = [
         [
-            { text: "⏰ Reminders Hub", callback_data: "reminders" },
+            { text: "⏰ Reminders", callback_data: "reminders" },
             { text: "🏠 Main Hub", callback_data: "hub" }
         ]
     ];
     if (newId) {
         buttons.unshift([
             { text: "⏰ Adjust Time", callback_data: `remind_time_menu:${newId}` },
-            { text: "🗑️ Delete", callback_data: `remind_del:${newId}` }
+            { text: "✕ Delete", callback_data: `remind_del:${newId}` }
         ]);
     }
 
@@ -2759,21 +2759,22 @@ async function sendMainHub(env, chatId, userId, from, origin, messageId = null) 
     ).bind(userId).all();
     const remList = allReminders || [];
     const activeRems = remList.filter(r => r.is_active);
-    let remStatus = "⚪ None active";
+    let remStatus = "○ None";
     if (activeRems.length > 0) {
         const first = activeRems[0];
-        const shortTitle = first.title.length > 15 ? first.title.slice(0, 14) + "…" : first.title;
-        remStatus = `🟢 \`${activeRems.length} active\` (${first.reminder_time} ${shortTitle})`;
+        const shortTitle = first.title.length > 14 ? first.title.slice(0, 13) + "…" : first.title;
+        remStatus = `● ${activeRems.length} active (${first.reminder_time} ${shortTitle})`;
     }
 
     const text = [
-        `👋 *Hi ${cleanUsername}*`,
-        ``,
-        `💼 *Work:* \`${workCount} tasks\` logged this month`,
-        `💰 *Money:* \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\` today • Balance: \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
-        `⏰ *Reminders:* ${remStatus}`,
-        ``,
-        `_What would you like to do?_`
+        `*Personal Assistant Hub*`,
+        `────────────────────`,
+        `● *Balance:*   \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
+        `● *Today:*     \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
+        `● *Work:*      \`${workCount} tasks\` in ${monthLabel()}`,
+        `● *Alerts:*    \`${remStatus}\``,
+        `────────────────────`,
+        `_Select a workspace below or type naturally:_`
     ].join("\n");
 
     const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
@@ -2783,19 +2784,23 @@ async function sendMainHub(env, chatId, userId, from, origin, messageId = null) 
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💼 Work & Report", callback_data: "work_hub" },
-                    { text: "💰 Money & Budget", callback_data: "finance_hub" }
+                    { text: "＋ Expense", callback_data: "add_expense" },
+                    { text: "＋ Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "🤖 Ask AI Copilot", callback_data: "copilot_help" },
-                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" }
+                    { text: "💳 Finance", callback_data: "finance_hub" },
+                    { text: "⚡ Work Log", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } },
+                    { text: "✨ AI Copilot", callback_data: "copilot_help" },
+                    { text: "⏰ Reminders", callback_data: "reminders" }
+                ],
+                [
+                    { text: "🌐 Dashboard", web_app: { url: webAppUrl } },
                     { text: "⚙️ Settings", callback_data: "settings" }
                 ],
                 [
-                    { text: "💡 Help & Guide", callback_data: "help" }
+                    { text: "💡 Guide & Shortcuts", callback_data: "help" }
                 ]
             ]
         }
@@ -2814,12 +2819,13 @@ async function sendFinanceHub(env, chatId, userId, messageId = null) {
     const allSummary = await getFinancialSummary(env.DB, userId, "all");
 
     const text = [
-        `💰 *Finance & Cashflow*`,
-        `• Balance: *${formatAmount(allSummary.balanceKhr, displayCurrency)}*`,
-        `• Spent This Month: *${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}*`,
-        `• Spent Today: *${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}*`,
-        ``,
-        `💡 _Tip: Send an ABA / KHQR slip screenshot or type \`5 coffee\`!_`
+        `💳 *Finance & Cashflow*`,
+        `────────────────────`,
+        `● *Net Balance:*   \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
+        `● *This Month:*    \`${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}\``,
+        `● *Spent Today:*   \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
+        `────────────────────`,
+        `_Tip: Send an ABA / KHQR slip screenshot or type \`5 coffee\`_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -2827,18 +2833,16 @@ async function sendFinanceHub(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "📸 Scan Slip / Receipt", callback_data: "scan_prompt" },
-                    { text: "➕ Add Expense", callback_data: "add_expense" }
+                    { text: "📸 Scan Slip", callback_data: "scan_prompt" },
+                    { text: "＋ Expense", callback_data: "add_expense" },
+                    { text: "＋ Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📥 Add Income", callback_data: "add_income" },
-                    { text: "📜 Today's Ledger", callback_data: "view_transactions" }
+                    { text: "📜 Today's Ledger", callback_data: "view_transactions" },
+                    { text: "📊 Summary", callback_data: "summary_today" }
                 ],
                 [
-                    { text: "📊 Summary", callback_data: "summary_today" },
-                    { text: "🎯 Budget", callback_data: "budget_help" }
-                ],
-                [
+                    { text: "🎯 Budget", callback_data: "budget_help" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -2871,16 +2875,19 @@ async function sendWorkHub(env, chatId, userId, from, messageId = null) {
     const mLabel = monthLabel();
 
     const todayList = todayLogs.length > 0
-        ? todayLogs.map((item, idx) => `• ${getWorkCategoryIcon(item.category)} *${item.content}* \`${item.time}\``).join("\n")
+        ? todayLogs.map((item) => `• \`${item.time}\` *${item.content}*`).join("\n")
         : "_No tasks logged today yet._";
 
     const text = [
-        `💼 *Work Journal*`,
-        `*${monthCount} tasks* logged in ${mLabel} • *${todayLogs.length} today*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `⚡ *Work Journal*`,
+        `────────────────────`,
+        `● *This Month:*  \`${monthCount} tasks\` in ${mLabel}`,
+        `● *Today:*       \`${todayLogs.length} logged\``,
+        `────────────────────`,
+        `*Today's Activity:*`,
         todayList,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💡 _Type \`done <task>\` to log accomplishment._`
+        `────────────────────`,
+        `_Log anytime with: \`done <task description>\`_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -2953,14 +2960,14 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
 
     if (logs.length === 0) {
         const text = [
-            `📋 *MONTHLY WORK REPORT*`,
-            `🗓️ *Period:* *${label}*`,
-            `━━━━━━━━━━━━━━━━━━━━`,
+            `📋 *Monthly Work Report*`,
+            `🗓️ *Period:* \`${label}\``,
+            `────────────────────`,
             `_No accomplishments logged for this period yet._`,
             ``,
-            `💡 Whenever you complete a task, meeting, or bugfix, type:`,
+            `💡 *How to log work:*`,
             `\`/done <task description>\``,
-            `Example: \`/done Completed API migration for auth service\``
+            `_Example:_ \`/done Completed API migration for auth service\``
         ].join("\n");
 
         await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -2968,11 +2975,11 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "➕ How to Log Work", callback_data: "work_log_prompt" },
-                        { text: "⏪ Last Month's Report", callback_data: "work_report_last" }
+                        { text: "＋ How to Log", callback_data: "work_log_prompt" },
+                        { text: "⏪ Last Month", callback_data: "work_report_last" }
                     ],
                     [
-                        { text: "💼 Work Workspace", callback_data: "work_hub" },
+                        { text: "⚡ Work Log", callback_data: "work_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -2991,13 +2998,13 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
         .join(" • ");
 
     const lines = [
-        `📋 *MONTHLY WORK REPORT*`,
-        `🗓️ *Period:* *${label}*`,
-        `👤 *Report for:* ${cleanUsername}`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🏆 *Summary:* *${logs.length} tasks completed* across *${activeDays} working days*`,
-        `📊 *Focus:* ${catBreakdown}`,
-        `━━━━━━━━━━━━━━━━━━━━`
+        `📋 *Monthly Work Report*`,
+        `────────────────────`,
+        `● *Period:*  \`${label}\``,
+        `● *User:*    ${cleanUsername}`,
+        `● *Summary:* \`${logs.length} tasks\` across \`${activeDays} days\``,
+        `● *Focus:*   ${catBreakdown}`,
+        `────────────────────`
     ];
 
     if (isMonth) {
@@ -3037,8 +3044,8 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
         lines.push(``);
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`💡 _Ready for your monthly review or manager 1-on-1!_`);
+    lines.push(`────────────────────`);
+    lines.push(`_Ready for your monthly review or manager 1-on-1._`);
 
     const fullMessage = lines.join("\n");
     const exportCb = period === "last_month" ? "work_export_last" : "work_export_this";
@@ -3056,7 +3063,7 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
                         { text: switchMonthText, callback_data: switchMonthCb }
                     ],
                     [
-                        { text: "💼 Work Journal", callback_data: "work_hub" },
+                        { text: "⚡ Work Log", callback_data: "work_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -3075,7 +3082,7 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
                     { text: switchMonthText, callback_data: switchMonthCb }
                 ],
                 [
-                    { text: "💼 Work Journal", callback_data: "work_hub" },
+                    { text: "⚡ Work Log", callback_data: "work_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -3216,7 +3223,7 @@ async function sendWorkDeletePicker(env, chatId, userId, messageId = null) {
         await safeEditOrSendMessage(env, chatId, messageId, "No recent tasks found to delete.", {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "💼 Back to Work Journal", callback_data: "work_hub" }],
+                    [{ text: "‹ Back to Work Log", callback_data: "work_hub" }],
                     [{ text: "🏠 Main Hub", callback_data: "hub" }]
                 ]
             }
@@ -3226,20 +3233,20 @@ async function sendWorkDeletePicker(env, chatId, userId, messageId = null) {
 
     const buttons = logs.map(item => [
         {
-            text: `🗑️ ${item.date}: ${item.content.slice(0, 30)}${item.content.length > 30 ? "..." : ""}`,
+            text: `✕ ${item.date}: ${item.content.slice(0, 30)}${item.content.length > 30 ? "..." : ""}`,
             callback_data: `work_del:${item.id}`
         }
     ]);
 
     buttons.push([
-        { text: "⬅️ Back to Work Workspace", callback_data: "work_hub" },
+        { text: "‹ Back to Work Log", callback_data: "work_hub" },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
     await safeEditOrSendMessage(env, chatId, messageId, [
-        `🗑️ *DELETE RECENT TASK*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Select an accomplishment below to remove from your log:`
+        `🗑️ *Delete Recent Task*`,
+        `────────────────────`,
+        `_Select an accomplishment below to remove:_`
     ].join("\n"), {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons }
@@ -3261,44 +3268,45 @@ async function sendRemindersMenu(env, chatId, userId, messageId = null) {
 
     let listText = "";
     if (reminders.length === 0) {
-        listText = "_No reminders set yet._\nTap *[ ➕ Add Reminder ]* below or type:\n`remind 17:30 Bring lunch box`";
+        listText = "_No reminders set yet._\nTap *[ ＋ Add Reminder ]* below or type:\n`remind 17:30 Bring lunch box`";
     } else {
         listText = reminders.map((r, idx) => {
-            const status = r.is_active ? "🟢" : "⚪";
+            const status = r.is_active ? "●" : "○";
             const freq = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
-            const icon = r.type === "lunchbox" ? "🍱" : r.type === "expense_log" ? "💰" : "⏰";
+            const icon = r.type === "lunchbox" ? "🎒" : r.type === "expense_log" ? "💳" : "⏰";
             return `${idx + 1}. ${status} ${icon} *${r.title}*\n    └ \`${r.reminder_time}\` (${freq})`;
         }).join("\n");
     }
 
     const text = [
-        `⏰ *REMINDERS & ALARMS*`,
-        `*${activeCount} active* of ${reminders.length} reminder(s)`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏰ *Reminders & Alerts*`,
+        `────────────────────`,
+        `● *Active:*  \`${activeCount}\` of ${reminders.length} reminder(s)`,
+        `────────────────────`,
         listText,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💡 _Type \`remind <time> <task>\` or \`remind in 30m <task>\`_`
+        `────────────────────`,
+        `_Type \`remind <time> <task>\` or \`remind in 30m <task>\`_`
     ].join("\n");
 
     const buttons = [
         [
-            { text: "➕ Add Reminder", callback_data: "remind_prompt_add" },
-            { text: "🎒 17:30 Departure Preset", callback_data: "remind_add_lunchbox" }
+            { text: "＋ Add Reminder", callback_data: "remind_prompt_add" },
+            { text: "🎒 Departure 17:30", callback_data: "remind_add_lunchbox" }
         ]
     ];
 
     for (const r of reminders.slice(0, 6)) {
-        const toggleIcon = r.is_active ? "🟢" : "⚪";
+        const toggleIcon = r.is_active ? "●" : "○";
         const shortTitle = r.title.length > 13 ? r.title.slice(0, 12) + "…" : r.title;
         buttons.push([
             { text: `${toggleIcon} ${shortTitle}`, callback_data: `remind_toggle:${r.id}` },
-            { text: `⏰ ${r.reminder_time}`, callback_data: `remind_time_menu:${r.id}` },
-            { text: "🗑️", callback_data: `remind_del:${r.id}` }
+            { text: `${r.reminder_time}`, callback_data: `remind_time_menu:${r.id}` },
+            { text: "✕", callback_data: `remind_del:${r.id}` }
         ]);
     }
 
     buttons.push([
-        { text: "🔔 Test Notification", callback_data: "remind_test_general" },
+        { text: "🔔 Test Alert", callback_data: "remind_test_general" },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
@@ -3326,27 +3334,27 @@ async function sendReminderTimeMenu(env, chatId, userId, reminderId, messageId =
     const nextFreqLabel = nextFreq === "weekdays" ? "Mon–Fri" : nextFreq === "daily" ? "Daily" : "Once";
 
     const text = [
-        `⏰ *SET TIME FOR REMINDER*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏰ *Reminder Schedule*`,
+        `────────────────────`,
         `📌 *${r.title}*`,
-        `• Current Time: *${r.reminder_time}* (${freqLabel})`,
-        ``,
-        `Choose a preset time below or type:`,
+        `● *Current Time:* \`${r.reminder_time}\` (${freqLabel})`,
+        `────────────────────`,
+        `_Choose a preset time below or type:_`,
         `\`remind <time> ${r.title}\``
     ].join("\n");
 
     const buttons = [
         [
-            { text: "⏰ 16:30", callback_data: `remind_set_time:${r.id}:16:30` },
-            { text: "⏰ 17:00", callback_data: `remind_set_time:${r.id}:17:00` },
-            { text: "⏰ 17:30", callback_data: `remind_set_time:${r.id}:17:30` },
-            { text: "⏰ 18:00", callback_data: `remind_set_time:${r.id}:18:00` }
+            { text: "16:30", callback_data: `remind_set_time:${r.id}:16:30` },
+            { text: "17:00", callback_data: `remind_set_time:${r.id}:17:00` },
+            { text: "17:30", callback_data: `remind_set_time:${r.id}:17:30` },
+            { text: "18:00", callback_data: `remind_set_time:${r.id}:18:00` }
         ],
         [
-            { text: "⏰ 08:30", callback_data: `remind_set_time:${r.id}:08:30` },
-            { text: "⏰ 09:00", callback_data: `remind_set_time:${r.id}:09:00` },
-            { text: "⏰ 12:00", callback_data: `remind_set_time:${r.id}:12:00` },
-            { text: "⏰ 21:00", callback_data: `remind_set_time:${r.id}:21:00` }
+            { text: "08:30", callback_data: `remind_set_time:${r.id}:08:30` },
+            { text: "09:00", callback_data: `remind_set_time:${r.id}:09:00` },
+            { text: "12:00", callback_data: `remind_set_time:${r.id}:12:00` },
+            { text: "21:00", callback_data: `remind_set_time:${r.id}:21:00` }
         ],
         [
             { text: "⏱️ In 15m", callback_data: `remind_set_rel:${r.id}:15` },
@@ -3354,10 +3362,10 @@ async function sendReminderTimeMenu(env, chatId, userId, reminderId, messageId =
             { text: "⏱️ In 1h", callback_data: `remind_set_rel:${r.id}:60` }
         ],
         [
-            { text: `🔁 Switch Schedule: ${nextFreqLabel}`, callback_data: `remind_freq:${r.id}:${nextFreq}` }
+            { text: `🔁 Schedule: ${nextFreqLabel}`, callback_data: `remind_freq:${r.id}:${nextFreq}` }
         ],
         [
-            { text: "⬅️ Back to Reminders", callback_data: "reminders" },
+            { text: "‹ Back to Reminders", callback_data: "reminders" },
             { text: "🏠 Main Hub", callback_data: "hub" }
         ]
     ];
@@ -3375,16 +3383,16 @@ async function sendSettingsMenu(env, chatId, userId, messageId = null) {
     ).bind(userId).first();
 
     const budgetKhr = settingsRow?.monthly_budget || 0;
-    const budgetStr = budgetKhr > 0 ? formatAmount(budgetKhr, displayCurrency) : "Disabled (No limit)";
-    const toggleLabel = displayCurrency === "USD" ? "🇰🇭 Switch to KHR (៛)" : "🇺🇸 Switch to USD ($)";
+    const budgetStr = budgetKhr > 0 ? formatAmount(budgetKhr, displayCurrency) : "Off (No limit)";
+    const toggleLabel = displayCurrency === "USD" ? "💱 Switch to KHR (៛)" : "💱 Switch to USD ($)";
 
     const text = [
-        `⚙️ *SYSTEM SETTINGS*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🏳️ *Active Currency:* *${displayCurrency}*`,
-        `🎯 *Monthly Budget:* *${budgetStr}*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Configure preferences or manage your transaction records:`
+        `⚙️ *System Settings*`,
+        `────────────────────`,
+        `● *Display Currency:*  \`${displayCurrency}\``,
+        `● *Monthly Budget:*   \`${budgetStr}\``,
+        `────────────────────`,
+        `_Configure preferences or manage your records below:_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -3392,9 +3400,9 @@ async function sendSettingsMenu(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: toggleLabel, callback_data: "toggle_currency" }],
-                [{ text: "🎯 Set / Change Budget", callback_data: "budget_help" }],
+                [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
                 [
-                    { text: "🗑️ Clear Today's Data", callback_data: "clear_today_warn" },
+                    { text: "🗑️ Clear Today", callback_data: "clear_today_warn" },
                     { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
                 ],
                 [{ text: "🏠 Main Hub", callback_data: "hub" }]
@@ -3405,7 +3413,7 @@ async function sendSettingsMenu(env, chatId, userId, messageId = null) {
 
 async function sendCategoryPicker(env, chatId, type = "expense", messageId = null) {
     const isIncome = type === "income";
-    const title = isIncome ? "📥 *ADD NEW INCOME*" : "➕ *ADD NEW EXPENSE*";
+    const title = isIncome ? "＋ *Add Income*" : "－ *Add Expense*";
     const prefix = isIncome ? "cat_inc:" : "cat_exp:";
     const categories = isIncome ? QUICK_INCOME_CATS : QUICK_EXPENSE_CATS;
     const exampleCmd = isIncome ? "/income 500 usd salary" : "/add 5 usd coffee";
@@ -3425,16 +3433,16 @@ async function sendCategoryPicker(env, chatId, type = "expense", messageId = nul
     }
 
     const customCb = isIncome ? "custom_inc" : "custom_add";
-    rows.push([{ text: `✏️ Type custom: ${exampleCmd}`, callback_data: customCb }]);
+    rows.push([{ text: `✏️ Custom: \`${exampleCmd}\``, callback_data: customCb }]);
     rows.push([
-        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+        { text: "‹ Back to Finance", callback_data: "finance_hub" },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
     const text = [
         title,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Choose a category below, or type your entry directly:`,
+        `────────────────────`,
+        `Choose a category below, or type directly:`,
         `\`${exampleCmd}\``
     ].join("\n");
 
@@ -3448,7 +3456,7 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId,
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const isIncome = type === "income";
     const icon = getCategoryIcon(category, type);
-    const title = isIncome ? "📥 *SELECT INCOME AMOUNT*" : "💸 *SELECT EXPENSE AMOUNT*";
+    const title = isIncome ? "＋ *Select Income Amount*" : "－ *Select Expense Amount*";
     const prefix = isIncome ? "quick_inc:" : "quick_exp:";
 
     let amounts = [];
@@ -3459,17 +3467,13 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId,
     }
 
     const rows = [];
-    for (let i = 0; i < amounts.length; i += 2) {
-        const row = [
-            {
-                text: formatAmount(displayCurrency === "USD" ? amounts[i] * EXCHANGE_RATE : amounts[i], displayCurrency),
-                callback_data: `${prefix}${category}:${amounts[i]}`
-            }
-        ];
-        if (amounts[i + 1] !== undefined) {
+    for (let i = 0; i < amounts.length; i += 3) {
+        const row = [];
+        for (let j = 0; j < 3 && i + j < amounts.length; j++) {
+            const idx = i + j;
             row.push({
-                text: formatAmount(displayCurrency === "USD" ? amounts[i + 1] * EXCHANGE_RATE : amounts[i + 1], displayCurrency),
-                callback_data: `${prefix}${category}:${amounts[i + 1]}`
+                text: formatAmount(displayCurrency === "USD" ? amounts[idx] * EXCHANGE_RATE : amounts[idx], displayCurrency),
+                callback_data: `${prefix}${category}:${amounts[idx]}`
             });
         }
         rows.push(row);
@@ -3478,15 +3482,16 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId,
     const backCb = isIncome ? "add_income" : "add_expense";
     rows.push([{ text: `✏️ Custom: ${isIncome ? "/income" : "/add"} <amount> ${category}`, callback_data: isIncome ? "custom_inc" : "custom_add" }]);
     rows.push([
-        { text: "⬅️ Back to Categories", callback_data: backCb },
+        { text: "‹ Back to Categories", callback_data: backCb },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
     const text = [
         title,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Selected Category: ${icon} *${capitalize(category)}*`,
-        `Choose an amount below:`
+        `────────────────────`,
+        `● *Category:* ${icon} *${capitalize(category)}*`,
+        `────────────────────`,
+        `_Choose an amount below:_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -3521,14 +3526,18 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
 
     const warn = !isIncome ? await getBudgetWarningText(env.DB, userId) : "";
 
+    const header = isIncome ? "＋ *Income Recorded*" : "－ *Expense Recorded*";
     const lines = [
-        `${isIncome ? "🎉" : "💸"} *${icon} ${capitalize(category)}:* \`${mainAmt}\`${altAmt}`,
-        `📅 Today's total spent: \`${todaySpentStr}\``
+        header,
+        `────────────────────`,
+        `● *Amount:*      \`${mainAmt}\`${altAmt}`,
+        `● *Category:*    ${icon} *${capitalize(category)}*`,
+        `● *Spent Today:* \`${todaySpentStr}\``
     ];
-    if (warn) lines.push(warn);
+    if (warn) lines.push(`────────────────────`, warn);
 
     const addAnotherCb = isIncome ? "add_income" : "add_expense";
-    const addAnotherText = isIncome ? "📥 Add More" : "➕ Add Another";
+    const addAnotherText = isIncome ? "＋ Add More" : "＋ Add Another";
 
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
@@ -3539,7 +3548,7 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" }
                 ],
                 [
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "💳 Finance", callback_data: "finance_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -3558,22 +3567,22 @@ async function sendTransactions(env, chatId, userId, messageId = null) {
 
     if (!results || !results.length) {
         await safeEditOrSendMessage(env, chatId, messageId, [
-            `📜 *TODAY'S TRANSACTIONS*`,
+            `📜 *Today's Ledger*`,
             `📅 \`${date}\``,
-            `━━━━━━━━━━━━━━━━━━━━`,
+            `────────────────────`,
             `_No transactions recorded today yet._`,
             ``,
-            `Tap below to log your first expense or income today!`
+            `_Tap below to log your first transaction today!_`
         ].join("\n"), {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "➕ Add Expense", callback_data: "add_expense" },
-                        { text: "📥 Add Income", callback_data: "add_income" }
+                        { text: "＋ Expense", callback_data: "add_expense" },
+                        { text: "＋ Income", callback_data: "add_income" }
                     ],
                     [
-                        { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                        { text: "💳 Finance", callback_data: "finance_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -3603,14 +3612,14 @@ async function sendTransactions(env, chatId, userId, messageId = null) {
     const netKhr = totalIncome - totalExpense;
 
     const message = [
-        `📜 *TODAY'S TRANSACTIONS*`,
+        `📜 *Today's Ledger*`,
         `📅 \`${date}\``,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `────────────────────`,
         ...lines,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `📥 *Income:* \`${formatAmount(totalIncome, displayCurrency)}\``,
-        `📤 *Spent:* \`${formatAmount(totalExpense, displayCurrency)}\``,
-        `⚖️ *Net Today:* \`${formatAmount(netKhr, displayCurrency)}\``
+        `────────────────────`,
+        `● *Income:* \`${formatAmount(totalIncome, displayCurrency)}\``,
+        `● *Spent:*  \`${formatAmount(totalExpense, displayCurrency)}\``,
+        `● *Net:*    \`${formatAmount(netKhr, displayCurrency)}\``
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, message, {
@@ -3618,12 +3627,12 @@ async function sendTransactions(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "➕ Add Expense", callback_data: "add_expense" },
-                    { text: "📥 Add Income", callback_data: "add_income" }
+                    { text: "＋ Expense", callback_data: "add_expense" },
+                    { text: "＋ Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📊 Today Summary", callback_data: "summary_today" },
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" }
+                    { text: "📊 Summary", callback_data: "summary_today" },
+                    { text: "💳 Finance", callback_data: "finance_hub" }
                 ],
                 [
                     { text: "🏠 Main Hub", callback_data: "hub" }
@@ -3637,14 +3646,14 @@ async function sendSummary(env, chatId, userId, period, messageId = null) {
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const stats = await getPeriodStats(env.DB, userId, period);
     const breakdown = await getCategoryRows(env.DB, userId, period, 5);
-    const title = period === "month" ? `MONTHLY SUMMARY (${monthLabel()})` : `DAILY SUMMARY (${today()})`;
+    const title = period === "month" ? `Monthly Summary (${monthLabel()})` : `Daily Summary (${today()})`;
 
     const lines = [
         `📊 *${title}*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💰 *Total Spent:* \`${formatAmount(stats.total, displayCurrency)}\``,
-        `🧮 *Average / Entry:* \`${formatAmount(stats.average, displayCurrency)}\``,
-        `🛍️ *Entries:* \`${stats.count} transactions\``,
+        `────────────────────`,
+        `● *Total Spent:*   \`${formatAmount(stats.total, displayCurrency)}\``,
+        `● *Average / Tx:*  \`${formatAmount(stats.average, displayCurrency)}\``,
+        `● *Entries:*       \`${stats.count} transactions\``,
     ];
 
     if (stats.maxAmount) {
@@ -3652,11 +3661,11 @@ async function sendSummary(env, chatId, userId, period, messageId = null) {
         const suffix = stats.maxCurrency === "KHR" ? " ៛" : "";
         const amt = stats.maxCurrency === "USD" ? stats.maxAmount : formatMoney(stats.maxAmount);
         const icon = getCategoryIcon(stats.maxCategory, "expense");
-        lines.push(`🔥 *Biggest Single Spend:* \`${symbol}${amt}${suffix}\` on ${icon} *${capitalize(stats.maxCategory)}*`);
+        lines.push(`● *Biggest Spend:* \`${symbol}${amt}${suffix}\` (${icon} ${capitalize(stats.maxCategory)})`);
     }
 
     if (breakdown.length) {
-        lines.push(`━━━━━━━━━━━━━━━━━━━━`, `🏷️ *Category Breakdown:*`);
+        lines.push(`────────────────────`, `🏷️ *Category Breakdown:*`);
         breakdown.forEach((row) => {
             const percent = stats.total > 0 ? Math.round((row.total / stats.total) * 100) : 0;
             const bar = generateTextProgressBar(percent);
@@ -3665,7 +3674,7 @@ async function sendSummary(env, chatId, userId, period, messageId = null) {
         });
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`────────────────────`);
 
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
@@ -3673,7 +3682,7 @@ async function sendSummary(env, chatId, userId, period, messageId = null) {
             inline_keyboard: [
                 [
                     { text: "📜 Daily Ledger", callback_data: "view_transactions" },
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" }
+                    { text: "💳 Finance", callback_data: "finance_hub" }
                 ],
                 [
                     { text: "🏠 Main Hub", callback_data: "hub" }
@@ -3701,7 +3710,7 @@ async function sendCategoryBreakdown(env, chatId, userId, period) {
         return;
     }
 
-    const lines = [`📊 *${title.toUpperCase()}*`, `━━━━━━━━━━━━━━━━━━━━`];
+    const lines = [`📊 *${title}*`, `────────────────────`];
     for (const row of rows) {
         const percent = stats.total > 0 ? Math.round((row.total / stats.total) * 100) : 0;
         const icon = getCategoryIcon(row.category, "expense");
@@ -3714,7 +3723,7 @@ async function sendCategoryBreakdown(env, chatId, userId, period) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+                    { text: "‹ Back to Finance", callback_data: "finance_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -3772,11 +3781,11 @@ async function getHistoryMessageData(db, userId, page = 1) {
 
     if (!results || results.length === 0) {
         return {
-            text: "📜 *TRANSACTION HISTORY*\n━━━━━━━━━━━━━━━━━━━━\nNo transactions recorded yet.",
+            text: "📜 *Transaction History*\n────────────────────\n_No transactions recorded yet._",
             replyMarkup: {
                 inline_keyboard: [
                     [
-                        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+                        { text: "‹ Back to Finance", callback_data: "finance_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -3795,18 +3804,18 @@ async function getHistoryMessageData(db, userId, page = 1) {
     });
 
     const text = [
-        `📜 *TRANSACTION HISTORY*`,
-        `📖 *Page ${currentPage} of ${totalPages}* (Total: ${totalCount})`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `📜 *Transaction History*`,
+        `📖 Page ${currentPage} of ${totalPages} (${totalCount} total)`,
+        `────────────────────`,
         ...lines
     ].join("\n");
 
     const navRow = [];
     if (currentPage > 1) {
-        navRow.push({ text: "⬅️ Prev", callback_data: `history:${currentPage - 1}` });
+        navRow.push({ text: "‹ Prev", callback_data: `history:${currentPage - 1}` });
     }
     if (currentPage < totalPages) {
-        navRow.push({ text: "Next ➡️", callback_data: `history:${currentPage + 1}` });
+        navRow.push({ text: "Next ›", callback_data: `history:${currentPage + 1}` });
     }
 
     const inlineKeyboard = [];
@@ -3814,7 +3823,7 @@ async function getHistoryMessageData(db, userId, page = 1) {
         inlineKeyboard.push(navRow);
     }
     inlineKeyboard.push([
-        { text: "⬅️ Back to Finance", callback_data: "finance_hub" },
+        { text: "‹ Back to Finance", callback_data: "finance_hub" },
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
@@ -3826,46 +3835,40 @@ async function getHistoryMessageData(db, userId, page = 1) {
 
 async function sendHelpMessage(env, chatId, messageId = null) {
     const text = [
-        `💡 *PERSONAL ASSISTANT GUIDE*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `✨ *Effortless Natural Typing (No Commands Needed!)*`,
-        `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\``,
-        `• Spend: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
+        `💡 *Personal Assistant Guide*`,
+        `────────────────────`,
+        `⚡ *Natural Typing (No Commands Needed)*`,
+        `• Reminders: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\``,
+        `• Expense: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
         `• Income: \`+500 salary\` or \`+50 bonus\``,
         `• Work log: \`done Fixed checkout bug\` or \`done Team sprint planning\``,
-        `• Manager report: \`report\` or \`work\``,
-        `• Today's spend: \`today\` or \`ledger\``,
-        `• Open Hub: \`menu\` or \`hub\``,
+        `• Today ledger: \`today\` or \`ledger\``,
+        `• Main menu: \`menu\` or \`hub\``,
         ``,
-        `🤖 *AI Financial & Work Copilot*`,
-        `• \`/ask <question>\` or \`/ai <question>\` — Ask questions about your money, budget, or tasks!`,
-        `• Ask naturally: *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*, or *"What did I work on today?"*`,
-        `• Bilingual: Fully supports English and Khmer (អក្សរខ្មែរ)!`,
+        `✨ *AI Copilot (Khmer & English)*`,
+        `• \`/ask <question>\` or \`/ai <question>\``,
+        `• Ask: *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*`,
         ``,
-        `⏰ *General Reminders & Alarms*`,
-        `• \`remind 17:30 <task>\` — Set daily reminder at exact 24h time`,
-        `• \`remind 5:30pm <task>\` — Set reminder using AM/PM`,
-        `• \`remind in 15m <task>\` — Quick one-time timer in minutes/hours`,
-        `• /reminders — Open Reminders Workspace to toggle, change times, or delete`,
+        `⏰ *Reminders & Alarms*`,
+        `• \`remind 17:30 <task>\` — Daily recurring reminder`,
+        `• \`remind in 15m <task>\` — Quick one-time timer`,
+        `• \`/reminders\` — Open Reminders Workspace`,
         ``,
-        `💼 *Work Journal & Monthly Manager Reports*`,
-        `• \`done <task>\` — Record an accomplishment instantly`,
-        `• /report — Generate this month's manager report`,
-        `• /report last — Generate last month's report`,
-        `• /report export — Export report as downloadable .txt file`,
-        `• /work — Open your Work Journal & today's tasks`,
+        `⚡ *Work Log & Monthly Manager Reports*`,
+        `• \`done <task>\` — Record accomplishment instantly`,
+        `• \`/report\` — Generate monthly manager report`,
+        `• \`/report export\` — Download report as .txt file`,
+        `• \`/work\` — View today's accomplishments`,
         ``,
-        `🧾 *Smart Bank Slip & Receipt Scanner (OCR)*`,
-        `• Send or forward any ABA Bank, Bakong, or KHQR screenshot to record automatically!`,
-        `• Send restaurant/supermarket receipt photos to parse totals & categories`,
-        `• /scan — Scanner guide & tips`,
+        `🧾 *Smart Receipt & Slip Scanner*`,
+        `• Send or forward ABA Bank, Bakong, or KHQR slips to record automatically!`,
+        `• Send paper receipt photos to extract itemized totals`,
         ``,
-        `💰 *Cashflow & Finance*`,
-        `• /add 5 usd coffee or /income 500 usd salary`,
-        `• /today — Today's transactions list`,
-        `• /summary — Spending stats & category breakdown`,
-        `• /week — 7-day visual spending trend & chart`,
-        `• /settings — Currency toggle & monthly budget`
+        `💳 *Finance & Cashflow*`,
+        `• \`/add 5 usd coffee\` or \`/income 500 usd salary\``,
+        `• \`/today\` — Today's transactions`,
+        `• \`/summary\` — Spending statistics & breakdown`,
+        `• \`/settings\` — Currency toggle & budget limit`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -3873,11 +3876,11 @@ async function sendHelpMessage(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💼 Work Journal", callback_data: "work_hub" },
-                    { text: "💰 Money & Budget", callback_data: "finance_hub" }
+                    { text: "💳 Finance", callback_data: "finance_hub" },
+                    { text: "⚡ Work Log", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" },
+                    { text: "⏰ Reminders", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -3949,15 +3952,15 @@ async function processDueReminders(env) {
 
 async function sendLunchboxNotification(env, chatId, reminderId = 0) {
     const text = [
-        `🍱🔔 *DON'T FORGET YOUR LUNCH BOX!*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Hey there! Wrapping up your work day? 🎒`,
+        `🎒 *Departure Reminder*`,
+        `────────────────────`,
+        `Wrapping up your work day? 🥪`,
         ``,
-        `Friendly reminder: Don't leave your *lunch box* behind in the office fridge or pantry! Grab it before you leave! 🥪✨`,
+        `Don't forget to grab your *lunch box* from the fridge or pantry before you head out!`,
         ``,
-        `💼 *End of Day Habit:* Take 10 seconds to log what you accomplished today: \`/done <task>\` so your monthly manager report is always ready!`,
+        `💡 *Habit:* Take 10 seconds to log today's accomplishments: \`/done <task>\``,
         ``,
-        `Have a great evening and safe travels home! 🏡`
+        `_Safe travels home! ✨_`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -3965,11 +3968,11 @@ async function sendLunchboxNotification(env, chatId, reminderId = 0) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "✅ Got it, Packed!", callback_data: `lb_ack:${reminderId}` },
+                    { text: "✓ Packed & Ready", callback_data: `lb_ack:${reminderId}` },
                     { text: "⏰ Snooze 15m", callback_data: `lb_snooze:${reminderId}` }
                 ],
                 [
-                    { text: "💼 Log Work Done", callback_data: "work_log_prompt" },
+                    { text: "⚡ Log Work", callback_data: "work_log_prompt" },
                     { text: "📋 Today's Work", callback_data: "work_today" }
                 ]
             ]
@@ -3979,9 +3982,9 @@ async function sendLunchboxNotification(env, chatId, reminderId = 0) {
 
 async function sendExpenseLogNotification(env, chatId) {
     const text = [
-        `💰🔔 *DAILY EXPENSE CHECK-IN*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Did you spend or earn anything today? 📝`,
+        `💳 *Daily Check-in*`,
+        `────────────────────`,
+        `Did you spend or earn anything today?`,
         ``,
         `Take 10 seconds to record your day's transactions and keep your cashflow on track! 📊`
     ].join("\n");
@@ -3991,8 +3994,8 @@ async function sendExpenseLogNotification(env, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "➕ Add Expense", callback_data: "add_expense" },
-                    { text: "📥 Add Income", callback_data: "add_income" }
+                    { text: "＋ Expense", callback_data: "add_expense" },
+                    { text: "＋ Income", callback_data: "add_income" }
                 ],
                 [
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" },
@@ -4005,18 +4008,18 @@ async function sendExpenseLogNotification(env, chatId) {
 
 async function sendCustomReminderNotification(env, chatId, title, time, reminderId) {
     const text = [
-        `⏰🔔 *REMINDER ALERT*`,
-        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏰ *Reminder Alert*`,
+        `────────────────────`,
         `📌 *${title}*`,
         ``,
-        `⏰ Time: *${time}* (Phnom Penh)`
+        `● *Time:* \`${time}\``
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
-                [{ text: "✅ Done", callback_data: `remind_done:${reminderId}` }]
+                [{ text: "✓ Done", callback_data: `remind_done:${reminderId}` }]
             ]
         }
     });
@@ -4488,12 +4491,12 @@ async function sendWeeklyReportForUser(env, chatId, userId, startDate, endDate, 
     const chartUrl = generatePieChartUrl(catResults, totalSpentStr);
 
     const textLines = [
-        `📊 *${titleLabel.toUpperCase()}*`,
+        `📊 *${titleLabel}*`,
         `📅 \`${startDate}\` to \`${endDate}\``,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `💰 *Total Spent:* \`${formatAmount(total, displayCurrency)}\``,
-        `🧮 *Average / Entry:* \`${formatAmount(average, displayCurrency)}\``,
-        `🛍️ *Activity:* \`${count} entries\``,
+        `────────────────────`,
+        `● *Total Spent:*  \`${formatAmount(total, displayCurrency)}\``,
+        `● *Average / Tx:* \`${formatAmount(average, displayCurrency)}\``,
+        `● *Activity:*     \`${count} entries\``,
     ];
 
     if (biggest) {
@@ -4501,7 +4504,7 @@ async function sendWeeklyReportForUser(env, chatId, userId, startDate, endDate, 
         const suffix = biggest.currency === "KHR" ? " ៛" : "";
         const amt = biggest.currency === "USD" ? biggest.amount : formatMoney(biggest.amount);
         const icon = getCategoryIcon(biggest.category, "expense");
-        let maxStr = `🔥 *Biggest Single Spend:* \`${symbol}${amt}${suffix}\` on ${icon} *${capitalize(biggest.category)}*`;
+        let maxStr = `● *Biggest Spend:* \`${symbol}${amt}${suffix}\` (${icon} ${capitalize(biggest.category)})`;
         if (biggest.currency === "USD") {
             maxStr += ` (~${formatMoney(biggest.amount * EXCHANGE_RATE)} ៛)`;
         } else {
@@ -4511,7 +4514,7 @@ async function sendWeeklyReportForUser(env, chatId, userId, startDate, endDate, 
     }
 
     if (catResults.length > 0) {
-        textLines.push(``, `🏷️ *Category Breakdown:*`);
+        textLines.push(`────────────────────`, `🏷️ *Category Breakdown:*`);
         catResults.forEach((cat) => {
             const percent = total > 0 ? Math.round((cat.total / total) * 100) : 0;
             const bar = generateTextProgressBar(percent);
