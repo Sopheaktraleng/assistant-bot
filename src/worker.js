@@ -634,6 +634,7 @@ async function handleCallback(callback, env, origin) {
     const data = callback.data || "";
     const chatId = callback.message?.chat?.id;
     const userId = String(callback.from?.id || chatId);
+    const messageId = callback.message?.message_id;
 
     await answerCallback(env, callback.id);
 
@@ -641,38 +642,38 @@ async function handleCallback(callback, env, origin) {
 
     // --- Main Hub, Finance Hub & Settings ---
     if (data === "menu" || data === "hub") {
-        await sendMainHub(env, chatId, userId, callback.from, origin);
+        await sendMainHub(env, chatId, userId, callback.from, origin, messageId);
         return;
     }
 
     if (data === "finance_hub") {
-        await sendFinanceHub(env, chatId, userId);
+        await sendFinanceHub(env, chatId, userId, messageId);
         return;
     }
 
     // --- Work Log & Reports Callbacks ---
     if (data === "work_hub") {
-        await sendWorkHub(env, chatId, userId, callback.from);
+        await sendWorkHub(env, chatId, userId, callback.from, messageId);
         return;
     }
 
     if (data === "work_today") {
-        await sendTodayWork(env, chatId, userId);
+        await sendTodayWork(env, chatId, userId, callback.from, messageId);
         return;
     }
 
     if (data === "work_week") {
-        await sendWorkReport(env, chatId, userId, "this_week", callback.from);
+        await sendWorkReport(env, chatId, userId, "this_week", callback.from, messageId);
         return;
     }
 
     if (data === "work_report_this") {
-        await sendWorkReport(env, chatId, userId, "this_month", callback.from);
+        await sendWorkReport(env, chatId, userId, "this_month", callback.from, messageId);
         return;
     }
 
     if (data === "work_report_last") {
-        await sendWorkReport(env, chatId, userId, "last_month", callback.from);
+        await sendWorkReport(env, chatId, userId, "last_month", callback.from, messageId);
         return;
     }
 
@@ -687,7 +688,7 @@ async function handleCallback(callback, env, origin) {
     }
 
     if (data === "work_delete_menu") {
-        await sendWorkDeletePicker(env, chatId, userId);
+        await sendWorkDeletePicker(env, chatId, userId, messageId);
         return;
     }
 
@@ -695,14 +696,15 @@ async function handleCallback(callback, env, origin) {
         const id = parseInt(data.slice(9), 10);
         await env.DB.prepare("DELETE FROM work_logs WHERE id = ? AND user_id = ?").bind(id, userId).run();
         await answerCallback(env, callback.id, { text: "🗑️ Task deleted." });
-        await sendWorkHub(env, chatId, userId, callback.from);
+        await sendWorkHub(env, chatId, userId, callback.from, messageId);
         return;
     }
 
     if (data === "work_log_prompt") {
-        await sendMessage(
+        await safeEditOrSendMessage(
             env,
             chatId,
+            messageId,
             `💼 *HOW TO LOG WORK TASKS*\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +
             `Whenever you finish a task, meeting, or bugfix, type:\n` +
@@ -711,23 +713,30 @@ async function handleCallback(callback, env, origin) {
             `• \`/done Weekly team sprint planning meeting\`\n` +
             `• \`/done [Bugfix] Fixed mobile crash on iOS 18\`\n\n` +
             `At the end of the month, type \`/report\` or tap *This Month's Report* to generate your complete monthly manager accomplishment report ready to copy & paste! 🚀`,
-            { parse_mode: "Markdown" }
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "⬅️ Back to Work Hub", callback_data: "work_hub" }]
+                    ]
+                }
+            }
         );
         return;
     }
 
     if (data === "copilot_help") {
-        await handleAiCopilotQuery(env, chatId, userId, "", callback.from);
+        await handleAiCopilotQuery(env, chatId, userId, "", callback.from, messageId);
         return;
     }
 
     if (data === "help") {
-        await sendHelpMessage(env, chatId);
+        await sendHelpMessage(env, chatId, messageId);
         return;
     }
 
     if (data === "settings") {
-        await sendSettingsMenu(env, chatId, userId);
+        await sendSettingsMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -736,15 +745,16 @@ async function handleCallback(callback, env, origin) {
         const newCurrency = currentCurrency === "USD" ? "KHR" : "USD";
         await setDisplayCurrency(env.DB, userId, newCurrency);
         const flag = newCurrency === "USD" ? "🇺🇸" : "🇰🇭";
-        await sendMessage(env, chatId, `${flag} Display switched to *${newCurrency}*!`, { parse_mode: "Markdown" });
-        await sendSettingsMenu(env, chatId, userId);
+        await answerCallback(env, callback.id, { text: `${flag} Display switched to ${newCurrency}!` });
+        await sendSettingsMenu(env, chatId, userId, messageId);
         return;
     }
 
     if (data === "budget_help") {
-        await sendMessage(
+        await safeEditOrSendMessage(
             env,
             chatId,
+            messageId,
             `🎯 *HOW TO SET YOUR MONTHLY BUDGET*\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +
             `Use the command:\n` +
@@ -752,31 +762,38 @@ async function handleCallback(callback, env, origin) {
             `• \`/budget 1200000 khr\` (Sets limit in Riel)\n` +
             `• \`/budget 0\` (Disables budget tracking)\n\n` +
             `You will receive visual progress alerts whenever you log an expense!`,
-            { parse_mode: "Markdown" }
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "⬅️ Back to Settings", callback_data: "settings" }]
+                    ]
+                }
+            }
         );
         return;
     }
 
     // --- Adding Transactions ---
     if (data === "add_expense") {
-        await sendCategoryPicker(env, chatId, "expense");
+        await sendCategoryPicker(env, chatId, "expense", messageId);
         return;
     }
 
     if (data === "add_income") {
-        await sendCategoryPicker(env, chatId, "income");
+        await sendCategoryPicker(env, chatId, "income", messageId);
         return;
     }
 
     if (data.startsWith("cat_exp:")) {
         const category = data.slice(8);
-        await sendAmountPicker(env, chatId, category, "expense", userId);
+        await sendAmountPicker(env, chatId, category, "expense", userId, messageId);
         return;
     }
 
     if (data.startsWith("cat_inc:")) {
         const category = data.slice(8);
-        await sendAmountPicker(env, chatId, category, "income", userId);
+        await sendAmountPicker(env, chatId, category, "income", userId, messageId);
         return;
     }
 
@@ -785,7 +802,7 @@ async function handleCallback(callback, env, origin) {
         const amount = Number(amountText);
         const displayCurrency = await getDisplayCurrency(env.DB, userId);
         await addExpenseRecord(env.DB, userId, amount, category, "expense", displayCurrency);
-        await sendTransactionReceipt(env, chatId, userId, "expense", amount, displayCurrency, category);
+        await sendTransactionReceipt(env, chatId, userId, "expense", amount, displayCurrency, category, messageId);
         return;
     }
 
@@ -794,23 +811,37 @@ async function handleCallback(callback, env, origin) {
         const amount = Number(amountText);
         const displayCurrency = await getDisplayCurrency(env.DB, userId);
         await addExpenseRecord(env.DB, userId, amount, category, "income", displayCurrency);
-        await sendTransactionReceipt(env, chatId, userId, "income", amount, displayCurrency, category);
+        await sendTransactionReceipt(env, chatId, userId, "income", amount, displayCurrency, category, messageId);
         return;
     }
 
     if (data === "custom_add") {
-        await sendMessage(env, chatId, "✏️ *Custom Expense:*\nType: `/add 5 usd lunch` or `/add 15000 food`", { parse_mode: "Markdown" });
+        await safeEditOrSendMessage(env, chatId, messageId, "✏️ *Custom Expense:*\nType: `/add 5 usd lunch` or `/add 15000 food`", {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "⬅️ Back to Categories", callback_data: "add_expense" }]
+                ]
+            }
+        });
         return;
     }
 
     if (data === "custom_inc") {
-        await sendMessage(env, chatId, "✏️ *Custom Income:*\nType: `/income 500 usd salary` or `/income 200000 freelance`", { parse_mode: "Markdown" });
+        await safeEditOrSendMessage(env, chatId, messageId, "✏️ *Custom Income:*\nType: `/income 500 usd salary` or `/income 200000 freelance`", {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "⬅️ Back to Categories", callback_data: "add_income" }]
+                ]
+            }
+        });
         return;
     }
 
     // --- Lunch Box Alarm Callbacks ---
     if (data === "lunchbox") {
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendLunchboxMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -834,7 +865,7 @@ async function handleCallback(callback, env, origin) {
 
         const stateTxt = active ? "🟢 Lunch box alarm enabled (17:30 Mon-Fri)!" : "🔴 Lunch box alarm disabled.";
         await answerCallback(env, callback.id, { text: stateTxt });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendLunchboxMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -857,7 +888,7 @@ async function handleCallback(callback, env, origin) {
         }
 
         await answerCallback(env, callback.id, { text: `⏰ Lunch box reminder set to ${newTime}!` });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendLunchboxMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -881,7 +912,7 @@ async function handleCallback(callback, env, origin) {
 
         const freqLabel = newFreq === "weekdays" ? "Weekdays only (Mon–Fri)" : "Everyday";
         await answerCallback(env, callback.id, { text: `🗓️ Schedule updated to: ${freqLabel}` });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendLunchboxMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -944,12 +975,12 @@ async function handleCallback(callback, env, origin) {
 
     // --- General Reminders Callbacks ---
     if (data === "reminders") {
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
     if (data === "remind_prompt_add") {
-        await sendPromptAddReminder(env, chatId);
+        await sendPromptAddReminder(env, chatId, messageId);
         return;
     }
 
@@ -970,8 +1001,8 @@ async function handleCallback(callback, env, origin) {
             `).bind(userId, String(chatId)).run();
         }
 
-        await answerCallback(env, callback.id, { text: "🍱 Lunchbox alarm enabled (17:30 Mon–Fri)!" });
-        await sendRemindersMenu(env, chatId, userId);
+        await answerCallback(env, callback.id, { text: "🎒 Departure preset enabled (17:30 Mon–Fri)!" });
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -990,13 +1021,13 @@ async function handleCallback(callback, env, origin) {
             const statusTxt = newActive ? `🟢 "${existing.title}" is now ON!` : `⚪ "${existing.title}" is now OFF.`;
             await answerCallback(env, callback.id, { text: statusTxt });
         }
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
     if (data.startsWith("remind_time_menu:")) {
         const id = parseInt(data.slice(17), 10);
-        await sendReminderTimeMenu(env, chatId, userId, id);
+        await sendReminderTimeMenu(env, chatId, userId, id, messageId);
         return;
     }
 
@@ -1010,7 +1041,7 @@ async function handleCallback(callback, env, origin) {
         ).bind(newTime, String(chatId), id, userId).run();
 
         await answerCallback(env, callback.id, { text: `⏰ Time updated to ${newTime}!` });
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -1033,7 +1064,7 @@ async function handleCallback(callback, env, origin) {
         ).bind(targetTimeStr, String(chatId), id, userId).run();
 
         await answerCallback(env, callback.id, { text: `⏱️ Set to ${targetTimeStr} (in ${mins}m)!` });
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -1048,7 +1079,7 @@ async function handleCallback(callback, env, origin) {
 
         const label = newFreq === "weekdays" ? "Mon–Fri" : newFreq === "daily" ? "Daily" : "Once";
         await answerCallback(env, callback.id, { text: `🗓️ Schedule: ${label}` });
-        await sendReminderTimeMenu(env, chatId, userId, id);
+        await sendReminderTimeMenu(env, chatId, userId, id, messageId);
         return;
     }
 
@@ -1079,7 +1110,7 @@ async function handleCallback(callback, env, origin) {
 
         const stateTxt = newActive ? "🟢 Daily expense reminder ENABLED (21:00)!" : "🔴 Daily expense reminder DISABLED.";
         await answerCallback(env, callback.id, { text: stateTxt });
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -1087,7 +1118,7 @@ async function handleCallback(callback, env, origin) {
         const id = parseInt(data.slice(11), 10);
         await env.DB.prepare("DELETE FROM reminders WHERE id = ? AND user_id = ?").bind(id, userId).run();
         await answerCallback(env, callback.id, { text: "🗑️ Reminder deleted." });
-        await sendRemindersMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -1150,13 +1181,13 @@ async function handleCallback(callback, env, origin) {
     }
 
     if (data === "remind_help") {
-        await sendPromptAddReminder(env, chatId);
+        await sendPromptAddReminder(env, chatId, messageId);
         return;
     }
 
     // --- Ledger & Summaries Callbacks ---
     if (data === "view_transactions") {
-        await sendTransactions(env, chatId, userId);
+        await sendTransactions(env, chatId, userId, messageId);
         return;
     }
 
@@ -1167,23 +1198,23 @@ async function handleCallback(callback, env, origin) {
     }
 
     if (data === "summary_today") {
-        await sendSummary(env, chatId, userId, "today");
+        await sendSummary(env, chatId, userId, "today", messageId);
         return;
     }
 
     if (data === "summary_month") {
-        await sendSummary(env, chatId, userId, "month");
+        await sendSummary(env, chatId, userId, "month", messageId);
         return;
     }
 
     // --- Clear Data Callbacks ---
     if (data === "clear_data") {
-        await askClearConfirmation(env, chatId);
+        await askClearConfirmation(env, chatId, messageId);
         return;
     }
 
     if (data === "clear_today_warn") {
-        await sendMessage(env, chatId, "⚠️ Are you sure you want to clear today's expenses? This action cannot be undone.", {
+        await safeEditOrSendMessage(env, chatId, messageId, "⚠️ Are you sure you want to clear today's expenses? This action cannot be undone.", {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: "✅ Yes, clear today", callback_data: "confirm_clear_today" }],
@@ -1200,7 +1231,13 @@ async function handleCallback(callback, env, origin) {
         const count = countRow?.count || 0;
 
         if (count === 0) {
-            await sendMessage(env, chatId, "You don't have any recorded transactions to delete.");
+            await safeEditOrSendMessage(env, chatId, messageId, "You don't have any recorded transactions to delete.", {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                    ]
+                }
+            });
             return;
         }
 
@@ -1219,7 +1256,7 @@ async function handleCallback(callback, env, origin) {
             `Do you wish to proceed?`
         ].join("\n");
 
-        await sendMessage(env, chatId, warningMsg, {
+        await safeEditOrSendMessage(env, chatId, messageId, warningMsg, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
@@ -1233,8 +1270,8 @@ async function handleCallback(callback, env, origin) {
 
     if (data === "confirm_clear" || data === "confirm_clear_today") {
         await clearToday(env.DB, userId);
-        await sendMessage(env, chatId, "✅ Today's expenses have been cleared.");
-        await sendMainMenu(env, chatId, userId, callback.from, origin);
+        await answerCallback(env, callback.id, { text: "✅ Today's expenses cleared!" });
+        await sendMainMenu(env, chatId, userId, callback.from, origin, messageId);
         return;
     }
 
@@ -1253,13 +1290,19 @@ async function handleCallback(callback, env, origin) {
     }
 
     if (data === "cancel_clear") {
-        await sendMessage(env, chatId, "Clear cancelled. Your data remains safe.");
+        await safeEditOrSendMessage(env, chatId, messageId, "Clear cancelled. Your data remains safe.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                ]
+            }
+        });
         return;
     }
 
     // --- Bank Slip / Receipt Scanner Callbacks ---
     if (data === "scan_prompt") {
-        await sendScanHelp(env, chatId);
+        await sendScanHelp(env, chatId, messageId);
         return;
     }
 
@@ -1803,7 +1846,7 @@ async function askAiCopilot(env, userQuery, context) {
     return null;
 }
 
-async function handleAiCopilotQuery(env, chatId, userId, query, from) {
+async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId = null) {
     await ensureTables(env.DB);
     const cleanQuery = (query || "").trim();
 
@@ -1826,7 +1869,7 @@ async function handleAiCopilotQuery(env, chatId, userId, query, from) {
             `Just type your question directly in the chat, or use \`/ask <your question>\`!`
         ].join("\n");
 
-        await sendMessage(env, chatId, text, {
+        await safeEditOrSendMessage(env, chatId, messageId, text, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
@@ -2047,7 +2090,7 @@ async function renderPendingScanCard(env, chatId, scanOrId, messageId) {
     });
 }
 
-async function sendScanHelp(env, chatId) {
+async function sendScanHelp(env, chatId, messageId = null) {
     const text = [
         `📸 *Smart Receipt & Bank Slip Scanner*`,
         `━━━━━━━━━━━━━━━━━━━━`,
@@ -2065,7 +2108,7 @@ async function sendScanHelp(env, chatId) {
         `3. Tap *[✅ Confirm]* to record it to your cashflow!`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -2403,7 +2446,7 @@ async function handleLunchboxCommand(env, chatId, userId, text) {
     await sendRemindersMenu(env, chatId, userId);
 }
 
-async function sendPromptAddReminder(env, chatId) {
+async function sendPromptAddReminder(env, chatId, messageId = null) {
     const text = [
         `⏰ *SET A NEW REMINDER*`,
         `━━━━━━━━━━━━━━━━━━━━`,
@@ -2423,7 +2466,7 @@ async function sendPromptAddReminder(env, chatId) {
         `Or choose a quick preset below:`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -2709,7 +2752,7 @@ async function addTransactionFromCommand(env, chatId, userId, text) {
 // Personal Assistant Hub & Modular Workspace Renderers
 // ---------------------------------------------------------------------------
 
-async function sendMainHub(env, chatId, userId, from, origin) {
+async function sendMainHub(env, chatId, userId, from, origin, messageId = null) {
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "Friend";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
@@ -2747,7 +2790,7 @@ async function sendMainHub(env, chatId, userId, from, origin) {
 
     const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -2771,11 +2814,11 @@ async function sendMainHub(env, chatId, userId, from, origin) {
     });
 }
 
-async function sendMainMenu(env, chatId, userId, from, origin) {
-    return sendMainHub(env, chatId, userId, from, origin);
+async function sendMainMenu(env, chatId, userId, from, origin, messageId = null) {
+    return sendMainHub(env, chatId, userId, from, origin, messageId);
 }
 
-async function sendFinanceHub(env, chatId, userId) {
+async function sendFinanceHub(env, chatId, userId, messageId = null) {
     await ensureTables(env.DB);
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const todaySummary = await getFinancialSummary(env.DB, userId, "today");
@@ -2791,7 +2834,7 @@ async function sendFinanceHub(env, chatId, userId) {
         `💡 _Tip: Send an ABA / KHQR slip screenshot or type \`5 coffee\`!_`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -2819,7 +2862,7 @@ async function sendFinanceHub(env, chatId, userId) {
 // Work Journal & Manager Accomplishment Reports Workspace
 // ---------------------------------------------------------------------------
 
-async function sendWorkHub(env, chatId, userId, from) {
+async function sendWorkHub(env, chatId, userId, from, messageId = null) {
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "Friend";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
@@ -2852,7 +2895,7 @@ async function sendWorkHub(env, chatId, userId, from) {
         `💡 _Type \`done <task>\` to log accomplishment._`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -2872,11 +2915,11 @@ async function sendWorkHub(env, chatId, userId, from) {
     });
 }
 
-async function sendTodayWork(env, chatId, userId, from) {
-    return sendWorkHub(env, chatId, userId, from);
+async function sendTodayWork(env, chatId, userId, from, messageId = null) {
+    return sendWorkHub(env, chatId, userId, from, messageId);
 }
 
-async function sendWorkReport(env, chatId, userId, period = "this_month", from) {
+async function sendWorkReport(env, chatId, userId, period = "this_month", from, messageId = null) {
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "You";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "You";
@@ -2932,7 +2975,7 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from) 
             `Example: \`/done Completed API migration for auth service\``
         ].join("\n");
 
-        await sendMessage(env, chatId, text, {
+        await safeEditOrSendMessage(env, chatId, messageId, text, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
@@ -3035,7 +3078,7 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from) 
         return;
     }
 
-    await sendMessage(env, chatId, fullMessage, {
+    await safeEditOrSendMessage(env, chatId, messageId, fullMessage, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3174,7 +3217,7 @@ async function sendWorkReportFile(env, chatId, userId, period = "this_month", fr
     }
 }
 
-async function sendWorkDeletePicker(env, chatId, userId) {
+async function sendWorkDeletePicker(env, chatId, userId, messageId = null) {
     await ensureTables(env.DB);
     const { results } = await env.DB.prepare(
         "SELECT id, date, content, category FROM work_logs WHERE user_id = ? ORDER BY id DESC LIMIT 5"
@@ -3182,7 +3225,14 @@ async function sendWorkDeletePicker(env, chatId, userId) {
 
     const logs = results || [];
     if (logs.length === 0) {
-        await sendMessage(env, chatId, "No recent tasks found to delete.");
+        await safeEditOrSendMessage(env, chatId, messageId, "No recent tasks found to delete.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "💼 Back to Work Journal", callback_data: "work_hub" }],
+                    [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                ]
+            }
+        });
         return;
     }
 
@@ -3198,7 +3248,7 @@ async function sendWorkDeletePicker(env, chatId, userId) {
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
-    await sendMessage(env, chatId, [
+    await safeEditOrSendMessage(env, chatId, messageId, [
         `🗑️ *DELETE RECENT TASK*`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `Select an accomplishment below to remove from your log:`
@@ -3208,11 +3258,11 @@ async function sendWorkDeletePicker(env, chatId, userId) {
     });
 }
 
-async function sendLunchboxMenu(env, chatId, userId) {
-    return sendRemindersMenu(env, chatId, userId);
+async function sendLunchboxMenu(env, chatId, userId, messageId = null) {
+    return sendRemindersMenu(env, chatId, userId, messageId);
 }
 
-async function sendRemindersMenu(env, chatId, userId) {
+async function sendRemindersMenu(env, chatId, userId, messageId = null) {
     await ensureTables(env.DB);
     const { results } = await env.DB.prepare(
         "SELECT id, title, reminder_time, frequency, type, is_active FROM reminders WHERE user_id = ? ORDER BY id ASC"
@@ -3264,7 +3314,7 @@ async function sendRemindersMenu(env, chatId, userId) {
         { text: "🏠 Main Hub", callback_data: "hub" }
     ]);
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: buttons
@@ -3272,15 +3322,15 @@ async function sendRemindersMenu(env, chatId, userId) {
     });
 }
 
-async function sendReminderTimeMenu(env, chatId, userId, reminderId) {
+async function sendReminderTimeMenu(env, chatId, userId, reminderId, messageId = null) {
     await ensureTables(env.DB);
     const r = await env.DB.prepare(
         "SELECT id, title, reminder_time, frequency, is_active FROM reminders WHERE id = ? AND user_id = ?"
     ).bind(reminderId, userId).first();
 
     if (!r) {
-        await sendMessage(env, chatId, "⚠️ Reminder not found.");
-        return sendRemindersMenu(env, chatId, userId);
+        await safeEditOrSendMessage(env, chatId, messageId, "⚠️ Reminder not found.");
+        return sendRemindersMenu(env, chatId, userId, messageId);
     }
 
     const freqLabel = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
@@ -3324,13 +3374,13 @@ async function sendReminderTimeMenu(env, chatId, userId, reminderId) {
         ]
     ];
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons }
     });
 }
 
-async function sendSettingsMenu(env, chatId, userId) {
+async function sendSettingsMenu(env, chatId, userId, messageId = null) {
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const settingsRow = await env.DB.prepare(
         "SELECT monthly_budget FROM user_settings WHERE user_id = ?"
@@ -3349,7 +3399,7 @@ async function sendSettingsMenu(env, chatId, userId) {
         `Configure preferences or manage your transaction records:`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3365,7 +3415,7 @@ async function sendSettingsMenu(env, chatId, userId) {
     });
 }
 
-async function sendCategoryPicker(env, chatId, type = "expense") {
+async function sendCategoryPicker(env, chatId, type = "expense", messageId = null) {
     const isIncome = type === "income";
     const title = isIncome ? "📥 *ADD NEW INCOME*" : "➕ *ADD NEW EXPENSE*";
     const prefix = isIncome ? "cat_inc:" : "cat_exp:";
@@ -3400,13 +3450,13 @@ async function sendCategoryPicker(env, chatId, type = "expense") {
         `\`${exampleCmd}\``
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: rows }
     });
 }
 
-async function sendAmountPicker(env, chatId, category, type = "expense", userId) {
+async function sendAmountPicker(env, chatId, category, type = "expense", userId, messageId = null) {
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const isIncome = type === "income";
     const icon = getCategoryIcon(category, type);
@@ -3439,7 +3489,10 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId)
 
     const backCb = isIncome ? "add_income" : "add_expense";
     rows.push([{ text: `✏️ Custom: ${isIncome ? "/income" : "/add"} <amount> ${category}`, callback_data: isIncome ? "custom_inc" : "custom_add" }]);
-    rows.push([{ text: "⬅️ Back to Categories", callback_data: backCb }]);
+    rows.push([
+        { text: "⬅️ Back to Categories", callback_data: backCb },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
 
     const text = [
         title,
@@ -3448,13 +3501,13 @@ async function sendAmountPicker(env, chatId, category, type = "expense", userId)
         `Choose an amount below:`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: rows }
     });
 }
 
-async function sendTransactionReceipt(env, chatId, userId, type, amount, currency, category) {
+async function sendTransactionReceipt(env, chatId, userId, type, amount, currency, category, messageId = null) {
     const isIncome = type === "income";
     const sign = isIncome ? "+" : "-";
     const symbol = currency === "USD" ? "$" : "";
@@ -3489,7 +3542,7 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
     const addAnotherCb = isIncome ? "add_income" : "add_expense";
     const addAnotherText = isIncome ? "📥 Add More" : "➕ Add Another";
 
-    await sendMessage(env, chatId, lines.join("\n"), {
+    await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3506,7 +3559,7 @@ async function sendTransactionReceipt(env, chatId, userId, type, amount, currenc
     });
 }
 
-async function sendTransactions(env, chatId, userId) {
+async function sendTransactions(env, chatId, userId, messageId = null) {
     const date = today();
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const { results } = await env.DB.prepare(
@@ -3516,7 +3569,7 @@ async function sendTransactions(env, chatId, userId) {
     .all();
 
     if (!results || !results.length) {
-        await sendMessage(env, chatId, [
+        await safeEditOrSendMessage(env, chatId, messageId, [
             `📜 *TODAY'S TRANSACTIONS*`,
             `📅 \`${date}\``,
             `━━━━━━━━━━━━━━━━━━━━`,
@@ -3572,7 +3625,7 @@ async function sendTransactions(env, chatId, userId) {
         `⚖️ *Net Today:* \`${formatAmount(netKhr, displayCurrency)}\``
     ].join("\n");
 
-    await sendMessage(env, chatId, message, {
+    await safeEditOrSendMessage(env, chatId, messageId, message, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3592,7 +3645,7 @@ async function sendTransactions(env, chatId, userId) {
     });
 }
 
-async function sendSummary(env, chatId, userId, period) {
+async function sendSummary(env, chatId, userId, period, messageId = null) {
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
     const stats = await getPeriodStats(env.DB, userId, period);
     const breakdown = await getCategoryRows(env.DB, userId, period, 5);
@@ -3626,7 +3679,7 @@ async function sendSummary(env, chatId, userId, period) {
 
     lines.push(`━━━━━━━━━━━━━━━━━━━━`);
 
-    await sendMessage(env, chatId, lines.join("\n"), {
+    await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3783,7 +3836,7 @@ async function getHistoryMessageData(db, userId, page = 1) {
     };
 }
 
-async function sendHelpMessage(env, chatId) {
+async function sendHelpMessage(env, chatId, messageId = null) {
     const text = [
         `💡 *PERSONAL ASSISTANT GUIDE*`,
         `━━━━━━━━━━━━━━━━━━━━`,
@@ -3827,7 +3880,7 @@ async function sendHelpMessage(env, chatId) {
         `• /settings — Currency toggle & monthly budget`
     ].join("\n");
 
-    await sendMessage(env, chatId, text, {
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
@@ -3985,8 +4038,8 @@ async function sendCustomReminderNotification(env, chatId, title, time, reminder
 // Helpers & Database Operations
 // ---------------------------------------------------------------------------
 
-async function askClearConfirmation(env, chatId) {
-    await sendMessage(env, chatId, "What would you like to clear?", {
+async function askClearConfirmation(env, chatId, messageId = null) {
+    await safeEditOrSendMessage(env, chatId, messageId, "What would you like to clear?", {
         reply_markup: {
             inline_keyboard: [
                 [{ text: "Today's expenses only", callback_data: "clear_today_warn" }],
