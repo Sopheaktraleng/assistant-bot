@@ -81,8 +81,8 @@ export default {
                 const monthSummary = await getFinancialSummary(env.DB, userId, "month");
                 const monthExpenseKhr = monthSummary?.totalExpenseInKhr || 0;
 
-                const lbRow = await env.DB.prepare(
-                    "SELECT id, reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND (type = 'lunchbox' OR is_active = 1) ORDER BY (CASE WHEN type = 'lunchbox' THEN 0 ELSE 1 END), id ASC LIMIT 1"
+                const activeReminder = await env.DB.prepare(
+                    "SELECT id, title, reminder_time, frequency, type, is_active FROM reminders WHERE user_id = ? AND is_active = 1 ORDER BY (CASE WHEN type = 'lunchbox' THEN 0 ELSE 1 END), id ASC LIMIT 1"
                 ).bind(userId).first();
 
                 return json({
@@ -92,7 +92,8 @@ export default {
                     recent: recentRows.results || [],
                     budgetKhr,
                     monthExpenseKhr,
-                    lunchboxReminder: lbRow || null
+                    activeReminder: activeReminder || null,
+                    lunchboxReminder: activeReminder || null
                 });
             }
 
@@ -252,6 +253,47 @@ async function ensureTables(db) {
         `).run();
     } catch (e) {
         console.error("ensureTables work_logs error:", e);
+    }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL CHECK (amount > 0),
+                category TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'expense',
+                currency TEXT NOT NULL DEFAULT 'KHR',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables expenses error:", e);
+    }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id TEXT PRIMARY KEY,
+                display_currency TEXT NOT NULL DEFAULT 'KHR',
+                monthly_budget REAL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables user_settings error:", e);
+    }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS processed_updates (
+                update_id INTEGER PRIMARY KEY,
+                processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables processed_updates error:", e);
     }
 
     try {
@@ -471,7 +513,17 @@ async function handleMessage(message, env, origin) {
     if (text === "/total") {
         const total = await getTotalExpenses(env.DB, userId);
         const displayCurrency = await getDisplayCurrency(env.DB, userId);
-        await sendMessage(env, chatId, `💰 Total all-time expenses: \`${formatAmount(total, displayCurrency)}\``, { parse_mode: "Markdown" });
+        await sendMessage(env, chatId, `💰 Total all-time expenses: \`${formatAmount(total, displayCurrency)}\``, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
         return;
     }
 
@@ -845,82 +897,7 @@ async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data.startsWith("lb_toggle:")) {
-        const active = parseInt(data.slice(10), 10) === 1 ? 1 : 0;
-        await ensureTables(env.DB);
-        const existing = await env.DB.prepare(
-            "SELECT id FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-        ).bind(userId).first();
 
-        if (existing) {
-            await env.DB.prepare("UPDATE reminders SET is_active = ?, chat_id = ? WHERE id = ?")
-                .bind(active, String(chatId), existing.id)
-                .run();
-        } else {
-            await env.DB.prepare(`
-                INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Lunch Box Reminder', '17:30', 'weekdays', 'lunchbox', ?)
-            `).bind(userId, String(chatId), active).run();
-        }
-
-        const stateTxt = active ? "🟢 Lunch box alarm enabled (17:30 Mon-Fri)!" : "🔴 Lunch box alarm disabled.";
-        await answerCallback(env, callback.id, { text: stateTxt });
-        await sendLunchboxMenu(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data.startsWith("lb_time:")) {
-        const newTime = data.slice(8);
-        await ensureTables(env.DB);
-        const existing = await env.DB.prepare(
-            "SELECT id FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-        ).bind(userId).first();
-
-        if (existing) {
-            await env.DB.prepare("UPDATE reminders SET reminder_time = ?, is_active = 1, chat_id = ? WHERE id = ?")
-                .bind(newTime, String(chatId), existing.id)
-                .run();
-        } else {
-            await env.DB.prepare(`
-                INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Lunch Box Reminder', ?, 'weekdays', 'lunchbox', 1)
-            `).bind(userId, String(chatId), newTime).run();
-        }
-
-        await answerCallback(env, callback.id, { text: `⏰ Lunch box reminder set to ${newTime}!` });
-        await sendLunchboxMenu(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data.startsWith("lb_freq:")) {
-        const newFreq = data.slice(8); // 'weekdays' or 'daily'
-        await ensureTables(env.DB);
-        const existing = await env.DB.prepare(
-            "SELECT id FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-        ).bind(userId).first();
-
-        if (existing) {
-            await env.DB.prepare("UPDATE reminders SET frequency = ?, chat_id = ? WHERE id = ?")
-                .bind(newFreq, String(chatId), existing.id)
-                .run();
-        } else {
-            await env.DB.prepare(`
-                INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Lunch Box Reminder', '17:30', ?, 'lunchbox', 1)
-            `).bind(userId, String(chatId), newFreq).run();
-        }
-
-        const freqLabel = newFreq === "weekdays" ? "Weekdays only (Mon–Fri)" : "Everyday";
-        await answerCallback(env, callback.id, { text: `🗓️ Schedule updated to: ${freqLabel}` });
-        await sendLunchboxMenu(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data === "lb_test") {
-        await answerCallback(env, callback.id, { text: "🔔 Sending test lunch box reminder..." });
-        await sendLunchboxNotification(env, chatId);
-        return;
-    }
 
     if (data.startsWith("lb_ack")) {
         await answerCallback(env, callback.id, { text: "🎉 Great job! Have a safe trip home! 🏠" });
@@ -1956,7 +1933,18 @@ async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId 
         }
     }
 
-    await sendMessage(env, chatId, result.reply, { parse_mode: "Markdown" });
+    await sendMessage(env, chatId, result.reply, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" },
+                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                    { text: "💼 Work Hub", callback_data: "work_hub" }
+                ]
+            ]
+        }
+    });
 }
 
 function formatPendingScanText(scan) {
@@ -4541,22 +4529,9 @@ async function sendWeeklyReportForUser(env, chatId, userId, startDate, endDate, 
     };
 
     try {
-        const response = await fetch(
-            `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            }
-        );
-
-        if (!response.ok) {
-            const detail = await response.text();
-            console.error(`Telegram sendPhoto failed: ${response.status} ${detail}`);
-            await sendMessage(env, chatId, caption, { parse_mode: "Markdown" });
-        }
+        await telegram(env, "sendPhoto", payload);
     } catch (err) {
-        console.error("Error sending photo to Telegram:", err);
+        console.warn("Telegram sendPhoto failed, falling back to message:", err.message);
         await sendMessage(env, chatId, caption, { parse_mode: "Markdown" });
     }
 }

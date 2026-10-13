@@ -496,13 +496,13 @@ export default `<!DOCTYPE html>
                 <div class="hero-subvalue" id="balance-sub">0 ៛</div>
             </div>
 
-            <!-- Lunch Box Reminder Status Card (Shown if active) -->
+            <!-- Active Reminder Status Card (Shown if active) -->
             <div class="section-card" id="reminder-card" style="display: none; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.08); border-radius: 18px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 1.4rem;">🍱</span>
+                        <span id="reminder-icon" style="font-size: 1.4rem;">⏰</span>
                         <div>
-                            <div style="font-size: 0.85rem; font-weight: 700; color: #ffffff;">Lunch Box Reminder</div>
+                            <div id="reminder-title-txt" style="font-size: 0.85rem; font-weight: 700; color: #ffffff;">Active Reminder</div>
                             <div id="reminder-status-sub" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Active at 17:30 (Weekdays)</div>
                         </div>
                     </div>
@@ -692,12 +692,19 @@ export default `<!DOCTYPE html>
             const incomeKhr = data.summary.totalIncomeInKhr;
             const expenseKhr = data.summary.totalExpenseInKhr;
 
-            // Lunch Box Reminder Status Render
+            // Active Reminder Status Render
             const reminderCard = document.getElementById('reminder-card');
-            if (data.lunchboxReminder && data.lunchboxReminder.is_active) {
+            const reminder = data.activeReminder || data.lunchboxReminder;
+            if (reminder && reminder.is_active) {
                 reminderCard.style.display = 'block';
-                const freq = data.lunchboxReminder.frequency === 'weekdays' ? 'Weekdays (Mon–Fri)' : 'Everyday';
-                document.getElementById('reminder-status-sub').innerText = \`Scheduled at \${data.lunchboxReminder.reminder_time} (\${freq})\`;
+                const freq = reminder.frequency === 'weekdays' ? 'Weekdays (Mon–Fri)' : reminder.frequency === 'daily' ? 'Everyday' : 'Once';
+                const icon = reminder.type === 'lunchbox' ? '🎒' : reminder.type === 'expense_log' ? '💰' : '⏰';
+                const title = reminder.title || 'Active Reminder';
+                const iconEl = document.getElementById('reminder-icon');
+                if (iconEl) iconEl.innerText = icon;
+                const titleEl = document.getElementById('reminder-title-txt');
+                if (titleEl) titleEl.innerText = title;
+                document.getElementById('reminder-status-sub').innerText = \`Scheduled at \${reminder.reminder_time} (\${freq})\`;
             } else {
                 reminderCard.style.display = 'none';
             }
