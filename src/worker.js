@@ -335,6 +335,20 @@ async function handleMessage(message, env, origin) {
         return;
     }
 
+    // 0.5. 🤖 AI Financial & Work Copilot
+    if (
+        text.startsWith("/ask") || 
+        text.startsWith("/ai") || 
+        text.startsWith("/copilot") ||
+        text === "/ask" ||
+        text === "/ai" ||
+        text === "/copilot"
+    ) {
+        const query = text.replace(/^\/(ask|ai|copilot)(@\w+)?\s*/i, "").trim();
+        await handleAiCopilotQuery(env, chatId, userId, query, message.from);
+        return;
+    }
+
     // 1. Main Navigation & Workspaces
     if (text.startsWith("/start") || text === "/menu" || text.startsWith("/menu@") || text === "/hub" || text.startsWith("/hub@") || text === "/s" || text === "/m") {
         await sendMainHub(env, chatId, userId, message.from, origin);
@@ -588,11 +602,18 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 6. Friendly guidance if casual text doesn't match
+        // 6. Natural Language AI Copilot fallback (or friendly guidance if AI not configured)
+        if (env.GEMINI_API_KEY || env.AI) {
+            await handleAiCopilotQuery(env, chatId, userId, text, message.from);
+            return;
+        }
+
+        // Friendly guidance if casual text doesn't match and no AI is configured
         await sendMessage(
             env,
             chatId,
             `💡 *Quick Shortcuts:*\n` +
+            `• Ask AI: \`/ask <question>\` or type your question\n` +
             `• Scan slip: Send any ABA/Bakong/KHQR payment screenshot!\n` +
             `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\`\n` +
             `• Log work: \`done <task>\`\n` +
@@ -692,6 +713,11 @@ async function handleCallback(callback, env, origin) {
             `At the end of the month, type \`/report\` or tap *This Month's Report* to generate your complete monthly manager accomplishment report ready to copy & paste! 🚀`,
             { parse_mode: "Markdown" }
         );
+        return;
+    }
+
+    if (data === "copilot_help") {
+        await handleAiCopilotQuery(env, chatId, userId, "", callback.from);
         return;
     }
 
@@ -1514,6 +1540,380 @@ async function parseReceiptImage(env, base64Data, mimeType = "image/jpeg", capti
     }
 
     return null;
+}
+
+// ===========================================================================
+// 🤖 AI Financial & Work Copilot (Conversational Q&A & Assistant)
+// ===========================================================================
+
+async function buildAiUserContext(db, userId) {
+    const curDate = today();
+    const curTime = currentTime();
+    const displayCurrency = await getDisplayCurrency(db, userId);
+
+    const [
+        todaySummary,
+        monthSummary,
+        allSummary,
+        settingsRow,
+        monthCats,
+        todayCats,
+        recentExpenses,
+        todayTasks,
+        recentTasks,
+        activeReminders
+    ] = await Promise.all([
+        getFinancialSummary(db, userId, "today"),
+        getFinancialSummary(db, userId, "month"),
+        getFinancialSummary(db, userId, "all"),
+        db.prepare("SELECT monthly_budget FROM user_settings WHERE user_id = ?").bind(userId).first(),
+        getCategoryRows(db, userId, "month", 10),
+        getCategoryRows(db, userId, "today", 6),
+        db.prepare(
+            "SELECT date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 25"
+        ).bind(userId).all(),
+        db.prepare(
+            "SELECT time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY time ASC, id ASC"
+        ).bind(userId, curDate).all(),
+        db.prepare(
+            "SELECT date, time, content, category FROM work_logs WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 20"
+        ).bind(userId).all(),
+        db.prepare(
+            "SELECT title, reminder_time, frequency, type FROM reminders WHERE user_id = ? AND is_active = 1 ORDER BY reminder_time ASC"
+        ).bind(userId).all()
+    ]);
+
+    const budgetKhr = settingsRow?.monthly_budget || 0;
+    const spentMonthKhr = monthSummary?.totalExpenseInKhr || 0;
+    const remainingBudgetKhr = budgetKhr > 0 ? (budgetKhr - spentMonthKhr) : null;
+
+    return {
+        currentDate: curDate,
+        currentTime: curTime,
+        timezone: TIME_ZONE,
+        displayCurrency,
+        budget: budgetKhr > 0 ? {
+            limitUsd: Number((budgetKhr / EXCHANGE_RATE).toFixed(2)),
+            limitKhr: budgetKhr,
+            spentUsd: Number((spentMonthKhr / EXCHANGE_RATE).toFixed(2)),
+            spentKhr: spentMonthKhr,
+            remainingUsd: Number(((budgetKhr - spentMonthKhr) / EXCHANGE_RATE).toFixed(2)),
+            remainingKhr: remainingBudgetKhr,
+            percentUsed: Math.round((spentMonthKhr / budgetKhr) * 100)
+        } : null,
+        totals: {
+            allTimeNetBalanceUsd: Number(((allSummary?.balanceKhr || 0) / EXCHANGE_RATE).toFixed(2)),
+            allTimeNetBalanceKhr: allSummary?.balanceKhr || 0,
+            thisMonthExpenseUsd: Number(((monthSummary?.totalExpenseInKhr || 0) / EXCHANGE_RATE).toFixed(2)),
+            thisMonthExpenseKhr: monthSummary?.totalExpenseInKhr || 0,
+            thisMonthIncomeUsd: Number(((monthSummary?.totalIncomeInKhr || 0) / EXCHANGE_RATE).toFixed(2)),
+            thisMonthIncomeKhr: monthSummary?.totalIncomeInKhr || 0,
+            todayExpenseUsd: Number(((todaySummary?.totalExpenseInKhr || 0) / EXCHANGE_RATE).toFixed(2)),
+            todayExpenseKhr: todaySummary?.totalExpenseInKhr || 0,
+            todayIncomeUsd: Number(((todaySummary?.totalIncomeInKhr || 0) / EXCHANGE_RATE).toFixed(2)),
+            todayIncomeKhr: todaySummary?.totalIncomeInKhr || 0
+        },
+        topMonthCategories: (monthCats || []).map(c => ({
+            category: c.category,
+            totalUsd: Number((c.total / EXCHANGE_RATE).toFixed(2)),
+            totalKhr: c.total,
+            count: c.count
+        })),
+        recentTransactions: (recentExpenses?.results || []).map(r => ({
+            date: r.date,
+            type: r.type,
+            amount: r.amount,
+            currency: r.currency,
+            category: r.category
+        })),
+        todayWorkTasks: (todayTasks?.results || []).map(t => ({
+            time: t.time,
+            category: t.category,
+            task: t.content
+        })),
+        recentWorkTasks: (recentTasks?.results || []).map(t => ({
+            date: t.date,
+            time: t.time,
+            category: t.category,
+            task: t.content
+        })),
+        activeReminders: (activeReminders?.results || []).map(r => ({
+            title: r.title,
+            time: r.reminder_time,
+            frequency: r.frequency
+        }))
+    };
+}
+
+function buildCopilotPrompt(userQuery, context) {
+    return `You are the intelligent AI Personal Financial & Work Copilot for a Telegram assistant bot in Cambodia.
+Exchange rate: 1 USD = 4,000 KHR.
+Today's Date: ${context.currentDate}, Time: ${context.currentTime} (${context.timezone}).
+Preferred Display Currency: ${context.displayCurrency}.
+
+=== USER LIVE FINANCIAL & WORK DATA ===
+${JSON.stringify(context, null, 2)}
+=======================================
+
+User message: "${userQuery}"
+
+Instructions:
+1. Provide a direct, helpful, and natural response formatted for Telegram (use markdown: *bold*, \`code\`, bullet points, emojis).
+2. Use the live data above accurately. Mention amounts in both USD ($) and Cambodian Riel (៛) when helpful. Do NOT invent numbers that contradict the data.
+3. If the user asks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
+4. If the user explicitly asks to record an expense, log work, or set a reminder that is NOT already recorded, return an "action" object. Otherwise, set "action" to null.
+5. You MUST return ONLY valid JSON matching this schema:
+{
+  "reply": "Conversational markdown message to the user.",
+  "action": null | {
+    "type": "add_expense" | "add_income" | "add_work" | "add_reminder",
+    "amount": number (for expense/income),
+    "currency": "USD" | "KHR" (for expense/income),
+    "category": string (for expense/income/work),
+    "date": "YYYY-MM-DD" (optional, for expense/income),
+    "content": string (for work task),
+    "title": string (for reminder),
+    "time": "HH:mm" (24h format, for reminder),
+    "frequency": "daily" | "weekdays" | "once" (for reminder)
+  }
+}
+Return pure JSON only.`;
+}
+
+function parseCopilotResponse(rawText) {
+    if (!rawText) return null;
+    let clean = rawText.trim();
+    if (clean.startsWith("```json")) {
+        clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+    } else if (clean.startsWith("```")) {
+        clean = clean.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+
+    try {
+        const obj = JSON.parse(clean);
+        if (obj && typeof obj.reply === "string") {
+            return {
+                reply: obj.reply,
+                action: obj.action || null
+            };
+        }
+    } catch (e) {
+        const start = clean.indexOf("{");
+        const end = clean.lastIndexOf("}");
+        if (start !== -1 && end > start) {
+            try {
+                const subObj = JSON.parse(clean.substring(start, end + 1));
+                if (subObj && typeof subObj.reply === "string") {
+                    return {
+                        reply: subObj.reply,
+                        action: subObj.action || null
+                    };
+                }
+            } catch (e2) {}
+        }
+    }
+
+    if (clean && clean.length > 3) {
+        return {
+            reply: clean,
+            action: null
+        };
+    }
+
+    return null;
+}
+
+async function askAiCopilot(env, userQuery, context) {
+    const prompt = buildCopilotPrompt(userQuery, context);
+
+    if (env.GEMINI_API_KEY) {
+        const candidateModels = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-flash-latest"
+        ];
+
+        const requestBody = JSON.stringify({
+            contents: [
+                {
+                    parts: [{ text: prompt }]
+                }
+            ],
+            generationConfig: {
+                response_mime_type: "application/json",
+                temperature: 0.2
+            }
+        });
+
+        for (const model of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+                const resp = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: requestBody
+                });
+
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    console.warn(`Gemini Copilot model ${model} failed (${resp.status}):`, errText);
+                    continue;
+                }
+
+                const resJson = await resp.json();
+                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (rawText) {
+                    const parsed = parseCopilotResponse(rawText);
+                    if (parsed) return parsed;
+                }
+            } catch (err) {
+                console.warn(`Gemini Copilot error with ${model}:`, err.message);
+            }
+        }
+    }
+
+    if (env.AI) {
+        try {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a personal financial and productivity copilot. Return valid JSON only with 'reply' and 'action'."
+                    },
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+                max_tokens: 1024,
+                temperature: 0.2
+            });
+
+            const outputText = aiResp?.response || (typeof aiResp === "string" ? aiResp : JSON.stringify(aiResp));
+            const parsed = parseCopilotResponse(outputText);
+            if (parsed) return parsed;
+        } catch (aiErr) {
+            console.error("Workers AI Copilot error:", aiErr);
+        }
+    }
+
+    return null;
+}
+
+async function handleAiCopilotQuery(env, chatId, userId, query, from) {
+    await ensureTables(env.DB);
+    const cleanQuery = (query || "").trim();
+
+    if (!cleanQuery) {
+        const text = [
+            `🤖 *AI FINANCIAL & WORK COPILOT*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `I have real-time access to your cashflow ledger, work journal, monthly budget, and reminders!`,
+            ``,
+            `💡 *Things you can ask me:*`,
+            `• *"How much did I spend this week?"*`,
+            `• *"What's my biggest expense category this month?"*`,
+            `• *"Can I afford a $50 dinner based on my budget?"*`,
+            `• *"What tasks did I finish today?"*`,
+            `• *"Summarize my work achievements this week"*`,
+            `• *"What active reminders do I have?"*`,
+            `• *"ថ្ងៃនេះខ្ញុំចាយអស់ប៉ុន្មាន?"* _(Khmer supported!)_`,
+            ``,
+            `💬 *How to use:*`,
+            `Just type your question directly in the chat, or use \`/ask <your question>\`!`
+        ].join("\n");
+
+        await sendMessage(env, chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📊 Summary", callback_data: "summary_today" },
+                        { text: "💼 Work Tasks", callback_data: "work_today" }
+                    ],
+                    [
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    if (!env.GEMINI_API_KEY && !env.AI) {
+        await sendMessage(
+            env,
+            chatId,
+            `⚠️ *AI Copilot is not configured.*\n\n` +
+            `To enable conversational AI features, set your free Google Gemini API key:\n` +
+            `\`npx wrangler secret put GEMINI_API_KEY\`\n` +
+            `(Get a free key at https://aistudio.google.com)`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    const context = await buildAiUserContext(env.DB, userId);
+    const result = await askAiCopilot(env, cleanQuery, context);
+
+    if (!result || !result.reply) {
+        await sendMessage(
+            env,
+            chatId,
+            `⚠️ *AI Copilot was unable to answer right now.*\n\n` +
+            `Here are quick shortcuts:\n` +
+            `• \`/today\` — View today's transactions\n` +
+            `• \`/summary\` — Spending summary\n` +
+            `• \`/week\` — 7-day spending report\n` +
+            `• \`/work\` — Work journal\n` +
+            `• \`/hub\` — Main Hub`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    // Process action if any
+    if (result.action && typeof result.action === "object") {
+        try {
+            const act = result.action;
+            if (act.type === "add_expense" && act.amount && act.amount > 0) {
+                const cat = act.category || "Other";
+                const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
+                const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
+                await addExpenseRecord(env.DB, userId, act.amount, cat, "expense", curr, recordDate);
+            } else if (act.type === "add_income" && act.amount && act.amount > 0) {
+                const cat = act.category || "Income";
+                const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
+                const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
+                await addExpenseRecord(env.DB, userId, act.amount, cat, "income", curr, recordDate);
+            } else if (act.type === "add_work" && act.content) {
+                const curTime = currentTime();
+                const curDate = today();
+                const cat = act.category || "General";
+                await env.DB.prepare(
+                    "INSERT INTO work_logs (user_id, date, time, content, category) VALUES (?, ?, ?, ?, ?)"
+                ).bind(userId, curDate, curTime, act.content.trim(), cat).run();
+            } else if (act.type === "add_reminder" && act.time && act.title) {
+                const cleanTime = act.time.trim();
+                const cleanTitle = act.title.trim();
+                const freq = act.frequency || "weekdays";
+                await env.DB.prepare(
+                    "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
+                ).bind(userId, String(chatId), cleanTitle, cleanTime, freq).run();
+            }
+        } catch (actErr) {
+            console.error("Failed to execute AI Copilot action:", actErr);
+        }
+    }
+
+    await sendMessage(env, chatId, result.reply, { parse_mode: "Markdown" });
 }
 
 function formatPendingScanText(scan) {
@@ -2356,11 +2756,14 @@ async function sendMainHub(env, chatId, userId, from, origin) {
                     { text: "💰 Money & Budget", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" },
-                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
+                    { text: "🤖 Ask AI Copilot", callback_data: "copilot_help" },
+                    { text: "⏰ Reminders & Alarms", callback_data: "reminders" }
                 ],
                 [
-                    { text: "⚙️ Settings", callback_data: "settings" },
+                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } },
+                    { text: "⚙️ Settings", callback_data: "settings" }
+                ],
+                [
                     { text: "💡 Help & Guide", callback_data: "help" }
                 ]
             ]
@@ -3439,6 +3842,11 @@ async function sendHelpMessage(env, chatId) {
         `• Manager report: \`report\` or \`work\``,
         `• Today's spend: \`today\` or \`ledger\``,
         `• Open Hub: \`menu\` or \`hub\``,
+        ``,
+        `🤖 *AI Financial & Work Copilot*`,
+        `• \`/ask <question>\` or \`/ai <question>\` — Ask questions about your money, budget, or tasks!`,
+        `• Ask naturally: *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*, or *"What did I work on today?"*`,
+        `• Bilingual: Fully supports English and Khmer (អក្សរខ្មែរ)!`,
         ``,
         `⏰ *General Reminders & Alarms*`,
         `• \`remind 17:30 <task>\` — Set daily reminder at exact 24h time`,

@@ -19,6 +19,7 @@ The bot is structured as an extensible **Personal Assistant Hub (`/hub`)**, orga
 ```mermaid
 graph TD
     Hub["🌟 Personal Assistant Hub (/hub)"]
+    Hub --> Copilot["🤖 AI Copilot<br/>(Live Financial & Task Q&A)"]
     Hub --> Scanner["🧾 Smart OCR Scanner<br/>(ABA, Bakong, KHQR, Receipts)"]
     Hub --> Finance["💰 Cashflow & Finance<br/>(Ledger, Budgets, USD & KHR)"]
     Hub --> Work["💼 Work Journal<br/>(Accomplishments, Manager Reports)"]
@@ -26,30 +27,36 @@ graph TD
     Hub --> Dashboard["📱 Web Mini-App<br/>(Charts, Search, Analytics)"]
 ```
 
-### 1. 🧾 Smart OCR & Receipt Scanner Module
+### 1. 🤖 AI Financial & Work Copilot Module
+* **Conversational Financial Intelligence:** Chat naturally to check your balances, spending habits, budget runway, or work records without remembering rigid command syntax.
+* **Context-Aware Live Ledger:** Gemini / Workers AI inspects your live D1 data (today, 7-day rolling, month-to-date, category totals, active budget, recent work tasks, and reminders).
+* **Bilingual Support:** Ask freely in English or Khmer (*អក្សរខ្មែរ*): *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*, *"What tasks did I finish today?"*, or *"ថ្ងៃនេះខ្ញុំចាយអស់ប៉ុន្មាន?"*.
+* **Smart Conversational Actions:** Understands natural requests like *"I paid $15 for groceries yesterday"* and automatically records the transaction with proper date and categorization.
+
+### 2. 🧾 Smart OCR & Receipt Scanner Module
 * **Zero-Friction Logging:** Snap or forward any ABA Mobile payment, Bakong KHQR transfer, Acleda slip, or printed store receipt directly into chat.
 * **Instant Extraction:** Automatically parses amount, currency (`USD` / `KHR`), merchant name, date, and smart category.
 * **Interactive Confirmation:** 1-tap confirmation `[✅ Confirm]`, instant category switcher `[🏷️ Category]`, and `[🔄 Make Income]` toggle.
 * **Powered by Gemini AI:** High accuracy with bilingual recognition for English and Khmer script (អក្សរខ្មែរ).
 
-### 2. 💰 Cashflow & Finance Module
+### 3. 💰 Cashflow & Finance Module
 * **Dual Currency Support:** Tracks in both USD ($) and Cambodian Riel (៛), with automatic conversion at 1 USD = 4,000 KHR.
 * **Natural Text Entry:** Type `5 coffee`, `10000 lunch`, or `+500 salary`—no command syntax required.
 * **Itemized Daily Ledger:** Real-time itemized breakdown (`/today` or `today`).
 * **Visual Budget Gauges:** Set monthly spending limits (`/budget 300 usd`) with proactive threshold warnings.
 * **Data Portability:** 1-click CSV backup export (`/clear`).
 
-### 3. 💼 Work Journal & Manager Reports Module
+### 4. 💼 Work Journal & Manager Reports Module
 * **Daily Accomplishment Log:** Record completed tasks instantly with `/done Fixed checkout bug` or `did code review`.
 * **One-Click Monthly Reports:** Type `/report` to generate structured, professional accomplishment reports organized by week and category—ready for 1-on-1s or manager performance reviews.
 * **Exportable:** Download your complete monthly report as a `.txt` file (`/report export`).
 
-### 4. ⏰ Reminders & Habits Module
+### 5. ⏰ Reminders & Habits Module
 * **Departure Alarms:** Weekday reminder (e.g. 5:30 PM) so you never leave your lunch box or belongings behind. Includes `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
 * **Natural Reminders:** Supports exact and relative times: `remind 17:30 Standup` or `remind in 20m Check oven`.
 * **Automated Cron Engine:** Powered by Cloudflare Worker cron triggers running every minute.
 
-### 5. 📱 Interactive Web Mini-App Dashboard
+### 6. 📱 Interactive Web Mini-App Dashboard
 * Built-in Telegram WebApp accessible via `/hub`.
 * Interactive spending charts powered by **Chart.js**.
 * Historical search, category filtering, and paginated transaction history.
@@ -61,6 +68,7 @@ graph TD
 | Command | Shortcut | Workspace | Description |
 | :--- | :--- | :--- | :--- |
 | `/hub` | `/menu`, `menu`, `hub` | **Main Hub** | Open Personal Assistant Hub portal |
+| `/ask <query>` | `/ai`, `/copilot`, casual text | **AI Copilot** | Ask anything about spending, budgets, tasks, or advice |
 | `/scan` | `/ocr`, `/receipt` | **Scanner** | Bank slip & receipt scanner guide (or just send a photo) |
 | `/finance` | `/f`, `money`, `balance` | **Finance** | Open Cashflow & Finance workspace |
 | `/add <amt> <curr> <cat>` | `5 coffee`, `10000 lunch` | **Finance** | Log an expense |
