@@ -83,9 +83,8 @@ graph TD
 | `/report` | `report` | **Work** | Generate this month's manager accomplishment report |
 | `/report last` | — | **Work** | Generate last month's accomplishment report |
 | `/report export` | — | **Work** | Export accomplishment report as a `.txt` document |
-| `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace |
+| `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace (departure alarms, presets) |
 | `/remind <time> <title>` | `remind in 15m ...` | **Reminders** | Set custom reminder (24h or relative time) |
-| `/lunchbox` | `/lb` | **Reminders** | Lunch box departure reminder manager |
 | `/settings` | — | **Settings** | Currency toggle (USD/KHR) & budget configuration |
 | `/help` | `/h`, `help` | **Help** | View interactive bot guide |
 

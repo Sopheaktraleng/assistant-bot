@@ -82,7 +82,7 @@ export default {
                 const monthExpenseKhr = monthSummary?.totalExpenseInKhr || 0;
 
                 const lbRow = await env.DB.prepare(
-                    "SELECT id, reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
+                    "SELECT id, reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND (type = 'lunchbox' OR is_active = 1) ORDER BY (CASE WHEN type = 'lunchbox' THEN 0 ELSE 1 END), id ASC LIMIT 1"
                 ).bind(userId).first();
 
                 return json({
@@ -2353,7 +2353,7 @@ async function handleImageReceipt(message, env, origin) {
 async function handleLunchboxCommand(env, chatId, userId, text) {
     const parts = text.split(/\s+/);
     if (parts.length === 1) {
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendRemindersMenu(env, chatId, userId);
         return;
     }
 
@@ -2366,19 +2366,19 @@ async function handleLunchboxCommand(env, chatId, userId, text) {
         } else {
             await env.DB.prepare(`
                 INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Lunch Box Reminder', '17:30', 'weekdays', 'lunchbox', 1)
+                VALUES (?, ?, 'Departure / Lunchbox Reminder', '17:30', 'weekdays', 'lunchbox', 1)
             `).bind(userId, String(chatId)).run();
         }
-        await sendMessage(env, chatId, "🟢 *Lunch box alarm enabled for 17:30 (Mon–Fri)!*", { parse_mode: "Markdown" });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendMessage(env, chatId, "🟢 *Departure alarm enabled for 17:30 (Mon–Fri)!*", { parse_mode: "Markdown" });
+        await sendRemindersMenu(env, chatId, userId);
         return;
     }
 
     if (arg === "off") {
         await ensureTables(env.DB);
         await env.DB.prepare("UPDATE reminders SET is_active = 0 WHERE user_id = ? AND type = 'lunchbox'").bind(userId).run();
-        await sendMessage(env, chatId, "🔴 *Lunch box alarm disabled.*", { parse_mode: "Markdown" });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendMessage(env, chatId, "🔴 *Departure alarm disabled.*", { parse_mode: "Markdown" });
+        await sendRemindersMenu(env, chatId, userId);
         return;
     }
 
@@ -2392,15 +2392,15 @@ async function handleLunchboxCommand(env, chatId, userId, text) {
         } else {
             await env.DB.prepare(`
                 INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Lunch Box Reminder', ?, 'weekdays', 'lunchbox', 1)
+                VALUES (?, ?, 'Departure / Lunchbox Reminder', ?, 'weekdays', 'lunchbox', 1)
             `).bind(userId, String(chatId), formattedTime).run();
         }
-        await sendMessage(env, chatId, `⏰ *Lunch box reminder time set to ${formattedTime} (Active)!*`, { parse_mode: "Markdown" });
-        await sendLunchboxMenu(env, chatId, userId);
+        await sendMessage(env, chatId, `⏰ *Departure reminder time set to ${formattedTime} (Active)!*`, { parse_mode: "Markdown" });
+        await sendRemindersMenu(env, chatId, userId);
         return;
     }
 
-    await sendLunchboxMenu(env, chatId, userId);
+    await sendRemindersMenu(env, chatId, userId);
 }
 
 async function sendPromptAddReminder(env, chatId) {
@@ -2410,7 +2410,7 @@ async function sendPromptAddReminder(env, chatId) {
         `You can remind *whatever you want* with any time! Just type:`,
         ``,
         `1️⃣ *Exact Time:*`,
-        `• \`remind 17:30 Bring lunch box home\``,
+        `• \`remind 17:30 Bring lunch box / bag home\``,
         `• \`remind 09:00 Team morning standup\``,
         `• \`remind 21:00 Review daily expenses\``,
         `• \`remind 8:30pm Water the plants\``,
@@ -2428,7 +2428,7 @@ async function sendPromptAddReminder(env, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🍱 Lunchbox (17:30)", callback_data: "remind_add_lunchbox" },
+                    { text: "🎒 17:30 Departure Preset", callback_data: "remind_add_lunchbox" },
                     { text: "💰 Spending Check (21:00)", callback_data: "toggle_expense_reminder" }
                 ],
                 [
@@ -3209,54 +3209,7 @@ async function sendWorkDeletePicker(env, chatId, userId) {
 }
 
 async function sendLunchboxMenu(env, chatId, userId) {
-    await ensureTables(env.DB);
-    const lbRow = await env.DB.prepare(
-        "SELECT id, reminder_time, frequency, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
-    ).bind(userId).first();
-
-    const isActive = lbRow ? Boolean(lbRow.is_active) : false;
-    const time = lbRow?.reminder_time || "17:30";
-    const freq = lbRow?.frequency || "weekdays";
-    const freqLabel = freq === "weekdays" ? "Mon–Fri" : "Daily";
-
-    const statusBadge = isActive ? "🟢 *Active*" : "⚪ *Off*";
-
-    const text = [
-        `🍱 *Lunchbox Departure Alarm*`,
-        `• Status: ${statusBadge}`,
-        `• Time: *${time}* (${freqLabel})`,
-        ``,
-        `_Alerts you before heading home so you never forget your lunchbox!_ 🥪`
-    ].join("\n");
-
-    const toggleText = isActive ? "🔴 Turn Alarm OFF" : "🟢 Turn Alarm ON";
-    const toggleVal = isActive ? "0" : "1";
-    const nextFreq = freq === "weekdays" ? "daily" : "weekdays";
-    const nextFreqText = freq === "weekdays" ? "🔁 Switch to Daily" : "🔁 Switch to Mon–Fri";
-
-    await sendMessage(env, chatId, text, {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: toggleText, callback_data: `lb_toggle:${toggleVal}` }
-                ],
-                [
-                    { text: "⏰ 16:30", callback_data: "lb_time:16:30" },
-                    { text: "⏰ 17:00", callback_data: "lb_time:17:00" },
-                    { text: "⏰ 17:30", callback_data: "lb_time:17:30" },
-                    { text: "⏰ 18:00", callback_data: "lb_time:18:00" }
-                ],
-                [
-                    { text: nextFreqText, callback_data: `lb_freq:${nextFreq}` },
-                    { text: "🔔 Test Alarm", callback_data: "lb_test" }
-                ],
-                [
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
-        }
-    });
+    return sendRemindersMenu(env, chatId, userId);
 }
 
 async function sendRemindersMenu(env, chatId, userId) {
@@ -3292,7 +3245,7 @@ async function sendRemindersMenu(env, chatId, userId) {
     const buttons = [
         [
             { text: "➕ Add Reminder", callback_data: "remind_prompt_add" },
-            { text: "🍱 Lunchbox Preset", callback_data: "remind_add_lunchbox" }
+            { text: "🎒 17:30 Departure Preset", callback_data: "remind_add_lunchbox" }
         ]
     ];
 
