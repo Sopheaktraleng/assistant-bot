@@ -231,6 +231,33 @@ export default {
                 });
             }
 
+            if (url.pathname === "/api/watchlist") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id parameter" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const { results } = await env.DB.prepare(
+                    `SELECT id, title, year, genre, rating, runtime, platforms, synopsis, why_love, status, created_at, watched_at
+                     FROM watchlist
+                     WHERE user_id = ? AND status IN ('plan_to_watch', 'watched')
+                     ORDER BY (CASE WHEN status = 'plan_to_watch' THEN 0 ELSE 1 END), id DESC`
+                ).bind(userId).all();
+
+                const items = results || [];
+                const planCount = items.filter(i => i.status === "plan_to_watch").length;
+                const watchedCount = items.filter(i => i.status === "watched").length;
+
+                return json({
+                    ok: true,
+                    items,
+                    total: items.length,
+                    planCount,
+                    watchedCount
+                });
+            }
+
             return json({ ok: true, service: "cashflow-bot" });
         }
 
@@ -376,6 +403,80 @@ export default {
                     .run();
 
                 return json({ ok: true, changes: result.meta?.changes || 0 });
+            }
+
+            if (url.pathname === "/api/watchlist/add") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id parameter" }, 400);
+                }
+                const body = await request.json().catch(() => ({}));
+                const title = (body.title || "").trim();
+                if (!title) {
+                    return json({ error: "Title is required" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const res = await env.DB.prepare(`
+                    INSERT INTO watchlist (user_id, title, year, genre, rating, runtime, platforms, synopsis, why_love, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan_to_watch')
+                `).bind(
+                    userId,
+                    title,
+                    (body.year || "").trim(),
+                    (body.genre || "General").trim(),
+                    (body.rating || "").trim(),
+                    (body.runtime || "").trim(),
+                    (body.platforms || "").trim(),
+                    (body.synopsis || "").trim(),
+                    (body.why_love || "").trim()
+                ).run();
+
+                return json({
+                    ok: true,
+                    item: {
+                        id: res.meta?.last_row_id,
+                        title,
+                        year: body.year || "",
+                        genre: body.genre || "General",
+                        rating: body.rating || "",
+                        status: "plan_to_watch"
+                    }
+                });
+            }
+
+            if (url.pathname === "/api/watchlist/toggle") {
+                const userId = url.searchParams.get("user_id");
+                const id = url.searchParams.get("id");
+                if (!userId || !id) {
+                    return json({ error: "Missing parameters" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const row = await env.DB.prepare("SELECT status FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).first();
+                if (!row) {
+                    return json({ error: "Title not found" }, 404);
+                }
+
+                const newStatus = row.status === "watched" ? "plan_to_watch" : "watched";
+                const watchedAt = newStatus === "watched" ? today() : null;
+
+                await env.DB.prepare("UPDATE watchlist SET status = ?, watched_at = ? WHERE id = ? AND user_id = ?")
+                    .bind(newStatus, watchedAt, id, userId).run();
+
+                return json({ ok: true, newStatus });
+            }
+
+            if (url.pathname === "/api/watchlist/delete") {
+                const userId = url.searchParams.get("user_id");
+                const id = url.searchParams.get("id");
+                if (!userId || !id) {
+                    return json({ error: "Missing parameters" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const res = await env.DB.prepare("DELETE FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).run();
+                return json({ ok: true, changes: res.meta?.changes || 0 });
             }
 
             if (url.pathname === "/webhook") {
@@ -530,6 +631,28 @@ async function ensureTables(db) {
     } catch (e) {
         console.error("ensureTables pending_scans error:", e);
     }
+
+    try {
+        await db.prepare(`
+            CREATE TABLE IF NOT EXISTS watchlist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                year TEXT,
+                genre TEXT,
+                rating TEXT,
+                runtime TEXT,
+                platforms TEXT,
+                synopsis TEXT,
+                why_love TEXT,
+                status TEXT NOT NULL DEFAULT 'plan_to_watch',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                watched_at TEXT
+            );
+        `).run();
+    } catch (e) {
+        console.error("ensureTables watchlist error:", e);
+    }
 }
 
 async function handleUpdateSafely(update, env, origin) {
@@ -667,6 +790,49 @@ async function handleMessage(message, env, origin) {
 
     if (text.startsWith("/lunchbox") || text === "/lb") {
         await handleLunchboxCommand(env, chatId, userId, text);
+        return;
+    }
+
+    // 3. Movie & Series Recommender + Watchlist Commands
+    if (
+        text === "/watch" || text.startsWith("/watch ") || 
+        text === "/movie" || text.startsWith("/movie ") ||
+        text === "/movies" || text.startsWith("/movies ") ||
+        text === "/film" || text.startsWith("/film ")
+    ) {
+        const query = text.replace(/^\/(watch|movie|movies|film)(@\w+)?\s*/i, "").trim();
+        if (!query) {
+            await sendMovieRecommenderHub(env, chatId, userId);
+            return;
+        }
+
+        if (query.startsWith("add ")) {
+            const movieTitle = query.slice(4).trim();
+            await handleAddMovieCommand(env, chatId, userId, movieTitle);
+            return;
+        }
+
+        if (query === "pick" || query === "random") {
+            await handlePickRandomMovie(env, chatId, userId);
+            return;
+        }
+
+        await handleGenerateMovieRecommendation(env, chatId, userId, query, message.from);
+        return;
+    }
+
+    if (text === "/watchlist" || text.startsWith("/watchlist ") || text === "/wl" || text.startsWith("/wl ")) {
+        const query = text.replace(/^\/(watchlist|wl)(@\w+)?\s*/i, "").trim();
+        if (query.startsWith("add ")) {
+            const movieTitle = query.slice(4).trim();
+            await handleAddMovieCommand(env, chatId, userId, movieTitle);
+            return;
+        }
+        if (query === "pick" || query === "random") {
+            await handlePickRandomMovie(env, chatId, userId);
+            return;
+        }
+        await sendWatchlistMenu(env, chatId, userId, "all", 1);
         return;
     }
 
@@ -815,6 +981,30 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
+        if (lower === "watch" || lower === "movie" || lower === "movies" || lower === "film" || lower === "cinema") {
+            await sendMovieRecommenderHub(env, chatId, userId);
+            return;
+        }
+
+        if (lower === "watchlist") {
+            await sendWatchlistMenu(env, chatId, userId, "all", 1);
+            return;
+        }
+
+        if (lower.startsWith("watch ") || lower.startsWith("movie ")) {
+            const cleanQuery = text.replace(/^(watch|movie)\s+/i, "").trim();
+            if (cleanQuery.startsWith("add ")) {
+                await handleAddMovieCommand(env, chatId, userId, cleanQuery.slice(4).trim());
+                return;
+            }
+            if (cleanQuery === "pick" || cleanQuery === "random") {
+                await handlePickRandomMovie(env, chatId, userId);
+                return;
+            }
+            await handleGenerateMovieRecommendation(env, chatId, userId, cleanQuery, message.from);
+            return;
+        }
+
         if (lower === "scan" || lower === "receipt" || lower === "slip" || lower === "ocr") {
             await sendScanHelp(env, chatId);
             return;
@@ -947,6 +1137,118 @@ async function handleCallback(callback, env, origin) {
     // --- Work Log & Reports Callbacks ---
     if (data === "work_hub") {
         await sendWorkHub(env, chatId, userId, callback.from, messageId);
+        return;
+    }
+
+    // --- Movie Recommender & Watchlist Callbacks ---
+    if (data === "movie_hub") {
+        await sendMovieRecommenderHub(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data === "watchlist") {
+        await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
+        return;
+    }
+
+    if (data.startsWith("wl_filter:")) {
+        const filter = data.slice(10);
+        await sendWatchlistMenu(env, chatId, userId, filter, 1, messageId);
+        return;
+    }
+
+    if (data.startsWith("wl_page:")) {
+        const [, pStr, filter] = data.split(":");
+        const page = parseInt(pStr, 10) || 1;
+        await sendWatchlistMenu(env, chatId, userId, filter || "all", page, messageId);
+        return;
+    }
+
+    if (data === "wl_pick") {
+        await handlePickRandomMovie(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data.startsWith("wl_genre:")) {
+        const genre = data.slice(9);
+        await handleGenerateMovieRecommendation(env, chatId, userId, genre, callback.from, messageId);
+        return;
+    }
+
+    if (data.startsWith("wl_roll:")) {
+        const genre = decodeURIComponent(data.slice(8)) || "random";
+        await handleGenerateMovieRecommendation(env, chatId, userId, genre, callback.from, messageId);
+        return;
+    }
+
+    if (data.startsWith("wl_save:")) {
+        const id = parseInt(data.slice(8), 10);
+        if (id) {
+            await env.DB.prepare("UPDATE watchlist SET status = 'plan_to_watch' WHERE id = ? AND user_id = ?").bind(id, userId).run();
+            await answerCallback(env, callback.id, { text: "⭐ Saved to your Watchlist!" });
+            if (callback.message?.reply_markup) {
+                const updatedMarkup = JSON.parse(JSON.stringify(callback.message.reply_markup));
+                if (updatedMarkup.inline_keyboard?.[0]?.[0]) {
+                    updatedMarkup.inline_keyboard[0][0] = { text: "✅ In Watchlist", callback_data: "watchlist" };
+                }
+                try {
+                    await telegram(env, "editMessageReplyMarkup", {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        reply_markup: updatedMarkup
+                    });
+                } catch (e) {}
+            }
+        }
+        return;
+    }
+
+    if (data.startsWith("wl_watched:")) {
+        const id = parseInt(data.slice(11), 10);
+        if (id) {
+            await env.DB.prepare("UPDATE watchlist SET status = 'watched', watched_at = ? WHERE id = ? AND user_id = ?").bind(today(), id, userId).run();
+            await answerCallback(env, callback.id, { text: "🍿 Marked as watched! Enjoy!" });
+            if (callback.message?.reply_markup) {
+                const updatedMarkup = JSON.parse(JSON.stringify(callback.message.reply_markup));
+                if (updatedMarkup.inline_keyboard?.[0]) {
+                    updatedMarkup.inline_keyboard[0] = [
+                        { text: "🍿 Marked Watched ✅", callback_data: "watchlist" }
+                    ];
+                }
+                try {
+                    await telegram(env, "editMessageReplyMarkup", {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        reply_markup: updatedMarkup
+                    });
+                } catch (e) {}
+            }
+        }
+        return;
+    }
+
+    if (data.startsWith("wl_toggle:")) {
+        const id = parseInt(data.slice(10), 10);
+        if (id) {
+            const cur = await env.DB.prepare("SELECT status FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).first();
+            if (cur) {
+                const newStatus = cur.status === "watched" ? "plan_to_watch" : "watched";
+                const watchedAt = newStatus === "watched" ? today() : null;
+                await env.DB.prepare("UPDATE watchlist SET status = ?, watched_at = ? WHERE id = ? AND user_id = ?").bind(newStatus, watchedAt, id, userId).run();
+                await answerCallback(env, callback.id, { text: newStatus === "watched" ? "🍿 Marked watched!" : "⭐ Moved to Plan to Watch!" });
+                await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
+            }
+        }
+        return;
+    }
+
+    if (data.startsWith("wl_del:")) {
+        const id = parseInt(data.slice(7), 10);
+        if (id) {
+            await env.DB.prepare("DELETE FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).run();
+            await answerCallback(env, callback.id, { text: "🗑️ Removed from watchlist." });
+            await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
+        }
         return;
     }
 
@@ -3184,12 +3486,18 @@ async function sendMainHub(env, chatId, userId, from, origin, messageId = null) 
         remStatus = `● ${activeRems.length} active (${first.reminder_time} ${shortTitle})`;
     }
 
+    const wlRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM watchlist WHERE user_id = ? AND status = 'plan_to_watch'"
+    ).bind(userId).first();
+    const wlCount = wlRow?.count || 0;
+
     const text = [
         `*Personal Assistant Hub*`,
         `────────────────────`,
         `● *Balance:*   \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
         `● *Today:*     \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
         `● *Work:*      \`${workCount} tasks\` in ${monthLabel()}`,
+        `● *Watchlist:* \`${wlCount} to watch\``,
         `● *Alerts:*    \`${remStatus}\``,
         `────────────────────`,
         `_Select a workspace below or type naturally:_`
@@ -3214,10 +3522,11 @@ async function sendMainHub(env, chatId, userId, from, origin, messageId = null) 
                     { text: "⏰ Reminders", callback_data: "reminders" }
                 ],
                 [
-                    { text: "🌐 Dashboard", web_app: { url: webAppUrl } },
-                    { text: "⚙️ Settings", callback_data: "settings" }
+                    { text: `🍿 Movies (${wlCount})`, callback_data: "movie_hub" },
+                    { text: "🌐 Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
+                    { text: "⚙️ Settings", callback_data: "settings" },
                     { text: "💡 Guide & Shortcuts", callback_data: "help" }
                 ]
             ]
@@ -4863,7 +5172,13 @@ async function sendHelpMessage(env, chatId, messageId = null) {
         `• \`/add 5 usd coffee\` or \`/income 500 usd salary\``,
         `• \`/today\` — Today's transactions`,
         `• \`/summary\` — Spending statistics & breakdown`,
-        `• \`/settings\` — Currency toggle & budget limit`
+        `• \`/settings\` — Currency toggle & budget limit`,
+        ``,
+        `🍿 *Movies, Series & Watchlist*`,
+        `• \`/watch <vibe>\` — AI movie recommendations (e.g. \`/watch sci-fi thriller\`)`,
+        `• \`/watch add <title>\` — Save a movie/show directly (e.g. \`/watch add Dune 2\`)`,
+        `• \`/watch\` — Browse recommender by genres & moods`,
+        `• \`/watchlist\` — View saved movies, mark watched, or pick one for tonight`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -4879,6 +5194,7 @@ async function sendHelpMessage(env, chatId, messageId = null) {
                     { text: "⏰ Reminders", callback_data: "reminders" }
                 ],
                 [
+                    { text: "🍿 Movies", callback_data: "movie_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -5774,3 +6090,496 @@ async function getBudgetWarningText(db, userId) {
     }
     return "";
 }
+
+// ---------------------------------------------------------------------------
+// 🍿 AI Movie & Series Recommender + Watchlist Manager
+// ---------------------------------------------------------------------------
+
+function sanitizeMd(str) {
+    if (!str) return "";
+    return String(str).replace(/([_*`[\]])/g, " ");
+}
+
+function parseMovieJson(rawText) {
+    if (!rawText) return null;
+    let clean = rawText.trim();
+    if (clean.startsWith("```json")) {
+        clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+    } else if (clean.startsWith("```")) {
+        clean = clean.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+    try {
+        return JSON.parse(clean);
+    } catch (e) {
+        const match = clean.match(/\{[\s\S]*\}/);
+        if (match) {
+            try { return JSON.parse(match[0]); } catch (_) {}
+        }
+        return null;
+    }
+}
+
+const MOVIE_GENRE_PROMPTS = {
+    scifi: "mind-bending sci-fi movie or series with intelligent storytelling and high concept ideas",
+    thriller: "gripping, edge-of-your-seat psychological thriller or crime mystery with unexpected twists",
+    comedy: "hilarious, feel-good comedy or comedy series with sharp humor and great vibes",
+    action: "thrilling high-octane action blockbuster with breathtaking sequences and great direction",
+    romance: "heartwarming, emotionally resonant romantic comedy or romance film",
+    horror: "acclaimed atmospheric horror, spooky mystery, or supernatural thriller",
+    drama: "deeply moving, award-winning dramatic masterpiece with profound emotional depth",
+    anime: "visually stunning and critically acclaimed anime film or anime series",
+    random: "universally acclaimed, highly entertaining masterpiece movie from any genre"
+};
+
+const MOVIE_FALLBACKS = [
+    {
+        title: "Interstellar",
+        year: "2014",
+        genre: "Sci-Fi, Adventure, Drama",
+        rating: "8.7/10 IMDb • 87% RT",
+        runtime: "2h 49m",
+        platforms: "Netflix, Prime Video",
+        synopsis: "When Earth becomes uninhabitable, a team of astronauts travels through a wormhole in search of a new home for mankind.",
+        why_love: "Visually awe-inspiring, emotionally gripping, with Hans Zimmer's unforgettable score."
+    },
+    {
+        title: "Everything Everywhere All at Once",
+        year: "2022",
+        genre: "Action, Comedy, Sci-Fi",
+        rating: "7.8/10 IMDb • 94% RT",
+        runtime: "2h 19m",
+        platforms: "Netflix, Apple TV",
+        synopsis: "An aging Chinese immigrant gets swept up in an insane adventure where she alone can save existence by exploring alternate universes.",
+        why_love: "Mind-blowingly creative, wildly hilarious, yet deeply moving about family love."
+    },
+    {
+        title: "Knives Out",
+        year: "2019",
+        genre: "Mystery, Comedy, Crime",
+        rating: "7.9/10 IMDb • 97% RT",
+        runtime: "2h 10m",
+        platforms: "Netflix, Prime Video",
+        synopsis: "A brilliant detective investigates the death of a wealthy mystery novelist among his eccentric, combative family.",
+        why_love: "Razor-sharp wit, brilliant plot twists, and pure popcorn entertainment."
+    },
+    {
+        title: "Spirited Away",
+        year: "2001",
+        genre: "Animation, Adventure, Fantasy",
+        rating: "8.6/10 IMDb • 97% RT",
+        runtime: "2h 5m",
+        platforms: "Netflix, HBO Max",
+        synopsis: "A young girl wanders into a strange world of spirits ruled by an evil witch, where those who disobey are turned into beasts.",
+        why_love: "A timeless Hayao Miyazaki masterpiece filled with wonder, empathy, and unmatched artistry."
+    },
+    {
+        title: "Severance",
+        year: "2022",
+        genre: "Sci-Fi, Psychological Thriller",
+        rating: "8.7/10 IMDb • 97% RT",
+        runtime: "1 Season, 9 eps",
+        platforms: "Apple TV+",
+        synopsis: "Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.",
+        why_love: "One of the most suspenseful, original, and addictive television shows in modern history."
+    }
+];
+
+async function sendMovieRecommenderHub(env, chatId, userId, messageId = null) {
+    await ensureTables(env.DB);
+    const wlRow = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM watchlist WHERE user_id = ? AND status = 'plan_to_watch'"
+    ).bind(userId).first();
+    const wlCount = wlRow?.count || 0;
+
+    const text = [
+        `🍿 *Movie & Series Recommender*`,
+        `────────────────────`,
+        `Never run out of great things to watch! Pick a vibe below or tell me what you're in the mood for.`,
+        ``,
+        `💡 *Ways to search:*`,
+        `• \`/watch sci-fi thriller like Inception\``,
+        `• \`/watch funny lighthearted sitcom\``,
+        `• \`/watch korean crime mystery\``,
+        `• \`/watch add Dune 2\` _(add title directly)_`,
+        ``,
+        `⭐ *Your Watchlist:* \`${wlCount} title(s) to watch\``,
+        `────────────────────`
+    ].join("\n");
+
+    const keyboard = [
+        [
+            { text: "🚀 Sci-Fi", callback_data: "wl_genre:scifi" },
+            { text: "🔪 Thriller", callback_data: "wl_genre:thriller" },
+            { text: "😂 Comedy", callback_data: "wl_genre:comedy" }
+        ],
+        [
+            { text: "💥 Action", callback_data: "wl_genre:action" },
+            { text: "💕 Romance", callback_data: "wl_genre:romance" },
+            { text: "👻 Horror", callback_data: "wl_genre:horror" }
+        ],
+        [
+            { text: "🍿 Drama", callback_data: "wl_genre:drama" },
+            { text: "🎌 Anime", callback_data: "wl_genre:anime" },
+            { text: "🎲 Surprise Me!", callback_data: "wl_genre:random" }
+        ],
+        [
+            { text: `⭐ My Watchlist (${wlCount})`, callback_data: "watchlist" },
+            { text: "🎲 Pick Saved", callback_data: "wl_pick" }
+        ],
+        [
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
+async function handleGenerateMovieRecommendation(env, chatId, userId, query = "random", from = null, messageId = null) {
+    await ensureTables(env.DB);
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    const genrePrompt = MOVIE_GENRE_PROMPTS[query.toLowerCase()] || query;
+
+    // Fetch user's existing titles to prevent recommending duplicates
+    const { results: existingRows } = await env.DB.prepare(
+        "SELECT title FROM watchlist WHERE user_id = ? LIMIT 30"
+    ).bind(userId).all();
+    const existingTitles = (existingRows || []).map(r => r.title).filter(Boolean);
+    const excludeHint = existingTitles.length > 0 
+        ? `DO NOT recommend any of these titles as the user already has them: ${existingTitles.join(", ")}.` 
+        : "";
+
+    const systemPrompt = `You are a film and television critic.
+Recommend ONE title that is critically acclaimed or widely beloved.
+${excludeHint}
+Respond with PURE JSON ONLY without markdown, code fences, or backticks.
+The JSON object must strictly follow this schema:
+{
+  "title": "Movie or Series Title",
+  "year": "Release Year (e.g. 2023)",
+  "genre": "Genre tags (e.g. Sci-Fi, Thriller)",
+  "rating": "IMDb & Rotten Tomatoes rating (e.g. 8.5/10 IMDb • 92% RT)",
+  "runtime": "Length or seasons (e.g. 2h 15m or 2 Seasons)",
+  "platforms": "Top streaming platforms (e.g. Netflix, Prime Video, HBO Max)",
+  "synopsis": "Spoiler-free hook and premise in 2-3 engaging sentences.",
+  "why_love": "1-2 sentences on why this fits their vibe and why they will love it."
+}`;
+
+    const userPrompt = `I want to watch: "${genrePrompt}". Please give me your best top recommendation.`;
+
+    let movieData = null;
+    const aiResp = await callAiTextModel(env, systemPrompt, userPrompt, 0.5);
+    if (aiResp) {
+        movieData = parseMovieJson(aiResp);
+    }
+
+    if (!movieData || !movieData.title) {
+        // Fallback pick
+        const randIndex = Math.floor(Math.random() * MOVIE_FALLBACKS.length);
+        movieData = MOVIE_FALLBACKS[randIndex];
+    }
+
+    const title = movieData.title || "Inception";
+    const year = movieData.year || "";
+    const genre = movieData.genre || "Cinema";
+    const rating = movieData.rating || "8.5/10 IMDb";
+    const runtime = movieData.runtime || "Feature Film";
+    const platforms = movieData.platforms || "Netflix, Prime Video";
+    const synopsis = movieData.synopsis || "An extraordinary cinematic journey.";
+    const why_love = movieData.why_love || "Captivating storytelling and brilliant performances.";
+
+    // Save as temp recommendation in D1
+    const res = await env.DB.prepare(`
+        INSERT INTO watchlist (user_id, title, year, genre, rating, runtime, platforms, synopsis, why_love, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'temp_rec')
+    `).bind(userId, title, year, genre, rating, runtime, platforms, synopsis, why_love).run();
+
+    const recId = res.meta?.last_row_id || (await env.DB.prepare("SELECT id FROM watchlist WHERE user_id = ? ORDER BY id DESC LIMIT 1").bind(userId).first())?.id;
+
+    const text = [
+        `🍿 *AI Movie Recommendation*`,
+        `────────────────────`,
+        `🎬 *${sanitizeMd(title)}* ${year ? `(${sanitizeMd(year)})` : ""}`,
+        `⭐ \`${sanitizeMd(rating)}\``,
+        `🎭 *Genre:* ${sanitizeMd(genre)}`,
+        `⏱️ *Length:* ${sanitizeMd(runtime)} • 📺 ${sanitizeMd(platforms)}`,
+        `────────────────────`,
+        `📝 *Synopsis:*`,
+        `${sanitizeMd(synopsis)}`,
+        ``,
+        `💡 *Why You'll Love It:*`,
+        `_${sanitizeMd(why_love)}_`,
+        `────────────────────`
+    ].join("\n");
+
+    const queryKey = query.length > 20 ? query.slice(0, 18) : query;
+
+    const keyboard = [
+        [
+            { text: "⭐ Save to Watchlist", callback_data: `wl_save:${recId}` },
+            { text: "🍿 Mark Watched", callback_data: `wl_watched:${recId}` }
+        ],
+        [
+            { text: "🎲 Roll Another", callback_data: `wl_roll:${encodeURIComponent(queryKey)}` },
+            { text: "📋 Watchlist", callback_data: "watchlist" }
+        ],
+        [
+            { text: "🍿 Movie Hub", callback_data: "movie_hub" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
+async function handleAddMovieCommand(env, chatId, userId, titleInput) {
+    await ensureTables(env.DB);
+    const title = titleInput.trim();
+    if (!title) {
+        await sendMessage(env, chatId, "❌ Please specify a title to add, e.g. `/watch add Inception`", { parse_mode: "Markdown" });
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    const systemPrompt = `You are a film database assistant. Given a movie or series title, return pure JSON with year, genre, rating, runtime, platforms, and a 1-2 sentence synopsis. Respond with PURE JSON ONLY:
+{"title": "Clean Title", "year": "Release Year", "genre": "Genre", "rating": "IMDb Rating", "runtime": "Runtime or Seasons", "platforms": "Popular Platforms", "synopsis": "Short hook synopsis"}`;
+
+    let movieData = null;
+    const aiResp = await callAiTextModel(env, systemPrompt, `Title: "${title}"`, 0.2);
+    if (aiResp) {
+        movieData = parseMovieJson(aiResp);
+    }
+
+    const cleanTitle = movieData?.title || title;
+    const year = movieData?.year || "";
+    const genre = movieData?.genre || "Movie";
+    const rating = movieData?.rating || "";
+    const runtime = movieData?.runtime || "";
+    const platforms = movieData?.platforms || "";
+    const synopsis = movieData?.synopsis || "Added to watchlist.";
+
+    const res = await env.DB.prepare(`
+        INSERT INTO watchlist (user_id, title, year, genre, rating, runtime, platforms, synopsis, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'plan_to_watch')
+    `).bind(userId, cleanTitle, year, genre, rating, runtime, platforms, synopsis).run();
+
+    const newId = res.meta?.last_row_id;
+
+    const text = [
+        `⭐ *Added to Watchlist!*`,
+        `────────────────────`,
+        `🎬 *${sanitizeMd(cleanTitle)}* ${year ? `(${sanitizeMd(year)})` : ""}`,
+        rating ? `⭐ \`${sanitizeMd(rating)}\`` : "",
+        genre ? `🎭 *Genre:* ${sanitizeMd(genre)}` : "",
+        runtime ? `⏱️ *Length:* ${sanitizeMd(runtime)}` : "",
+        synopsis ? `\n📝 _${sanitizeMd(synopsis)}_` : "",
+        `────────────────────`
+    ].filter(Boolean).join("\n");
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🍿 Mark Watched", callback_data: `wl_watched:${newId}` },
+                    { text: "📋 View Watchlist", callback_data: "watchlist" }
+                ],
+                [
+                    { text: "🍿 Movie Hub", callback_data: "movie_hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function sendWatchlistMenu(env, chatId, userId, filter = "all", page = 1, messageId = null) {
+    await ensureTables(env.DB);
+
+    const { results: allItems } = await env.DB.prepare(
+        `SELECT id, title, year, genre, rating, runtime, platforms, synopsis, status, created_at, watched_at
+         FROM watchlist
+         WHERE user_id = ? AND status IN ('plan_to_watch', 'watched')
+         ORDER BY (CASE WHEN status = 'plan_to_watch' THEN 0 ELSE 1 END), id DESC`
+    ).bind(userId).all();
+
+    const items = allItems || [];
+    const planCount = items.filter(i => i.status === "plan_to_watch").length;
+    const watchedCount = items.filter(i => i.status === "watched").length;
+
+    let filtered = items;
+    if (filter === "plan_to_watch") {
+        filtered = items.filter(i => i.status === "plan_to_watch");
+    } else if (filter === "watched") {
+        filtered = items.filter(i => i.status === "watched");
+    }
+
+    if (items.length === 0) {
+        const emptyText = [
+            `🍿 *Your Movie & Series Watchlist*`,
+            `────────────────────`,
+            `Your watchlist is currently empty!`,
+            ``,
+            `💡 *How to add titles:*`,
+            `• Type \`/watch add Inception\` or \`/watch add Severance\``,
+            `• Or browse recommendations with \`/watch\` and tap **Save to Watchlist**!`,
+            `────────────────────`
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, messageId, emptyText, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "➕ Get Recommendations", callback_data: "movie_hub" }],
+                    [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                ]
+            }
+        });
+        return;
+    }
+
+    const pageSize = 5;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const curPage = Math.min(Math.max(1, page), totalPages);
+    const startIdx = (curPage - 1) * pageSize;
+    const pageItems = filtered.slice(startIdx, startIdx + pageSize);
+
+    const filterLabel = filter === "plan_to_watch" ? "⭐ Plan to Watch" : filter === "watched" ? "✅ Finished" : "All Titles";
+
+    const textLines = [
+        `🍿 *My Watchlist (${filterLabel})*`,
+        `────────────────────`,
+        `● *To Watch:* \`${planCount}\`  •  ● *Watched:* \`${watchedCount}\``,
+        `────────────────────`
+    ];
+
+    if (pageItems.length === 0) {
+        textLines.push(`_No titles found under this filter._`);
+    } else {
+        pageItems.forEach((m, idx) => {
+            const num = startIdx + idx + 1;
+            const statusIcon = m.status === "watched" ? "✅" : "⭐";
+            const yearStr = m.year ? `(${m.year})` : "";
+            const ratingStr = m.rating ? `• ${m.rating}` : "";
+            textLines.push(`${num}. ${statusIcon} *${sanitizeMd(m.title)}* ${sanitizeMd(yearStr)} ${sanitizeMd(ratingStr)}`);
+            if (m.genre) textLines.push(`   _🎭 ${sanitizeMd(m.genre)}_`);
+        });
+    }
+
+    textLines.push(`────────────────────`);
+    textLines.push(`_Page ${curPage} of ${totalPages}_`);
+
+    const keyboard = [];
+
+    // Filter bar
+    keyboard.push([
+        { text: filter === "all" ? "• All •" : "All", callback_data: "wl_filter:all" },
+        { text: filter === "plan_to_watch" ? "• ⭐ To Watch •" : `⭐ To Watch (${planCount})`, callback_data: "wl_filter:plan_to_watch" },
+        { text: filter === "watched" ? "• ✅ Watched •" : `✅ Watched (${watchedCount})`, callback_data: "wl_filter:watched" }
+    ]);
+
+    // Item Action row for visible items
+    if (pageItems.length > 0) {
+        const itemButtons = pageItems.slice(0, 3).map(m => {
+            const actionText = m.status === "watched" ? `↩️ #${m.id}` : `✅ #${m.id}`;
+            return { text: actionText, callback_data: `wl_toggle:${m.id}` };
+        });
+        const delButtons = pageItems.slice(0, 3).map(m => {
+            return { text: `🗑️ #${m.id}`, callback_data: `wl_del:${m.id}` };
+        });
+        keyboard.push(itemButtons);
+        keyboard.push(delButtons);
+    }
+
+    // Pagination row
+    const navRow = [];
+    if (curPage > 1) {
+        navRow.push({ text: "‹ Prev", callback_data: `wl_page:${curPage - 1}:${filter}` });
+    }
+    navRow.push({ text: "🎲 Pick for Tonight", callback_data: "wl_pick" });
+    if (curPage < totalPages) {
+        navRow.push({ text: "Next ›", callback_data: `wl_page:${curPage + 1}:${filter}` });
+    }
+    keyboard.push(navRow);
+
+    // Hub links
+    keyboard.push([
+        { text: "🍿 Recommender", callback_data: "movie_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
+
+    await safeEditOrSendMessage(env, chatId, messageId, textLines.join("\n"), {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
+async function handlePickRandomMovie(env, chatId, userId, messageId = null) {
+    await ensureTables(env.DB);
+    const row = await env.DB.prepare(
+        "SELECT id, title, year, genre, rating, runtime, platforms, synopsis, why_love FROM watchlist WHERE user_id = ? AND status = 'plan_to_watch' ORDER BY RANDOM() LIMIT 1"
+    ).bind(userId).first();
+
+    if (!row) {
+        const text = [
+            `🎲 *No Unwatched Titles Available!*`,
+            `────────────────────`,
+            `You don't have any unwatched titles in your watchlist yet.`,
+            ``,
+            `💡 Tap **Get Recommendation** to discover something great!`,
+            `────────────────────`
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, messageId, text, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🍿 Get Movie Recommendation", callback_data: "movie_hub" }],
+                    [{ text: "📋 View Watchlist", callback_data: "watchlist" }]
+                ]
+            }
+        });
+        return;
+    }
+
+    const text = [
+        `🎲 *Tonight's Random Watch Pick!*`,
+        `────────────────────`,
+        `🎬 *${sanitizeMd(row.title)}* ${row.year ? `(${sanitizeMd(row.year)})` : ""}`,
+        row.rating ? `⭐ \`${sanitizeMd(row.rating)}\`` : "",
+        row.genre ? `🎭 *Genre:* ${sanitizeMd(row.genre)}` : "",
+        row.runtime ? `⏱️ *Length:* ${sanitizeMd(row.runtime)} • 📺 ${sanitizeMd(row.platforms || "Various")}` : "",
+        `────────────────────`,
+        row.synopsis ? `📝 *Synopsis:*\n${sanitizeMd(row.synopsis)}\n` : "",
+        row.why_love ? `💡 *Why You'll Love It:*\n_${sanitizeMd(row.why_love)}_\n` : "",
+        `────────────────────`
+    ].filter(Boolean).join("\n");
+
+    const keyboard = [
+        [
+            { text: "🍿 Mark Watched", callback_data: `wl_watched:${row.id}` },
+            { text: "🎲 Roll Another Saved", callback_data: "wl_pick" }
+        ],
+        [
+            { text: "📋 Back to Watchlist", callback_data: "watchlist" },
+            { text: "🍿 Movie Hub", callback_data: "movie_hub" }
+        ]
+    ];
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
