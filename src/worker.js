@@ -147,6 +147,90 @@ export default {
                 });
             }
 
+            if (url.pathname === "/api/work") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id parameter" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const curDate = today();
+                const mPrefix = monthPrefix();
+                const prevDate = getPreviousWorkdayDate();
+
+                // Month count & active days
+                const monthRows = await env.DB.prepare(
+                    "SELECT date, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date DESC, id DESC"
+                ).bind(userId, `${mPrefix}%`).all();
+                const monthLogs = monthRows.results || [];
+                const activeDays = new Set(monthLogs.map(r => r.date)).size;
+
+                // Category counts
+                const catCounts = {};
+                for (const l of monthLogs) {
+                    catCounts[l.category] = (catCounts[l.category] || 0) + 1;
+                }
+
+                // Today's logs
+                const todayRows = await env.DB.prepare(
+                    "SELECT id, date, time, content, category, created_at FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id DESC"
+                ).bind(userId, curDate).all();
+
+                // Previous workday logs
+                let prevRows = await env.DB.prepare(
+                    "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+                ).bind(userId, prevDate).all();
+
+                let effectivePrevDate = prevDate;
+                if (!prevRows.results || prevRows.results.length === 0) {
+                    const fallbackRow = await env.DB.prepare(
+                        "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+                    ).bind(userId, curDate).first();
+                    if (fallbackRow?.date) {
+                        effectivePrevDate = fallbackRow.date;
+                        prevRows = await env.DB.prepare(
+                            "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+                        ).bind(userId, effectivePrevDate).all();
+                    }
+                }
+
+                // Recent logs
+                const recentRows = await env.DB.prepare(
+                    "SELECT id, date, time, content, category, created_at FROM work_logs WHERE user_id = ? ORDER BY date DESC, time DESC, id DESC LIMIT 50"
+                ).bind(userId).all();
+
+                return json({
+                    stats: {
+                        monthCount: monthLogs.length,
+                        todayCount: (todayRows.results || []).length,
+                        activeDays,
+                        monthLabel: monthLabel(),
+                        currentDate: curDate,
+                        previousDate: effectivePrevDate
+                    },
+                    categories: catCounts,
+                    today: todayRows.results || [],
+                    previous: prevRows.results || [],
+                    recent: recentRows.results || []
+                });
+            }
+
+            if (url.pathname === "/api/reminders") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id parameter" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const { results } = await env.DB.prepare(
+                    "SELECT id, chat_id, title, reminder_time, frequency, type, is_active, last_sent_date FROM reminders WHERE user_id = ? ORDER BY reminder_time ASC, id ASC"
+                ).bind(userId).all();
+
+                return json({
+                    reminders: results || []
+                });
+            }
+
             return json({ ok: true, service: "cashflow-bot" });
         }
 
@@ -160,6 +244,135 @@ export default {
 
                 const result = await env.DB.prepare("DELETE FROM expenses WHERE user_id = ? AND id = ?")
                     .bind(userId, txId)
+                    .run();
+
+                return json({ ok: true, changes: result.meta?.changes || 0 });
+            }
+
+            if (url.pathname === "/api/work/add") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id" }, 400);
+                }
+                const body = await request.json().catch(() => ({}));
+                const content = (body.content || "").trim();
+                let category = (body.category || "General").trim();
+
+                if (!content) {
+                    return json({ error: "Content is required" }, 400);
+                }
+
+                const bracketMatch = content.match(/^\[(.*?)\]\s*(.*)$/);
+                let finalContent = content;
+                if (bracketMatch) {
+                    category = capitalize(bracketMatch[1].trim());
+                    finalContent = bracketMatch[2].trim() || content;
+                }
+
+                await ensureTables(env.DB);
+                const curDate = today();
+                const curTime = currentTime();
+
+                const result = await env.DB.prepare(
+                    "INSERT INTO work_logs (user_id, date, time, content, category) VALUES (?, ?, ?, ?, ?)"
+                ).bind(userId, curDate, curTime, finalContent, category).run();
+
+                return json({
+                    ok: true,
+                    task: {
+                        id: result.meta?.last_row_id,
+                        date: curDate,
+                        time: curTime,
+                        content: finalContent,
+                        category
+                    }
+                });
+            }
+
+            if (url.pathname === "/api/work/delete") {
+                const userId = url.searchParams.get("user_id");
+                const taskId = url.searchParams.get("id");
+                if (!userId || !taskId) {
+                    return json({ error: "Missing parameters" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const result = await env.DB.prepare("DELETE FROM work_logs WHERE user_id = ? AND id = ?")
+                    .bind(userId, taskId)
+                    .run();
+
+                return json({ ok: true, changes: result.meta?.changes || 0 });
+            }
+
+            if (url.pathname === "/api/reminders/toggle") {
+                const userId = url.searchParams.get("user_id");
+                const reminderId = url.searchParams.get("id");
+                if (!userId || !reminderId) {
+                    return json({ error: "Missing parameters" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const r = await env.DB.prepare(
+                    "SELECT is_active FROM reminders WHERE user_id = ? AND id = ?"
+                ).bind(userId, reminderId).first();
+
+                if (!r) {
+                    return json({ error: "Reminder not found" }, 404);
+                }
+
+                const newActive = r.is_active ? 0 : 1;
+                await env.DB.prepare(
+                    "UPDATE reminders SET is_active = ? WHERE user_id = ? AND id = ?"
+                ).bind(newActive, userId, reminderId).run();
+
+                return json({ ok: true, is_active: newActive });
+            }
+
+            if (url.pathname === "/api/reminders/add") {
+                const userId = url.searchParams.get("user_id");
+                if (!userId) {
+                    return json({ error: "Missing user_id" }, 400);
+                }
+                const body = await request.json().catch(() => ({}));
+                const title = (body.title || "").trim();
+                const reminderTime = (body.reminder_time || "").trim();
+                const frequency = body.frequency || "weekdays";
+                const type = body.type || (title.toLowerCase().includes("standup") ? "standup" : title.toLowerCase().includes("lunch") ? "lunchbox" : "custom");
+
+                if (!title || !reminderTime) {
+                    return json({ error: "Title and reminder_time are required" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const chatId = body.chat_id || userId;
+
+                const result = await env.DB.prepare(
+                    "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)"
+                ).bind(userId, String(chatId), title, reminderTime, frequency, type).run();
+
+                return json({
+                    ok: true,
+                    reminder: {
+                        id: result.meta?.last_row_id,
+                        title,
+                        reminder_time: reminderTime,
+                        frequency,
+                        type,
+                        is_active: 1
+                    }
+                });
+            }
+
+            if (url.pathname === "/api/reminders/delete") {
+                const userId = url.searchParams.get("user_id");
+                const reminderId = url.searchParams.get("id");
+                if (!userId || !reminderId) {
+                    return json({ error: "Missing parameters" }, 400);
+                }
+
+                await ensureTables(env.DB);
+                const result = await env.DB.prepare("DELETE FROM reminders WHERE user_id = ? AND id = ?")
+                    .bind(userId, reminderId)
                     .run();
 
                 return json({ ok: true, changes: result.meta?.changes || 0 });

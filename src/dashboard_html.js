@@ -3,7 +3,7 @@ export default `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cashflow Edge</title>
+    <title>Personal Assistant</title>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- ChartJS -->
@@ -13,14 +13,16 @@ export default `<!DOCTYPE html>
     <style>
         :root {
             --bg-color: #07090e;
-            --card-bg: rgba(18, 22, 33, 0.6);
-            --card-border: rgba(255, 255, 255, 0.05);
+            --card-bg: rgba(18, 22, 33, 0.65);
+            --card-border: rgba(255, 255, 255, 0.06);
             --primary: #6366f1;
-            --primary-glow: rgba(99, 102, 241, 0.15);
+            --primary-glow: rgba(99, 102, 241, 0.2);
             --success: #10b981;
             --success-bg: rgba(16, 185, 129, 0.1);
             --danger: #ef4444;
             --danger-bg: rgba(239, 68, 68, 0.1);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245, 158, 11, 0.1);
             --text-color: #f3f4f6;
             --text-muted: #9ca3af;
         }
@@ -37,6 +39,7 @@ export default `<!DOCTYPE html>
             color: var(--text-color);
             min-height: 100vh;
             padding: 16px;
+            padding-bottom: 40px;
             overflow-y: auto;
             background-image: 
                 radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
@@ -53,13 +56,13 @@ export default `<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             padding: 4px 0;
         }
 
         h1 {
             font-weight: 800;
-            font-size: 1.5rem;
+            font-size: 1.45rem;
             letter-spacing: -0.5px;
             background: linear-gradient(135deg, #ffffff 40%, #a5b4fc 100%);
             -webkit-background-clip: text;
@@ -78,15 +81,15 @@ export default `<!DOCTYPE html>
         }
 
         .user-avatar {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             background: var(--primary);
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 800;
-            font-size: 0.7rem;
+            font-size: 0.72rem;
             color: #fff;
         }
 
@@ -96,15 +99,56 @@ export default `<!DOCTYPE html>
             color: var(--text-color);
         }
 
-        /* Hero Balance Card */
+        /* Modern Segmented Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            background: rgba(18, 22, 33, 0.85);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 4px;
+            margin-bottom: 18px;
+            gap: 4px;
+            backdrop-filter: blur(20px);
+        }
+
+        .nav-tab {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 9px 8px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .nav-tab:hover {
+            color: var(--text-color);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .nav-tab.active {
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
+        }
+
+        /* Hero Card */
         .hero-card {
-            background: linear-gradient(135deg, rgba(20, 24, 39, 0.9) 0%, rgba(12, 14, 24, 0.9) 100%);
+            background: linear-gradient(135deg, rgba(20, 24, 39, 0.95) 0%, rgba(12, 14, 24, 0.95) 100%);
             border: 1px solid var(--card-border);
             border-radius: 24px;
             padding: 24px;
             text-align: center;
             backdrop-filter: blur(20px);
-            margin-bottom: 12px;
+            margin-bottom: 14px;
             box-shadow: 0 10px 30px -10px var(--primary-glow);
             position: relative;
         }
@@ -132,12 +176,12 @@ export default `<!DOCTYPE html>
             font-weight: 500;
         }
 
-        /* Mini Stats row */
+        /* Mini Stats Grid */
         .mini-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .mini-card {
@@ -170,6 +214,7 @@ export default `<!DOCTYPE html>
 
         .mini-indicator.income { background: var(--success); }
         .mini-indicator.expense { background: var(--danger); }
+        .mini-indicator.work { background: #38bdf8; }
 
         .mini-value {
             font-size: 1.15rem;
@@ -183,7 +228,7 @@ export default `<!DOCTYPE html>
             color: var(--text-muted);
         }
 
-        /* Chart Section Layout */
+        /* Section Cards */
         .section-card {
             background: var(--card-bg);
             border: 1px solid var(--card-border);
@@ -210,7 +255,6 @@ export default `<!DOCTYPE html>
             height: 200px;
         }
 
-        /* Split layout for charts on tablet+ */
         .charts-row {
             display: grid;
             grid-template-columns: 1fr;
@@ -224,7 +268,7 @@ export default `<!DOCTYPE html>
             }
         }
 
-        /* Transactions List styling */
+        /* List Items */
         .tx-list {
             display: flex;
             flex-direction: column;
@@ -237,42 +281,48 @@ export default `<!DOCTYPE html>
             justify-content: space-between;
             padding: 10px 14px;
             border-radius: 14px;
-            background: rgba(255, 255, 255, 0.01);
-            border: 1px solid rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid rgba(255, 255, 255, 0.03);
             transition: background-color 0.2s ease;
         }
 
         .tx-row:hover {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .tx-left {
             display: flex;
             align-items: center;
             gap: 12px;
+            overflow: hidden;
         }
 
         .tx-badge {
-            width: 32px;
-            height: 32px;
+            width: 34px;
+            height: 34px;
             border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 1.1rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
         }
 
         .tx-meta {
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .tx-name {
             font-weight: 600;
             font-size: 0.85rem;
             color: #ffffff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .tx-date {
@@ -285,6 +335,7 @@ export default `<!DOCTYPE html>
             text-align: right;
             display: flex;
             flex-direction: column;
+            flex-shrink: 0;
         }
 
         .tx-amt {
@@ -295,6 +346,159 @@ export default `<!DOCTYPE html>
         .tx-amt.income { color: var(--success); }
         .tx-amt.expense { color: var(--text-color); }
 
+        /* Form Inputs & Buttons */
+        .input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .text-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--card-border);
+            color: var(--text-color);
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .text-input:focus {
+            border-color: var(--primary);
+        }
+
+        .btn-action {
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-action:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-action:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Pill Group for Category Selectors */
+        .pill-group {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 6px;
+            margin-bottom: 12px;
+            scrollbar-width: none;
+        }
+        .pill-group::-webkit-scrollbar { display: none; }
+
+        .pill-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .pill-btn.active {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+
+        /* Standup Copy Box */
+        .standup-box {
+            background: rgba(99, 102, 241, 0.06);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+
+        .standup-preview-txt {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            color: #c7d2fe;
+            white-space: pre-wrap;
+            max-height: 140px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(19px);
+        }
+
+        /* Loading & Error */
         .loader-container {
             display: flex;
             flex-direction: column;
@@ -327,6 +531,32 @@ export default `<!DOCTYPE html>
             backdrop-filter: blur(20px);
         }
 
+        /* Toast Message */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(18, 22, 33, 0.95);
+            border: 1px solid var(--primary);
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 24px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 999;
+            pointer-events: none;
+            backdrop-filter: blur(20px);
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
         /* History View Styles */
         .history-header {
             display: flex;
@@ -348,105 +578,50 @@ export default `<!DOCTYPE html>
             display: flex;
             align-items: center;
             gap: 6px;
-            transition: all 0.2s ease;
-        }
-
-        .btn-back:hover {
-            border-color: var(--primary);
-            background: rgba(99, 102, 241, 0.1);
         }
 
         .filter-section {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: 20px;
-            padding: 16px;
             margin-bottom: 16px;
-            backdrop-filter: blur(20px);
             display: flex;
             flex-direction: column;
-            gap: 12px;
-        }
-
-        .search-container {
-            position: relative;
-            width: 100%;
+            gap: 10px;
         }
 
         .search-input {
             width: 100%;
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--card-bg);
             border: 1px solid var(--card-border);
-            border-radius: 12px;
-            padding: 10px 14px;
             color: var(--text-color);
-            font-family: inherit;
+            padding: 10px 16px;
+            border-radius: 14px;
             font-size: 0.85rem;
-            transition: all 0.2s ease;
-        }
-
-        .search-input:focus {
+            font-family: inherit;
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px var(--primary-glow);
-            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(20px);
         }
 
-        .filter-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .pill-group {
-            display: flex;
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--card-border);
-            padding: 3px;
-            border-radius: 12px;
-            gap: 2px;
-        }
-
-        .pill-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            padding: 6px 14px;
-            border-radius: 9px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .pill-btn.active {
-            background: var(--primary);
-            color: #ffffff;
-            box-shadow: 0 2px 8px var(--primary-glow);
-        }
-
-        /* Pagination Styles */
         .pagination-container {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-top: 16px;
-            padding: 4px 8px;
+            padding-top: 14px;
+            border-top: 1px solid var(--card-border);
         }
 
         .pagination-info {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-muted);
-            font-weight: 500;
+            font-weight: 600;
         }
 
         .pagination-btn {
             background: var(--card-bg);
             border: 1px solid var(--card-border);
             color: var(--text-color);
-            padding: 8px 16px;
+            padding: 6px 14px;
             border-radius: 12px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 600;
             cursor: pointer;
             display: flex;
@@ -464,11 +639,6 @@ export default `<!DOCTYPE html>
             opacity: 0.4;
             cursor: not-allowed;
         }
-
-        .btn-delete-tx:hover {
-            opacity: 1 !important;
-            transform: scale(1.15);
-        }
     </style>
 </head>
 <body>
@@ -476,150 +646,318 @@ export default `<!DOCTYPE html>
         <!-- Loader Screen -->
         <div class="loader-container" id="loader">
             <div class="spinner"></div>
-            <p style="color: var(--text-muted); font-size: 0.85rem; font-weight: 500;">Loading financial data...</p>
+            <p style="color: var(--text-muted); font-size: 0.85rem; font-weight: 500;">Connecting to Assistant Hub...</p>
         </div>
 
         <!-- Dashboard Content -->
         <div id="content" style="display: none;">
             <header>
-                <h1>Cashflow Edge</h1>
+                <h1>Assistant Hub</h1>
                 <div class="user-profile">
                     <div class="user-avatar" id="avatar-letter">U</div>
                     <span class="user-name" id="username-display">User</span>
                 </div>
             </header>
 
-            <!-- Hero Balance Display -->
-            <div class="hero-card">
-                <div class="hero-label">Net Balance</div>
-                <div class="hero-value" id="balance-val">$0.00</div>
-                <div class="hero-subvalue" id="balance-sub">0 ៛</div>
-            </div>
+            <!-- Top Segmented Navigation Tabs -->
+            <nav class="nav-tabs">
+                <button class="nav-tab active" id="nav-btn-finance" onclick="switchMainTab('finance')">
+                    <span>💰</span> Cashflow
+                </button>
+                <button class="nav-tab" id="nav-btn-work" onclick="switchMainTab('work')">
+                    <span>💼</span> Work
+                </button>
+                <button class="nav-tab" id="nav-btn-reminders" onclick="switchMainTab('reminders')">
+                    <span>⏰</span> Reminders
+                </button>
+            </nav>
 
-            <!-- Active Reminder Status Card (Shown if active) -->
-            <div class="section-card" id="reminder-card" style="display: none; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.08); border-radius: 18px;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span id="reminder-icon" style="font-size: 1.4rem;">⏰</span>
-                        <div>
-                            <div id="reminder-title-txt" style="font-size: 0.85rem; font-weight: 700; color: #ffffff;">Active Reminder</div>
-                            <div id="reminder-status-sub" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Active at 17:30 (Weekdays)</div>
+            <!-- ============================================================== -->
+            <!-- TAB 1: CASHFLOW & FINANCE                                      -->
+            <!-- ============================================================== -->
+            <div id="tab-pane-finance">
+                <!-- Hero Balance Display -->
+                <div class="hero-card">
+                    <div class="hero-label">Net Balance</div>
+                    <div class="hero-value" id="balance-val">$0.00</div>
+                    <div class="hero-subvalue" id="balance-sub">0 ៛</div>
+                </div>
+
+                <!-- Active Reminder Status Card -->
+                <div class="section-card" id="reminder-card" style="display: none; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.08); border-radius: 18px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="reminder-icon" style="font-size: 1.4rem;">⏰</span>
+                            <div>
+                                <div id="reminder-title-txt" style="font-size: 0.85rem; font-weight: 700; color: #ffffff;">Active Reminder</div>
+                                <div id="reminder-status-sub" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Scheduled</div>
+                            </div>
+                        </div>
+                        <span id="reminder-status-badge" style="font-size: 0.72rem; font-weight: 700; color: var(--success); background: var(--success-bg); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(16, 185, 129, 0.2);">ACTIVE</span>
+                    </div>
+                </div>
+
+                <!-- Budget Progress Card -->
+                <div class="section-card" id="budget-card" style="display: none; margin-bottom: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05); background: rgba(18, 22, 33, 0.7); position: relative; overflow: hidden;">
+                    <div class="section-title" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <span style="display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-color);">
+                            🎯 Budget Limit
+                        </span>
+                        <span id="budget-percent" style="font-size: 0.85rem; color: var(--primary); font-weight: 800; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); border-radius: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">0%</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 500;">
+                            <span style="color: var(--text-color);">Spent: <strong id="budget-spent-txt" style="font-weight: 700;">$0.00</strong></span>
+                            <span style="color: var(--text-muted);">Limit: <span id="budget-total-txt">$0.00</span></span>
+                        </div>
+                        <div style="width: 100%; height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; overflow: hidden; position: relative;">
+                            <div id="budget-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, #818cf8 100%); border-radius: 4px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px var(--primary-glow);"></div>
+                        </div>
+                        <div id="budget-status-msg" style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500; text-align: left; display: flex; align-items: center; gap: 4px;">
+                            Remaining: $0.00
                         </div>
                     </div>
-                    <span id="reminder-status-badge" style="font-size: 0.72rem; font-weight: 700; color: var(--success); background: var(--success-bg); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(16, 185, 129, 0.2);">ACTIVE</span>
                 </div>
-            </div>
 
-            <!-- Budget Progress Card (Only shown if budget is set) -->
-            <div class="section-card" id="budget-card" style="display: none; margin-bottom: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05); background: rgba(18, 22, 33, 0.7); position: relative; overflow: hidden;">
-                <div class="section-title" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-color);">
-                        🎯 Budget Limit
-                    </span>
-                    <span id="budget-percent" style="font-size: 0.85rem; color: var(--primary); font-weight: 800; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); border-radius: 20px; border: 1px solid rgba(99, 102, 241, 0.2);">0%</span>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 500;">
-                        <span style="color: var(--text-color);">Spent: <strong id="budget-spent-txt" style="font-weight: 700;">$0.00</strong></span>
-                        <span style="color: var(--text-muted);">Limit: <span id="budget-total-txt">$0.00</span></span>
+                <!-- Mini Stats Row -->
+                <div class="mini-grid">
+                    <div class="mini-card">
+                        <div class="mini-label">
+                            <span class="mini-indicator income"></span> Income
+                        </div>
+                        <div class="mini-value" id="income-val">$0.00</div>
+                        <div class="mini-subvalue" id="income-sub">0 ៛</div>
                     </div>
-                    <div style="width: 100%; height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; overflow: hidden; position: relative;">
-                        <div id="budget-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, #818cf8 100%); border-radius: 4px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px var(--primary-glow);"></div>
-                    </div>
-                    <div id="budget-status-msg" style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500; text-align: left; display: flex; align-items: center; gap: 4px;">
-                        Remaining: $0.00
+                    <div class="mini-card">
+                        <div class="mini-label">
+                            <span class="mini-indicator expense"></span> Expenses
+                        </div>
+                        <div class="mini-value" id="expense-val">$0.00</div>
+                        <div class="mini-subvalue" id="expense-sub">0 ៛</div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Mini stats row -->
-            <div class="mini-grid">
-                <div class="mini-card">
-                    <div class="mini-label">
-                        <span class="mini-indicator income"></span> Income
+                <!-- Charts Section -->
+                <div class="charts-row">
+                    <div class="section-card">
+                        <div class="section-title">Weekly Trend</div>
+                        <div class="chart-wrapper">
+                            <canvas id="dailyChart"></canvas>
+                        </div>
                     </div>
-                    <div class="mini-value" id="income-val">$0.00</div>
-                    <div class="mini-subvalue" id="income-sub">0 ៛</div>
-                </div>
-                <div class="mini-card">
-                    <div class="mini-label">
-                        <span class="mini-indicator expense"></span> Expenses
+                    <div class="section-card">
+                        <div class="section-title">Categories</div>
+                        <div class="chart-wrapper">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
                     </div>
-                    <div class="mini-value" id="expense-val">$0.00</div>
-                    <div class="mini-subvalue" id="expense-sub">0 ៛</div>
                 </div>
-            </div>
 
-            <!-- Charts Section -->
-            <div class="charts-row">
+                <!-- Recent Transactions -->
                 <div class="section-card">
-                    <div class="section-title">Weekly Trend</div>
-                    <div class="chart-wrapper">
-                        <canvas id="dailyChart"></canvas>
+                    <div class="section-title">
+                        <span>Recent Transactions</span>
+                        <button id="btn-see-all" style="background: none; border: none; color: var(--primary); font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; transition: background 0.2s;">
+                            See All <span style="font-size: 0.95rem;">→</span>
+                        </button>
                     </div>
-                </div>
-                <div class="section-card">
-                    <div class="section-title">Categories</div>
-                    <div class="chart-wrapper">
-                        <canvas id="categoryChart"></canvas>
+                    <div class="tx-list" id="transaction-list">
+                        <!-- Dynamic transactions render here -->
                     </div>
                 </div>
             </div>
 
-            <!-- Recent Ledger -->
-            <div class="section-card">
-                <div class="section-title">
-                    <span>Recent Transactions</span>
-                    <button id="btn-see-all" style="background: none; border: none; color: var(--primary); font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; transition: background 0.2s;">
-                        See All <span style="font-size: 0.95rem;">→</span>
+            <!-- History View Modal -->
+            <div id="history-view" style="display: none;">
+                <div class="history-header">
+                    <button class="btn-back" id="btn-back-to-dashboard">
+                        <span>←</span> Back
                     </button>
+                    <h2 style="font-size: 1.15rem; font-weight: 700; background: linear-gradient(135deg, #ffffff 40%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">History Ledger</h2>
                 </div>
-                <div class="tx-list" id="transaction-list">
-                    <!-- Dynamic transactions render here -->
+
+                <div class="filter-section">
+                    <div class="search-container">
+                        <input type="text" class="search-input" id="history-search-input" placeholder="Search by category or amount..." />
+                    </div>
+                    <div class="filter-row">
+                        <div class="pill-group" id="type-pill-group">
+                            <button class="pill-btn active" data-type="all">All</button>
+                            <button class="pill-btn" data-type="income">Income</button>
+                            <button class="pill-btn" data-type="expense">Expense</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-card">
+                    <div class="tx-list" id="history-transaction-list">
+                        <!-- Dynamic historical transactions render here -->
+                    </div>
+                    <div class="pagination-container">
+                        <button class="pagination-btn" id="btn-prev-page" disabled>
+                            <span>←</span> Prev
+                        </button>
+                        <span class="pagination-info" id="history-page-info">Page 1 of 1</span>
+                        <button class="pagination-btn" id="btn-next-page" disabled>
+                            Next <span>→</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- TAB 2: WORK JOURNAL & STANDUP                                  -->
+            <!-- ============================================================== -->
+            <div id="tab-pane-work" style="display: none;">
+                <!-- Hero Work Card -->
+                <div class="hero-card">
+                    <div class="hero-label">Accomplishments</div>
+                    <div class="hero-value" id="work-month-count">0 Tasks</div>
+                    <div class="hero-subvalue" id="work-month-label">This Month</div>
+                </div>
+
+                <!-- Mini Work Metrics -->
+                <div class="mini-grid">
+                    <div class="mini-card">
+                        <div class="mini-label">
+                            <span class="mini-indicator work"></span> Today
+                        </div>
+                        <div class="mini-value" id="work-today-count">0 Logged</div>
+                        <div class="mini-subvalue" id="work-today-date">Today</div>
+                    </div>
+                    <div class="mini-card">
+                        <div class="mini-label">
+                            <span class="mini-indicator income"></span> Velocity
+                        </div>
+                        <div class="mini-value" id="work-active-days">0 Days</div>
+                        <div class="mini-subvalue">Active days this month</div>
+                    </div>
+                </div>
+
+                <!-- Daily Standup Preview & 1-Tap Copy -->
+                <div class="standup-box">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+                            🗣️ Daily Standup Sync
+                        </span>
+                        <button class="btn-action" id="btn-copy-standup" style="padding: 5px 12px; font-size: 0.75rem;">
+                            📋 Copy Block
+                        </button>
+                    </div>
+                    <div class="standup-preview-txt" id="standup-preview-content">Loading standup preview...</div>
+                </div>
+
+                <!-- Quick Add Task Card -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <span>＋ Log Accomplishment</span>
+                    </div>
+                    <div class="pill-group" id="work-cat-pills">
+                        <button class="pill-btn active" data-cat="Development">💻 Development</button>
+                        <button class="pill-btn" data-cat="Bugfix">🐞 Bugfix</button>
+                        <button class="pill-btn" data-cat="Meeting">👥 Meeting</button>
+                        <button class="pill-btn" data-cat="Release">🚀 Release</button>
+                        <button class="pill-btn" data-cat="Design">🎨 Design</button>
+                        <button class="pill-btn" data-cat="Testing">🧪 Testing</button>
+                        <button class="pill-btn" data-cat="Documentation">📝 Docs</button>
+                    </div>
+                    <form id="form-add-task" onsubmit="event.preventDefault(); submitNewTask();">
+                        <div class="input-row">
+                            <input type="text" class="text-input" id="task-content-input" placeholder="What did you complete? (e.g. Fixed checkout bug #bugfix)" required />
+                            <button type="submit" class="btn-action" id="btn-submit-task">
+                                <span>＋</span> Log
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Category Breakdown -->
+                <div class="section-card" id="work-category-card" style="display: none;">
+                    <div class="section-title">Focus Breakdown</div>
+                    <div class="pill-group" id="work-category-breakdown" style="padding-bottom: 0;">
+                        <!-- Category pills rendered here -->
+                    </div>
+                </div>
+
+                <!-- Tasks Activity List -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <span>Recent Tasks</span>
+                    </div>
+                    <input type="text" class="text-input" id="work-search-input" placeholder="Filter tasks..." style="margin-bottom: 12px; width: 100%;" />
+                    <div class="tx-list" id="work-tasks-list">
+                        <!-- Dynamic work tasks render here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- TAB 3: REMINDERS & ALERTS                                      -->
+            <!-- ============================================================== -->
+            <div id="tab-pane-reminders" style="display: none;">
+                <!-- Hero Reminders Card -->
+                <div class="hero-card">
+                    <div class="hero-label">Automated Reminders</div>
+                    <div class="hero-value" id="reminders-active-count">0 Active</div>
+                    <div class="hero-subvalue">Scheduled with minute-precision edge cron</div>
+                </div>
+
+                <!-- 1-Tap Quick Presets -->
+                <div class="section-card">
+                    <div class="section-title">1-Tap Smart Presets</div>
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
+                        <button class="pill-btn" onclick="addPresetReminder('Morning Standup Sync', '09:00', 'weekdays', 'standup')" style="text-align: left; padding: 10px 14px; border-radius: 14px; background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.25); color: #ffffff; display: flex; align-items: center; justify-content: space-between;">
+                            <span>🗣️ <strong>Standup Alarm</strong> (09:00 Mon–Fri)</span>
+                            <span style="color: #818cf8; font-size: 0.75rem;">＋ Add</span>
+                        </button>
+                        <button class="pill-btn" onclick="addPresetReminder('Bring lunch box home', '17:30', 'weekdays', 'lunchbox')" style="text-align: left; padding: 10px 14px; border-radius: 14px; background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.25); color: #ffffff; display: flex; align-items: center; justify-content: space-between;">
+                            <span>🎒 <strong>Departure / Lunchbox</strong> (17:30 Mon–Fri)</span>
+                            <span style="color: #34d399; font-size: 0.75rem;">＋ Add</span>
+                        </button>
+                        <button class="pill-btn" onclick="addPresetReminder('Review daily expenses', '21:00', 'daily', 'expense_log')" style="text-align: left; padding: 10px 14px; border-radius: 14px; background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.25); color: #ffffff; display: flex; align-items: center; justify-content: space-between;">
+                            <span>💳 <strong>Daily Cashflow Check</strong> (21:00 Daily)</span>
+                            <span style="color: #fbbf24; font-size: 0.75rem;">＋ Add</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Custom Reminder Creator -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <span>＋ Create Custom Reminder</span>
+                    </div>
+                    <form id="form-add-reminder" onsubmit="event.preventDefault(); submitNewReminder();">
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+                            <input type="text" class="text-input" id="reminder-title-input" placeholder="Title (e.g. Check oven, Team sync, Water plants)" required />
+                            <div style="display: flex; gap: 8px;">
+                                <input type="time" class="text-input" id="reminder-time-input" required style="max-width: 130px;" />
+                                <select class="text-input" id="reminder-freq-select" style="background: rgba(18, 22, 33, 0.95); cursor: pointer;">
+                                    <option value="weekdays">Weekdays (Mon–Fri)</option>
+                                    <option value="daily">Daily (Every day)</option>
+                                    <option value="once">Once</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-action" style="width: 100%;">
+                            <span>⏰</span> Set Reminder
+                        </button>
+                    </form>
+                </div>
+
+                <!-- All Reminders List -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <span>Scheduled Reminders</span>
+                    </div>
+                    <div class="tx-list" id="reminders-list">
+                        <!-- Dynamic reminders render here -->
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- History View -->
-        <div id="history-view" style="display: none;">
-            <div class="history-header">
-                <button class="btn-back" id="btn-back-to-dashboard">
-                    <span>←</span> Back to Dashboard
-                </button>
-                <h2 style="font-size: 1.15rem; font-weight: 700; background: linear-gradient(135deg, #ffffff 40%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">History Ledger</h2>
-            </div>
-
-            <!-- Filter Controls -->
-            <div class="filter-section">
-                <div class="search-container">
-                    <input type="text" class="search-input" id="history-search-input" placeholder="Search by category or amount..." />
-                </div>
-                <div class="filter-row">
-                    <div class="pill-group" id="type-pill-group">
-                        <button class="pill-btn active" data-type="all">All</button>
-                        <button class="pill-btn" data-type="income">Income</button>
-                        <button class="pill-btn" data-type="expense">Expense</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Ledger List -->
-            <div class="section-card">
-                <div class="tx-list" id="history-transaction-list">
-                    <!-- Dynamic historical transactions render here -->
-                </div>
-                <!-- Pagination -->
-                <div class="pagination-container">
-                    <button class="pagination-btn" id="btn-prev-page" disabled>
-                        <span>←</span> Prev
-                    </button>
-                    <span class="pagination-info" id="history-page-info">Page 1 of 1</span>
-                    <button class="pagination-btn" id="btn-next-page" disabled>
-                        Next <span>→</span>
-                    </button>
-                </div>
-            </div>
-        </div>
+        <!-- Toast Notification -->
+        <div class="toast" id="toast">Copied to clipboard!</div>
     </div>
 
     <script>
@@ -631,6 +969,15 @@ export default `<!DOCTYPE html>
 
         function formatUsd(value) {
             return "$" + Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2500);
         }
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -668,6 +1015,37 @@ export default `<!DOCTYPE html>
             \`;
         }
 
+        // =====================================================================
+        // TAB SWITCHER
+        // =====================================================================
+        let currentTab = 'finance';
+        let workDataLoaded = false;
+        let remindersDataLoaded = false;
+
+        function switchMainTab(tab) {
+            currentTab = tab;
+
+            // Update Tab Buttons
+            document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById('nav-btn-' + tab);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            // Toggle Panes
+            document.getElementById('tab-pane-finance').style.display = tab === 'finance' ? 'block' : 'none';
+            document.getElementById('history-view').style.display = 'none';
+            document.getElementById('tab-pane-work').style.display = tab === 'work' ? 'block' : 'none';
+            document.getElementById('tab-pane-reminders').style.display = tab === 'reminders' ? 'block' : 'none';
+
+            if (tab === 'work' && !workDataLoaded) {
+                loadWorkData();
+            } else if (tab === 'reminders' && !remindersDataLoaded) {
+                loadRemindersData();
+            }
+        }
+
+        // =====================================================================
+        // TAB 1: FINANCE & CASHFLOW LOGIC
+        // =====================================================================
         async function loadDashboardData(id) {
             try {
                 const response = await fetch(\`/api/data?user_id=\${id}\`);
@@ -698,7 +1076,7 @@ export default `<!DOCTYPE html>
             if (reminder && reminder.is_active) {
                 reminderCard.style.display = 'block';
                 const freq = reminder.frequency === 'weekdays' ? 'Weekdays (Mon–Fri)' : reminder.frequency === 'daily' ? 'Everyday' : 'Once';
-                const icon = reminder.type === 'lunchbox' ? '🎒' : reminder.type === 'expense_log' ? '💰' : '⏰';
+                const icon = reminder.type === 'lunchbox' ? '🎒' : reminder.type === 'standup' ? '🗣️' : reminder.type === 'expense_log' ? '💰' : '⏰';
                 const title = reminder.title || 'Active Reminder';
                 const iconEl = document.getElementById('reminder-icon');
                 if (iconEl) iconEl.innerText = icon;
@@ -718,23 +1096,18 @@ export default `<!DOCTYPE html>
                 budgetCard.style.display = 'none';
             } else {
                 budgetCard.style.display = 'block';
-
                 const percent = Math.round((monthExpenseKhr / budgetKhr) * 100);
                 const progressWidth = Math.min(100, percent);
                 
-                // Update percent badge
                 const percentBadge = document.getElementById('budget-percent');
                 percentBadge.innerText = \`\${percent}%\`;
 
-                // Update text values
                 document.getElementById('budget-spent-txt').innerText = \`\${formatUsd(monthExpenseKhr / EXCHANGE_RATE)} (\${formatKhr(monthExpenseKhr)})\`;
                 document.getElementById('budget-total-txt').innerText = \`\${formatUsd(budgetKhr / EXCHANGE_RATE)} (\${formatKhr(budgetKhr)})\`;
 
-                // Update progress bar
                 const progressBar = document.getElementById('budget-progress-bar');
                 progressBar.style.width = \`\${progressWidth}%\`;
 
-                // Color-code progress bar and badge
                 const statusMsg = document.getElementById('budget-status-msg');
                 if (percent >= 100) {
                     progressBar.style.background = 'linear-gradient(90deg, #ef4444 0%, #f43f5e 100%)';
@@ -848,132 +1221,468 @@ export default `<!DOCTYPE html>
                         },
                         y: { 
                             grid: { color: 'rgba(255, 255, 255, 0.03)' }, 
-                            ticks: { color: '#9ca3af', font: { family: 'Plus Jakarta Sans', size: 9, weight: '500' } } 
+                            ticks: { 
+                                color: '#9ca3af', 
+                                font: { family: 'Plus Jakarta Sans', size: 9, weight: '500' },
+                                callback: val => '$' + Math.round(val / EXCHANGE_RATE)
+                            } 
                         }
                     },
-                    plugins: {
-                        legend: { display: false }
-                    }
+                    plugins: { legend: { display: false } }
                 }
             });
 
-            // Recent Transaction Render
-            const listContainer = document.getElementById('transaction-list');
-            listContainer.innerHTML = '';
-            
+            // Recent Transactions List
+            const txContainer = document.getElementById('transaction-list');
+            txContainer.innerHTML = '';
+
+            const emojis = {
+                'Food': '🍔', 'Coffee': '☕', 'Transport': '🚌', 'Taxi': '🚕',
+                'Rent': '🏠', 'Shopping': '🛒', 'Bills': '📄', 'Salary': '💰',
+                'Invest': '📈', 'Other': '🎮'
+            };
+
             if (data.recent.length === 0) {
-                listContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 0.8rem; font-weight: 500;">No transactions recorded.</p>';
+                txContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 0.85rem;">No recent transactions.</p>';
+            } else {
+                data.recent.forEach(tx => {
+                    const categoryCap = tx.category.charAt(0).toUpperCase() + tx.category.slice(1).toLowerCase();
+                    const emoji = emojis[categoryCap] || (tx.type === 'income' ? '💰' : '💸');
+                    const sign = tx.type === 'income' ? '+' : '-';
+                    const classType = tx.type === 'income' ? 'income' : 'expense';
+                    const formattedAmount = tx.currency === 'USD' ? formatUsd(tx.amount) : formatKhr(tx.amount);
+
+                    const row = document.createElement('div');
+                    row.className = 'tx-row';
+                    row.innerHTML = \`
+                        <div class="tx-left">
+                            <div class="tx-badge">\${emoji}</div>
+                            <div class="tx-meta">
+                                <span class="tx-name">\${categoryCap}</span>
+                                <span class="tx-date">\${tx.date}</span>
+                            </div>
+                        </div>
+                        <div class="tx-right" style="flex-direction: row; align-items: center; gap: 10px;">
+                            <span class="tx-amt \${classType}">\${sign}\${formattedAmount}</span>
+                            <button class="btn-delete-tx" data-id="\${tx.id}" style="background: none; border: none; color: var(--danger); opacity: 0.4; cursor: pointer; font-size: 1rem; transition: opacity 0.2s, transform 0.2s; padding: 4px;">🗑️</button>
+                        </div>
+                    \`;
+                    txContainer.appendChild(row);
+                });
+            }
+        }
+
+        // =====================================================================
+        // TAB 2: WORK JOURNAL & DAILY STANDUP LOGIC
+        // =====================================================================
+        let currentWorkCategory = 'Development';
+        let cachedWorkData = null;
+
+        document.getElementById('work-cat-pills').addEventListener('click', (e) => {
+            const btn = e.target.closest('.pill-btn');
+            if (!btn) return;
+            document.querySelectorAll('#work-cat-pills .pill-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentWorkCategory = btn.getAttribute('data-cat') || 'General';
+        });
+
+        function getWorkIcon(cat) {
+            const c = (cat || '').toLowerCase();
+            if (c.includes('bug')) return '🐞';
+            if (c.includes('meet') || c.includes('call') || c.includes('sync')) return '👥';
+            if (c.includes('release') || c.includes('deploy') || c.includes('ship')) return '🚀';
+            if (c.includes('doc') || c.includes('spec') || c.includes('report')) return '📝';
+            if (c.includes('test') || c.includes('qa')) return '🧪';
+            if (c.includes('design') || c.includes('ui') || c.includes('ux')) return '🎨';
+            return '💻';
+        }
+
+        async function loadWorkData() {
+            const listEl = document.getElementById('work-tasks-list');
+            listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px;"><div class="spinner" style="margin: 0 auto 12px; width:24px; height:24px;"></div>Loading work journal...</div>';
+
+            try {
+                const response = await fetch(\`/api/work?user_id=\${userId}\`);
+                if (!response.ok) throw new Error("Could not load work data.");
+                const data = await response.json();
+                cachedWorkData = data;
+                workDataLoaded = true;
+                renderWorkJournal(data);
+            } catch (err) {
+                listEl.innerHTML = \`<p style="text-align: center; color: var(--danger); padding: 20px;">Error: \${err.message}</p>\`;
+            }
+        }
+
+        function renderWorkJournal(data) {
+            // Stats
+            document.getElementById('work-month-count').innerText = \`\${data.stats.monthCount || 0} Tasks\`;
+            document.getElementById('work-month-label').innerText = data.stats.monthLabel || 'This Month';
+            document.getElementById('work-today-count').innerText = \`\${data.stats.todayCount || 0} Logged\`;
+            document.getElementById('work-today-date').innerText = data.stats.currentDate || 'Today';
+            document.getElementById('work-active-days').innerText = \`\${data.stats.activeDays || 0} Days\`;
+
+            // Standup Preview text
+            const prevItems = (data.previous || []).map(i => \`  - [\${i.category}] \${i.content}\`).join('\\n') || '  - Continued regular deliverables';
+            const todayItems = (data.today || []).map(i => \`  - [\${i.category}] \${i.content}\`).join('\\n') || '  - Continue scheduled tasks & sprint focus';
+            const prevDateLabel = data.stats.previousDate || 'Previous';
+
+            const standupTxt = [
+                \`Daily Standup - \${data.stats.currentDate}\`,
+                \`Engineer: \${username}\`,
+                \`\`,
+                \`1. Yesterday / Previous (\${prevDateLabel}):\`,
+                prevItems,
+                \`\`,
+                \`2. Today:\`,
+                todayItems,
+                \`\`,
+                \`3. Blockers: None\`
+            ].join('\\n');
+
+            document.getElementById('standup-preview-content').innerText = standupTxt;
+
+            // Category breakdown
+            const catCard = document.getElementById('work-category-card');
+            const catContainer = document.getElementById('work-category-breakdown');
+            catContainer.innerHTML = '';
+            const cats = Object.entries(data.categories || {});
+            if (cats.length > 0) {
+                catCard.style.display = 'block';
+                cats.forEach(([name, count]) => {
+                    const pill = document.createElement('span');
+                    pill.className = 'pill-btn';
+                    pill.style.background = 'rgba(255, 255, 255, 0.04)';
+                    pill.style.cursor = 'default';
+                    pill.innerHTML = \`\${getWorkIcon(name)} \${name}: <strong>\${count}</strong>\`;
+                    catContainer.appendChild(pill);
+                });
+            } else {
+                catCard.style.display = 'none';
+            }
+
+            renderTaskList(data.recent || []);
+        }
+
+        function renderTaskList(tasks) {
+            const listEl = document.getElementById('work-tasks-list');
+            listEl.innerHTML = '';
+
+            const searchVal = (document.getElementById('work-search-input').value || '').toLowerCase().trim();
+            const filtered = tasks.filter(t => !searchVal || t.content.toLowerCase().includes(searchVal) || t.category.toLowerCase().includes(searchVal));
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.85rem;">No tasks found.</p>';
                 return;
             }
 
-            const emojis = {
-                'Food': '🍔',
-                'Coffee': '☕',
-                'Transport': '🚌',
-                'Taxi': '🚕',
-                'Rent': '🏠',
-                'Shopping': '🛒',
-                'Bills': '📄',
-                'Salary': '💰',
-                'Invest': '📈',
-                'Other': '🎮'
-            };
+            filtered.forEach(task => {
+                const row = document.createElement('div');
+                row.className = 'tx-row';
+                row.innerHTML = \`
+                    <div class="tx-left">
+                        <div class="tx-badge">\${getWorkIcon(task.category)}</div>
+                        <div class="tx-meta">
+                            <span class="tx-name">\${task.content}</span>
+                            <span class="tx-date">\${task.date} \${task.time || ''} • [\${task.category}]</span>
+                        </div>
+                    </div>
+                    <div class="tx-right">
+                        <button class="btn-delete-task" data-id="\${task.id}" style="background: none; border: none; color: var(--danger); opacity: 0.4; cursor: pointer; font-size: 1rem; padding: 4px;">✕</button>
+                    </div>
+                \`;
+                listEl.appendChild(row);
+            });
+        }
 
-            data.recent.forEach(tx => {
-                const categoryCap = tx.category.charAt(0).toUpperCase() + tx.category.slice(1).toLowerCase();
-                const emoji = emojis[categoryCap] || (tx.type === 'income' ? '💰' : '💸');
-                const sign = tx.type === 'income' ? '+' : '-';
-                const classType = tx.type === 'income' ? 'income' : 'expense';
-                const formattedAmount = tx.currency === 'USD' ? formatUsd(tx.amount) : formatKhr(tx.amount);
+        document.getElementById('work-search-input').addEventListener('input', () => {
+            if (cachedWorkData) {
+                renderTaskList(cachedWorkData.recent || []);
+            }
+        });
+
+        // Copy Standup to clipboard
+        document.getElementById('btn-copy-standup').addEventListener('click', () => {
+            const txt = document.getElementById('standup-preview-content').innerText;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(txt).then(() => {
+                    showToast("✓ Standup copied to clipboard!");
+                }).catch(() => {
+                    showToast("Could not copy automatically.");
+                });
+            } else {
+                showToast("Clipboard not available in this browser.");
+            }
+        });
+
+        // Submit New Work Task
+        async function submitNewTask() {
+            const input = document.getElementById('task-content-input');
+            const content = input.value.trim();
+            if (!content) return;
+
+            const btn = document.getElementById('btn-submit-task');
+            btn.disabled = true;
+            btn.innerText = 'Logging...';
+
+            try {
+                const response = await fetch(\`/api/work/add?user_id=\${userId}\`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content,
+                        category: currentWorkCategory
+                    })
+                });
+
+                if (!response.ok) throw new Error("Failed to add task.");
+                input.value = '';
+                showToast("✅ Task logged successfully!");
+                await loadWorkData();
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '＋ Log';
+            }
+        }
+
+        // Delete Task
+        document.getElementById('work-tasks-list').addEventListener('click', async (e) => {
+            const btn = e.target.closest('.btn-delete-task');
+            if (!btn) return;
+            const taskId = btn.getAttribute('data-id');
+            if (!taskId) return;
+
+            if (!confirm("Are you sure you want to remove this task?")) return;
+
+            try {
+                const res = await fetch(\`/api/work/delete?user_id=\${userId}&id=\${taskId}\`, {
+                    method: 'POST'
+                });
+                if (!res.ok) throw new Error("Delete failed");
+                showToast("🗑️ Task deleted.");
+                await loadWorkData();
+            } catch (err) {
+                alert("Error deleting task: " + err.message);
+            }
+        });
+
+        // =====================================================================
+        // TAB 3: REMINDERS & ALERTS LOGIC
+        // =====================================================================
+        let cachedReminders = [];
+
+        function getReminderIcon(type, title) {
+            const t = (type || '').toLowerCase();
+            const tit = (title || '').toLowerCase();
+            if (t === 'standup' || tit.includes('standup')) return '🗣️';
+            if (t === 'lunchbox' || tit.includes('lunch') || tit.includes('departure')) return '🎒';
+            if (t === 'expense_log' || tit.includes('expense') || tit.includes('spending')) return '💳';
+            return '⏰';
+        }
+
+        async function loadRemindersData() {
+            const listEl = document.getElementById('reminders-list');
+            listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px;"><div class="spinner" style="margin: 0 auto 12px; width:24px; height:24px;"></div>Loading reminders...</div>';
+
+            try {
+                const response = await fetch(\`/api/reminders?user_id=\${userId}\`);
+                if (!response.ok) throw new Error("Could not load reminders.");
+                const data = await response.json();
+                cachedReminders = data.reminders || [];
+                remindersDataLoaded = true;
+                renderReminders(cachedReminders);
+            } catch (err) {
+                listEl.innerHTML = \`<p style="text-align: center; color: var(--danger); padding: 20px;">Error: \${err.message}</p>\`;
+            }
+        }
+
+        function renderReminders(reminders) {
+            const activeCount = reminders.filter(r => r.is_active).length;
+            document.getElementById('reminders-active-count').innerText = \`\${activeCount} Active\`;
+
+            const listEl = document.getElementById('reminders-list');
+            listEl.innerHTML = '';
+
+            if (reminders.length === 0) {
+                listEl.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.85rem;">No reminders scheduled. Tap a preset above to create one!</p>';
+                return;
+            }
+
+            reminders.forEach(r => {
+                const icon = getReminderIcon(r.type, r.title);
+                const freqLabel = r.frequency === 'weekdays' ? 'Mon–Fri' : r.frequency === 'daily' ? 'Daily' : 'Once';
+                const checked = r.is_active ? 'checked' : '';
 
                 const row = document.createElement('div');
                 row.className = 'tx-row';
                 row.innerHTML = \`
                     <div class="tx-left">
-                        <div class="tx-badge">\${emoji}</div>
+                        <div class="tx-badge">\${icon}</div>
                         <div class="tx-meta">
-                            <span class="tx-name">\${categoryCap}</span>
-                            <span class="tx-date">\${tx.date}</span>
+                            <span class="tx-name">\${r.title}</span>
+                            <span class="tx-date">\${r.reminder_time} (\${freqLabel})</span>
                         </div>
                     </div>
-                    <div class="tx-right" style="flex-direction: row; align-items: center; gap: 10px;">
-                        <span class="tx-amt \${classType}">\${sign}\${formattedAmount}</span>
-                        <button class="btn-delete-tx" data-id="\${tx.id}" style="background: none; border: none; color: var(--danger); opacity: 0.4; cursor: pointer; font-size: 1rem; transition: opacity 0.2s, transform 0.2s; padding: 4px;">🗑️</button>
+                    <div class="tx-right" style="flex-direction: row; align-items: center; gap: 12px;">
+                        <label class="switch">
+                            <input type="checkbox" class="reminder-toggle" data-id="\${r.id}" \${checked}>
+                            <span class="slider"></span>
+                        </label>
+                        <button class="btn-delete-reminder" data-id="\${r.id}" style="background: none; border: none; color: var(--danger); opacity: 0.4; cursor: pointer; font-size: 1rem; padding: 4px;">✕</button>
                     </div>
                 \`;
-                listContainer.appendChild(row);
+                listEl.appendChild(row);
             });
         }
 
-        // State variables for History View
-        let historyPage = 1;
-        const historyLimit = 20;
-        let historySearch = "";
-        let historyType = "all"; // 'all', 'income', 'expense'
+        // Toggle Switch handler
+        document.getElementById('reminders-list').addEventListener('change', async (e) => {
+            const toggle = e.target.closest('.reminder-toggle');
+            if (!toggle) return;
+            const reminderId = toggle.getAttribute('data-id');
+            if (!reminderId) return;
 
-        // Navigation Elements
+            try {
+                const res = await fetch(\`/api/reminders/toggle?user_id=\${userId}&id=\${reminderId}\`, {
+                    method: 'POST'
+                });
+                if (!res.ok) throw new Error("Toggle failed");
+                const data = await res.json();
+                showToast(data.is_active ? "🟢 Reminder turned ON" : "⚪ Reminder turned OFF");
+                await loadRemindersData();
+            } catch (err) {
+                alert("Error toggling reminder: " + err.message);
+                toggle.checked = !toggle.checked;
+            }
+        });
+
+        // Delete Reminder handler
+        document.getElementById('reminders-list').addEventListener('click', async (e) => {
+            const btn = e.target.closest('.btn-delete-reminder');
+            if (!btn) return;
+            const reminderId = btn.getAttribute('data-id');
+            if (!reminderId) return;
+
+            if (!confirm("Are you sure you want to remove this reminder?")) return;
+
+            try {
+                const res = await fetch(\`/api/reminders/delete?user_id=\${userId}&id=\${reminderId}\`, {
+                    method: 'POST'
+                });
+                if (!res.ok) throw new Error("Delete failed");
+                showToast("🗑️ Reminder deleted.");
+                await loadRemindersData();
+            } catch (err) {
+                alert("Error deleting reminder: " + err.message);
+            }
+        });
+
+        // Add Preset Reminder
+        async function addPresetReminder(title, time, frequency, type) {
+            try {
+                const res = await fetch(\`/api/reminders/add?user_id=\${userId}\`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        reminder_time: time,
+                        frequency,
+                        type
+                    })
+                });
+                if (!res.ok) throw new Error("Failed to add preset");
+                showToast(\`⏰ "\${title}" enabled for \${time}!\`);
+                await loadRemindersData();
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        }
+
+        // Add Custom Reminder
+        async function submitNewReminder() {
+            const titleInput = document.getElementById('reminder-title-input');
+            const timeInput = document.getElementById('reminder-time-input');
+            const freqSelect = document.getElementById('reminder-freq-select');
+
+            const title = titleInput.value.trim();
+            const time = timeInput.value.trim();
+            const frequency = freqSelect.value;
+
+            if (!title || !time) return;
+
+            try {
+                const res = await fetch(\`/api/reminders/add?user_id=\${userId}\`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        reminder_time: time,
+                        frequency
+                    })
+                });
+
+                if (!res.ok) throw new Error("Failed to create reminder");
+                titleInput.value = '';
+                showToast("✅ Reminder scheduled!");
+                await loadRemindersData();
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        }
+
+        // =====================================================================
+        // HISTORY VIEW MODAL LOGIC (FINANCE)
+        // =====================================================================
         const btnSeeAll = document.getElementById('btn-see-all');
         const btnBackToDashboard = document.getElementById('btn-back-to-dashboard');
-        const contentDiv = document.getElementById('content');
+        const tabPaneFinance = document.getElementById('tab-pane-finance');
         const historyViewDiv = document.getElementById('history-view');
-
-        // Search & Filter Elements
         const historySearchInput = document.getElementById('history-search-input');
         const typePillGroup = document.getElementById('type-pill-group');
+        const historyListContainer = document.getElementById('history-transaction-list');
         const btnPrevPage = document.getElementById('btn-prev-page');
         const btnNextPage = document.getElementById('btn-next-page');
         const historyPageInfo = document.getElementById('history-page-info');
-        const historyListContainer = document.getElementById('history-transaction-list');
 
-        // Navigation Actions
+        let historyPage = 1;
+        const historyLimit = 20;
+        let historyType = 'all';
+        let historySearch = '';
+        let searchDebounceTimer = null;
+
         btnSeeAll.addEventListener('click', () => {
-            contentDiv.style.display = 'none';
+            tabPaneFinance.style.display = 'none';
             historyViewDiv.style.display = 'block';
             historyPage = 1;
-            historySearchInput.value = '';
-            historySearch = '';
-            historyType = 'all';
-            typePillGroup.querySelectorAll('.pill-btn').forEach(btn => {
-                if (btn.getAttribute('data-type') === 'all') {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
-            });
             loadHistoryData();
         });
 
         btnBackToDashboard.addEventListener('click', () => {
             historyViewDiv.style.display = 'none';
-            contentDiv.style.display = 'block';
-            loadDashboardData(userId); // Reload dashboard in case data changed
+            tabPaneFinance.style.display = 'block';
+            loadDashboardData(userId);
         });
 
-        // Search Handlers (with simple debounce)
-        let searchTimeout;
+        typePillGroup.addEventListener('click', (e) => {
+            const pill = e.target.closest('.pill-btn');
+            if (!pill) return;
+            document.querySelectorAll('#type-pill-group .pill-btn').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            historyType = pill.getAttribute('data-type') || 'all';
+            historyPage = 1;
+            loadHistoryData();
+        });
+
         historySearchInput.addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                historySearch = e.target.value;
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                historySearch = e.target.value.trim();
                 historyPage = 1;
                 loadHistoryData();
             }, 300);
         });
 
-        // Pill Handlers
-        typePillGroup.addEventListener('click', (e) => {
-            const button = e.target.closest('.pill-btn');
-            if (!button) return;
-
-            typePillGroup.querySelectorAll('.pill-btn').forEach(btn => btn.classList.remove('active'));
-            button.classList.add('active');
-
-            historyType = button.getAttribute('data-type');
-            historyPage = 1;
-            loadHistoryData();
-        });
-
-        // Pagination Handlers
         btnPrevPage.addEventListener('click', () => {
             if (historyPage > 1) {
                 historyPage--;
@@ -986,29 +1695,24 @@ export default `<!DOCTYPE html>
             loadHistoryData();
         });
 
-        // Deletion Event Delegation Handlers
         async function handleDeleteTxClick(e) {
             const btn = e.target.closest('.btn-delete-tx');
             if (!btn) return;
-
             const txId = btn.getAttribute('data-id');
             if (!txId) return;
 
-            const confirmDelete = confirm("Are you sure you want to delete this transaction?");
-            if (!confirmDelete) return;
+            if (!confirm("Are you sure you want to delete this transaction?")) return;
 
             try {
                 const response = await fetch(\`/api/delete?user_id=\${userId}&id=\${txId}\`, {
                     method: 'POST'
                 });
 
-                if (!response.ok) {
-                    throw new Error("Failed to delete transaction.");
-                }
+                if (!response.ok) throw new Error("Failed to delete transaction.");
 
                 const result = await response.json();
                 if (result.ok) {
-                    // Check if history view is currently visible
+                    showToast("🗑️ Transaction deleted.");
                     if (historyViewDiv.style.display === 'block') {
                         loadHistoryData();
                     } else {
@@ -1038,9 +1742,7 @@ export default `<!DOCTYPE html>
                 }
 
                 const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error("Could not load history records.");
-                }
+                if (!response.ok) throw new Error("Could not load history records.");
                 const data = await response.json();
                 renderHistory(data);
             } catch (err) {
@@ -1050,7 +1752,6 @@ export default `<!DOCTYPE html>
 
         function renderHistory(data) {
             historyListContainer.innerHTML = '';
-            
             const transactions = data.transactions || [];
             const totalPages = data.totalPages || 1;
             historyPage = data.page || 1;
@@ -1064,16 +1765,9 @@ export default `<!DOCTYPE html>
             }
 
             const emojis = {
-                'Food': '🍔',
-                'Coffee': '☕',
-                'Transport': '🚌',
-                'Taxi': '🚕',
-                'Rent': '🏠',
-                'Shopping': '🛒',
-                'Bills': '📄',
-                'Salary': '💰',
-                'Invest': '📈',
-                'Other': '🎮'
+                'Food': '🍔', 'Coffee': '☕', 'Transport': '🚌', 'Taxi': '🚕',
+                'Rent': '🏠', 'Shopping': '🛒', 'Bills': '📄', 'Salary': '💰',
+                'Invest': '📈', 'Other': '🎮'
             };
 
             transactions.forEach(tx => {
@@ -1101,7 +1795,6 @@ export default `<!DOCTYPE html>
                 historyListContainer.appendChild(row);
             });
 
-            // Update pagination buttons
             historyPageInfo.innerText = \`Page \${historyPage} of \${totalPages}\`;
             btnPrevPage.disabled = historyPage <= 1;
             btnNextPage.disabled = historyPage >= totalPages;

@@ -60,10 +60,11 @@ graph TD
 * **Natural Reminders:** Supports exact and relative times: `remind 17:30 Standup` or `remind in 20m Check oven`.
 * **Automated Cron Engine:** Powered by Cloudflare Worker cron triggers running every minute.
 
-### 6. 📱 Interactive Web Mini-App Dashboard
-* Built-in Telegram WebApp accessible via `/hub`.
-* Interactive spending charts powered by **Chart.js**.
-* Historical search, category filtering, and paginated transaction history.
+### 6. 📱 Interactive Web Mini-App Multi-Tab Dashboard
+Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboard`:
+* **💰 Cashflow Tab:** Live net balance hero, monthly budget runway gauge, interactive spending trend & category breakdown charts powered by **Chart.js**, and paginated searchable ledger with 1-tap delete.
+* **💼 Work Journal Tab:** Monthly accomplishment metrics & active days velocity, live Daily Standup preview with 1-tap copy block for Slack/Teams, quick task creator with category pills (`Dev`, `Bugfix`, `Meeting`, `Release`), category breakdown, and searchable work history.
+* **⏰ Reminders Tab:** Active alarms counter, 1-tap presets (`Standup 09:00`, `Departure 17:30`, `Spending 21:00`), custom reminder scheduler with frequency selector (daily/weekdays/once), interactive instant toggle switches (ON/OFF), and 1-tap reminder deletion.
 
 ---
 
