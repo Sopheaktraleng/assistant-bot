@@ -47,11 +47,15 @@ graph TD
 * **Data Portability:** 1-click CSV backup export (`/clear`).
 
 ### 4. 💼 Work Journal & Manager Reports Module
-* **Daily Accomplishment Log:** Record completed tasks instantly with `/done Fixed checkout bug` or `did code review`.
-* **One-Click Monthly Reports:** Type `/report` to generate structured, professional accomplishment reports organized by week and category—ready for 1-on-1s or manager performance reviews.
-* **Exportable:** Download your complete monthly report as a `.txt` file (`/report export`).
+* **Daily Accomplishment Log:** Record completed tasks instantly with `/done Fixed checkout bug #bugfix` or `did code review`.
+* **Daily Standup Assistant (`/standup`):** Generates structured Scrum standups (Yesterday / Previous Workday, Today's Focus, Blockers) with a 1-tap copy block ready for Slack, Microsoft Teams, or Telegram.
+* **AI Standup Polish (`/standup polish`):** Uses Gemini AI to transform casual task notes into crisp, high-impact engineering standup updates.
+* **AI Executive Report Polish (`/report polish`):** Automatically synthesizes raw monthly accomplishments into a structured, executive-ready performance review report (Executive Summary, Core Deliverables, Reliability & Bugfixes, Leadership, Strategic Recommendations).
+* **Morning Standup Alarm:** Automated 9:00 AM weekday reminder with previous workday context, snooze, and 1-tap logging.
+* **Exportable:** Download complete raw or AI-polished monthly reports as `.txt` files (`/report export`).
 
 ### 5. ⏰ Reminders & Habits Module
+* **Morning Standup Alarm:** Weekday 9:00 AM prompt with previous tasks summary and 1-tap logging. Includes `[⏰ Snooze 30m]` button.
 * **Departure Alarms:** Weekday reminder (e.g. 5:30 PM) so you never leave your lunch box or belongings behind. Includes `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
 * **Natural Reminders:** Supports exact and relative times: `remind 17:30 Standup` or `remind in 20m Check oven`.
 * **Automated Cron Engine:** Powered by Cloudflare Worker cron triggers running every minute.
@@ -79,11 +83,14 @@ graph TD
 | `/month` | — | **Finance** | Current month summary & budget progress |
 | `/budget <amt> <curr>` | `/b` | **Finance** | Set monthly spending limit (e.g. `/budget 300 usd`) |
 | `/work` | `/w`, `tasks` | **Work** | Open Work Journal workspace |
-| `/done <task>` | `did ...`, `finished ...` | **Work** | Log a completed work accomplishment |
+| `/done <task>` | `did ...`, `finished ...` | **Work** | Log a completed work accomplishment (supports `#tag`) |
+| `/standup` | `/su`, `standup` | **Work** | Generate Daily Standup (Yesterday, Today, Blockers) with 1-tap copy |
+| `/standup polish` | — | **Work** | AI-polish standup update for Slack/Teams with Gemini |
 | `/report` | `report` | **Work** | Generate this month's manager accomplishment report |
+| `/report polish` | `/polish` | **Work** | AI executive synthesis for 1-on-1s and performance reviews |
 | `/report last` | — | **Work** | Generate last month's accomplishment report |
 | `/report export` | — | **Work** | Export accomplishment report as a `.txt` document |
-| `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace (departure alarms, presets) |
+| `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace (standup, departure, custom) |
 | `/remind <time> <title>` | `remind in 15m ...` | **Reminders** | Set custom reminder (24h or relative time) |
 | `/settings` | — | **Settings** | Currency toggle (USD/KHR) & budget configuration |
 | `/help` | `/h`, `help` | **Help** | View interactive bot guide |

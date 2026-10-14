@@ -408,6 +408,24 @@ async function handleMessage(message, env, origin) {
         return;
     }
 
+    if (text === "/standup" || text.startsWith("/standup ") || text === "/su" || text.startsWith("/su ")) {
+        const parts = text.split(/\s+/);
+        const sub = (parts[1] || "").toLowerCase();
+        if (sub === "polish" || sub === "ai") {
+            await handleAiPolishStandup(env, chatId, userId, message.from);
+        } else if (sub === "copy") {
+            await sendStandupCopyBlock(env, chatId, userId, message.from);
+        } else {
+            await sendStandupReport(env, chatId, userId, message.from);
+        }
+        return;
+    }
+
+    if (text === "/polish") {
+        await handleAiPolishWorkReport(env, chatId, userId, "this_month", message.from);
+        return;
+    }
+
     if (text.startsWith("/done") || text.startsWith("/did") || text.startsWith("/log")) {
         const parts = text.split(/\s+/);
         if (parts.length === 1) {
@@ -554,8 +572,18 @@ async function handleMessage(message, env, origin) {
             return;
         }
 
+        if (lower === "standup" || lower === "scrum" || lower === "daily sync" || lower === "sync") {
+            await sendStandupReport(env, chatId, userId, message.from);
+            return;
+        }
+
         if (lower === "report") {
             await sendWorkReport(env, chatId, userId, "this_month", message.from);
+            return;
+        }
+
+        if (lower === "polish" || lower === "polish report") {
+            await handleAiPolishWorkReport(env, chatId, userId, "this_month", message.from);
             return;
         }
 
@@ -741,6 +769,41 @@ async function handleCallback(callback, env, origin) {
 
     if (data === "work_delete_menu") {
         await sendWorkDeletePicker(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data === "work_standup") {
+        await sendStandupReport(env, chatId, userId, callback.from, messageId);
+        return;
+    }
+
+    if (data === "work_standup_copy") {
+        await sendStandupCopyBlock(env, chatId, userId, callback.from, callback.id);
+        return;
+    }
+
+    if (data === "work_standup_polish") {
+        await handleAiPolishStandup(env, chatId, userId, callback.from, messageId, callback.id);
+        return;
+    }
+
+    if (data === "work_report_polish_this") {
+        await handleAiPolishWorkReport(env, chatId, userId, "this_month", callback.from, messageId, callback.id);
+        return;
+    }
+
+    if (data === "work_report_polish_last") {
+        await handleAiPolishWorkReport(env, chatId, userId, "last_month", callback.from, messageId, callback.id);
+        return;
+    }
+
+    if (data === "work_report_polish_export_this") {
+        await handleAiPolishWorkReportExport(env, chatId, userId, "this_month", callback.from, callback.id);
+        return;
+    }
+
+    if (data === "work_report_polish_export_last") {
+        await handleAiPolishWorkReportExport(env, chatId, userId, "last_month", callback.from, callback.id);
         return;
     }
 
@@ -950,6 +1013,39 @@ async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data.startsWith("su_snooze")) {
+        const now = new Date();
+        const snoozeTime = new Date(now.getTime() + 30 * 60 * 1000);
+        const snoozeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(snoozeTime);
+
+        await ensureTables(env.DB);
+        await env.DB.prepare(`
+            INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+            VALUES (?, ?, 'Morning Standup (Snoozed)', ?, 'once', 'standup', 1)
+        `).bind(userId, String(chatId), snoozeStr).run();
+
+        await answerCallback(env, callback.id, { text: `⏰ Standup snoozed 30 mins (until ${snoozeStr})` });
+        try {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: callback.message.message_id,
+                text: [
+                    `⏰ *Standup Snoozed*`,
+                    `────────────────────`,
+                    `Snoozed for 30 minutes.`,
+                    `We will remind you again at \`${snoozeStr}\`.`
+                ].join("\n"),
+                parse_mode: "Markdown"
+            });
+        } catch (e) {}
+        return;
+    }
+
     // --- General Reminders Callbacks ---
     if (data === "reminders") {
         await sendRemindersMenu(env, chatId, userId, messageId);
@@ -958,6 +1054,28 @@ async function handleCallback(callback, env, origin) {
 
     if (data === "remind_prompt_add") {
         await sendPromptAddReminder(env, chatId, messageId);
+        return;
+    }
+
+    if (data === "remind_add_standup") {
+        await ensureTables(env.DB);
+        const existing = await env.DB.prepare(
+            "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'standup' LIMIT 1"
+        ).bind(userId).first();
+
+        if (existing) {
+            await env.DB.prepare("UPDATE reminders SET is_active = 1, chat_id = ? WHERE id = ?")
+                .bind(String(chatId), existing.id)
+                .run();
+        } else {
+            await env.DB.prepare(`
+                INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+                VALUES (?, ?, 'Morning Standup Sync', '09:00', 'weekdays', 'standup', 1)
+            `).bind(userId, String(chatId)).run();
+        }
+
+        await answerCallback(env, callback.id, { text: "🗣️ Morning Standup alarm enabled (09:00 Mon–Fri)!" });
+        await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
 
@@ -1679,9 +1797,10 @@ User message: "${userQuery}"
 Instructions:
 1. Provide a direct, helpful, and natural response formatted for Telegram (use markdown: *bold*, \`code\`, bullet points, emojis).
 2. Use the live data above accurately. Mention amounts in both USD ($) and Cambodian Riel (៛) when helpful. Do NOT invent numbers that contradict the data.
-3. If the user asks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
-4. If the user explicitly asks to record an expense, log work, or set a reminder that is NOT already recorded, return an "action" object. Otherwise, set "action" to null.
-5. You MUST return ONLY valid JSON matching this schema:
+3. If the user asks for their daily standup or to summarize accomplishments, synthesize recent and today's tasks into a crisp 3-part update (Yesterday, Today, Blockers), and recommend /standup or /report polish.
+4. If the user asks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
+5. If the user explicitly asks to record an expense, log work, or set a reminder that is NOT already recorded, return an "action" object. Otherwise, set "action" to null.
+6. You MUST return ONLY valid JSON matching this schema:
 {
   "reply": "Conversational markdown message to the user.",
   "action": null | {
@@ -1816,6 +1935,78 @@ async function askAiCopilot(env, userQuery, context) {
             if (parsed) return parsed;
         } catch (aiErr) {
             console.error("Workers AI Copilot error:", aiErr);
+        }
+    }
+
+    return null;
+}
+
+async function callAiTextModel(env, systemPrompt, userPrompt, temperature = 0.3) {
+    const candidateModels = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-flash-latest"
+    ];
+
+    if (env.GEMINI_API_KEY) {
+        const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
+        const requestBody = JSON.stringify({
+            contents: [
+                {
+                    parts: [{ text: fullPrompt }]
+                }
+            ],
+            generationConfig: {
+                temperature
+            }
+        });
+
+        for (const model of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+                const resp = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: requestBody
+                });
+
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    console.warn(`Gemini text model ${model} failed (${resp.status}):`, errText);
+                    continue;
+                }
+
+                const resJson = await resp.json();
+                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (rawText && rawText.trim()) {
+                    return rawText.trim();
+                }
+            } catch (err) {
+                console.warn(`Gemini text error with ${model}:`, err.message);
+            }
+        }
+    }
+
+    if (env.AI) {
+        try {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+                messages: [
+                    ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+                    { role: "user", content: userPrompt }
+                ],
+                max_tokens: 1500,
+                temperature
+            });
+
+            const outputText = aiResp?.response || (typeof aiResp === "string" ? aiResp : JSON.stringify(aiResp));
+            if (outputText && outputText.trim()) {
+                return outputText.trim();
+            }
+        } catch (aiErr) {
+            console.error("Workers AI text model error:", aiErr);
         }
     }
 
@@ -2458,11 +2649,14 @@ async function sendPromptAddReminder(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🎒 17:30 Departure Preset", callback_data: "remind_add_lunchbox" },
-                    { text: "💳 Spending Check (21:00)", callback_data: "toggle_expense_reminder" }
+                    { text: "🗣️ 09:00 Standup Preset", callback_data: "remind_add_standup" },
+                    { text: "🎒 17:30 Departure", callback_data: "remind_add_lunchbox" }
                 ],
                 [
-                    { text: "‹ Back to Reminders", callback_data: "reminders" },
+                    { text: "💳 Spending Check (21:00)", callback_data: "toggle_expense_reminder" },
+                    { text: "‹ Back", callback_data: "reminders" }
+                ],
+                [
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -2613,11 +2807,11 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
         finalContent = bracketMatch[2].trim() || content;
     } else {
         const lower = content.toLowerCase();
-        if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("resolve") || lower.includes("patch") || lower.includes("error")) {
+        if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("resolve") || lower.includes("patch") || lower.includes("error") || lower.includes("#bug")) {
             category = "Bugfix";
         } else if (lower.includes("meet") || lower.includes("sync") || lower.includes("call") || lower.includes("standup") || lower.includes("discuss") || lower.includes("1-on-1") || lower.includes("1:1")) {
             category = "Meeting";
-        } else if (lower.includes("deploy") || lower.includes("release") || lower.includes("publish") || lower.includes("ship")) {
+        } else if (lower.includes("deploy") || lower.includes("release") || lower.includes("publish") || lower.includes("ship") || lower.includes("#release")) {
             category = "Release";
         } else if (lower.includes("doc") || lower.includes("report") || lower.includes("write") || lower.includes("spec") || lower.includes("manual")) {
             category = "Documentation";
@@ -2625,7 +2819,7 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
             category = "Testing";
         } else if (lower.includes("design") || lower.includes("ui") || lower.includes("ux") || lower.includes("figma") || lower.includes("mockup")) {
             category = "Design";
-        } else if (lower.includes("code") || lower.includes("api") || lower.includes("feature") || lower.includes("develop") || lower.includes("implement") || lower.includes("refactor") || lower.includes("build") || lower.includes("service")) {
+        } else if (lower.includes("code") || lower.includes("api") || lower.includes("feature") || lower.includes("develop") || lower.includes("implement") || lower.includes("refactor") || lower.includes("build") || lower.includes("service") || lower.includes("#dev")) {
             category = "Development";
         }
     }
@@ -2654,6 +2848,10 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
         reply_markup: {
             inline_keyboard: [
                 [
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
+                    { text: "✨ AI Polish", callback_data: "work_report_polish_this" }
+                ],
+                [
                     { text: "📋 Today's Work", callback_data: "work_today" },
                     { text: "📊 Monthly Report", callback_data: "work_report_this" }
                 ],
@@ -2668,6 +2866,13 @@ async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
 async function handleReportCommand(env, chatId, userId, text, from) {
     const parts = text.split(/\s+/);
     const arg = (parts[1] || "").toLowerCase();
+
+    if (arg === "polish" || arg === "ai") {
+        const subArg = (parts[2] || "").toLowerCase();
+        const targetPeriod = (subArg === "last" || subArg === "prev" || subArg === "previous") ? "last_month" : (subArg === "week" || subArg === "7d") ? "this_week" : "this_month";
+        await handleAiPolishWorkReport(env, chatId, userId, targetPeriod, from);
+        return;
+    }
 
     if (arg === "last" || arg === "prev" || arg === "previous") {
         await sendWorkReport(env, chatId, userId, "last_month", from);
@@ -2895,6 +3100,10 @@ async function sendWorkHub(env, chatId, userId, from, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
+                    { text: "✨ AI Polish Report", callback_data: "work_report_polish_this" }
+                ],
+                [
                     { text: "📊 Monthly Report", callback_data: "work_report_this" },
                     { text: "📄 Export .txt", callback_data: "work_export_this" }
                 ],
@@ -3051,6 +3260,7 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
     const exportCb = period === "last_month" ? "work_export_last" : "work_export_this";
     const switchMonthText = period === "last_month" ? "⏩ This Month" : "⏪ Last Month";
     const switchMonthCb = period === "last_month" ? "work_report_this" : "work_report_last";
+    const polishCb = period === "last_month" ? "work_report_polish_last" : "work_report_polish_this";
 
     if (fullMessage.length > 3800) {
         const preview = lines.slice(0, 30).join("\n") + "\n\n⚠️ _Report is extensive. Full report sent as file below..._";
@@ -3059,8 +3269,12 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "📄 Export .txt", callback_data: exportCb },
-                        { text: switchMonthText, callback_data: switchMonthCb }
+                        { text: "✨ AI Polish", callback_data: polishCb },
+                        { text: "📄 Export .txt", callback_data: exportCb }
+                    ],
+                    [
+                        { text: switchMonthText, callback_data: switchMonthCb },
+                        { text: "🗣️ Daily Standup", callback_data: "work_standup" }
                     ],
                     [
                         { text: "⚡ Work Log", callback_data: "work_hub" },
@@ -3078,8 +3292,12 @@ async function sendWorkReport(env, chatId, userId, period = "this_month", from, 
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "📄 Export .txt", callback_data: exportCb },
-                    { text: switchMonthText, callback_data: switchMonthCb }
+                    { text: "✨ AI Polish", callback_data: polishCb },
+                    { text: "📄 Export .txt", callback_data: exportCb }
+                ],
+                [
+                    { text: switchMonthText, callback_data: switchMonthCb },
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" }
                 ],
                 [
                     { text: "⚡ Work Log", callback_data: "work_hub" },
@@ -3253,6 +3471,566 @@ async function sendWorkDeletePicker(env, chatId, userId, messageId = null) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Daily Standup & AI Report Polish Engine
+// ---------------------------------------------------------------------------
+
+async function sendStandupReport(env, chatId, userId, from, messageId = null) {
+    await ensureTables(env.DB);
+    const rawUsername = from?.first_name || from?.username || "Engineer";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
+
+    const todayDate = today();
+    const now = new Date();
+    const weekdayStr = new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        weekday: "long"
+    }).format(now);
+
+    const prevWorkday = getPreviousWorkdayDate();
+
+    // Fetch today's tasks
+    const todayRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, todayDate).all();
+    const todayLogs = todayRows.results || [];
+
+    // Fetch previous workday's tasks (or latest prior available session)
+    let prevLogs = [];
+    let effectivePrevDate = prevWorkday;
+
+    const directPrevRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, prevWorkday).all();
+
+    if (directPrevRows.results && directPrevRows.results.length > 0) {
+        prevLogs = directPrevRows.results;
+    } else {
+        const priorRow = await env.DB.prepare(
+            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+        ).bind(userId, todayDate).first();
+        if (priorRow?.date) {
+            effectivePrevDate = priorRow.date;
+            const fallbackRows = await env.DB.prepare(
+                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+            ).bind(userId, effectivePrevDate).all();
+            prevLogs = fallbackRows.results || [];
+        }
+    }
+
+    const prevList = prevLogs.length > 0
+        ? prevLogs.map(item => `• \`${item.time}\` ${getWorkCategoryIcon(item.category)} ${item.content}`).join("\n")
+        : "_No tasks recorded for previous session._";
+
+    const todayList = todayLogs.length > 0
+        ? todayLogs.map(item => `• \`${item.time}\` ${getWorkCategoryIcon(item.category)} ${item.content}`).join("\n")
+        : "_No tasks logged today yet. Type:_ \`done <task>\`";
+
+    const text = [
+        `🗣️ *Daily Standup*`,
+        `────────────────────`,
+        `● *Engineer:*   ${cleanUsername}`,
+        `● *Date:*       \`${todayDate}\` (${weekdayStr})`,
+        `────────────────────`,
+        `⏮️ *Previous Focus (${effectivePrevDate}):*`,
+        prevList,
+        ``,
+        `🎯 *Today's Focus:*`,
+        todayList,
+        ``,
+        `🚧 *Blockers:*`,
+        `• _None reported (all on track)_`,
+        `────────────────────`,
+        `_Ready for your daily team sync!_`
+    ].join("\n");
+
+    const buttons = [
+        [
+            { text: "📋 Copy Block", callback_data: "work_standup_copy" },
+            { text: "✨ AI Polish Standup", callback_data: "work_standup_polish" }
+        ],
+        [
+            { text: "＋ Log Today's Task", callback_data: "work_log_prompt" },
+            { text: "⏰ Standup Alarm", callback_data: "remind_add_standup" }
+        ],
+        [
+            { text: "⚡ Work Journal", callback_data: "work_hub" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: buttons
+        }
+    });
+}
+
+async function sendStandupCopyBlock(env, chatId, userId, from, callbackId = null) {
+    if (callbackId) {
+        await answerCallback(env, callbackId, { text: "📋 1-tap copy block generated!" });
+    }
+
+    const rawUsername = from?.first_name || from?.username || "Team Member";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Team Member";
+    const todayDate = today();
+    const prevWorkday = getPreviousWorkdayDate();
+
+    const todayRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, todayDate).all();
+    const todayLogs = todayRows.results || [];
+
+    let prevLogs = [];
+    let effectivePrevDate = prevWorkday;
+    const directPrevRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, prevWorkday).all();
+    if (directPrevRows.results && directPrevRows.results.length > 0) {
+        prevLogs = directPrevRows.results;
+    } else {
+        const priorRow = await env.DB.prepare(
+            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+        ).bind(userId, todayDate).first();
+        if (priorRow?.date) {
+            effectivePrevDate = priorRow.date;
+            const fallbackRows = await env.DB.prepare(
+                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+            ).bind(userId, effectivePrevDate).all();
+            prevLogs = fallbackRows.results || [];
+        }
+    }
+
+    const prevBullets = prevLogs.length > 0
+        ? prevLogs.map(item => `  - [${item.category}] ${item.content}`).join("\n")
+        : "  - Continued regular deliverables";
+
+    const todayBullets = todayLogs.length > 0
+        ? todayLogs.map(item => `  - [${item.category}] ${item.content}`).join("\n")
+        : "  - Continue development and scheduled sprint tasks";
+
+    const copyBlock = [
+        `Daily Standup - ${todayDate}`,
+        `Name: ${cleanUsername}`,
+        ``,
+        `1. Yesterday / Previous (${effectivePrevDate}):`,
+        prevBullets,
+        ``,
+        `2. Today:`,
+        todayBullets,
+        ``,
+        `3. Blockers: None`
+    ].join("\n");
+
+    const message = [
+        `📋 *Tap the block below to copy:*`,
+        ``,
+        `\`\`\``,
+        copyBlock,
+        `\`\`\``,
+        `_Paste directly into Slack, Microsoft Teams, or Telegram!_`
+    ].join("\n");
+
+    await sendMessage(env, chatId, message, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
+                    { text: "⚡ Work Journal", callback_data: "work_hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleAiPolishStandup(env, chatId, userId, from, messageId = null, callbackId = null) {
+    if (callbackId) {
+        await answerCallback(env, callbackId, { text: "🧠 Polishing with AI..." });
+    }
+    await ensureTables(env.DB);
+
+    const rawUsername = from?.first_name || from?.username || "Engineer";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
+    const todayDate = today();
+    const prevWorkday = getPreviousWorkdayDate();
+
+    const todayRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, todayDate).all();
+    const todayLogs = todayRows.results || [];
+
+    let prevLogs = [];
+    let effectivePrevDate = prevWorkday;
+    const directPrevRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, prevWorkday).all();
+    if (directPrevRows.results && directPrevRows.results.length > 0) {
+        prevLogs = directPrevRows.results;
+    } else {
+        const priorRow = await env.DB.prepare(
+            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+        ).bind(userId, todayDate).first();
+        if (priorRow?.date) {
+            effectivePrevDate = priorRow.date;
+            const fallbackRows = await env.DB.prepare(
+                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+            ).bind(userId, effectivePrevDate).all();
+            prevLogs = fallbackRows.results || [];
+        }
+    }
+
+    if (prevLogs.length === 0 && todayLogs.length === 0) {
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⚠️ *No work logs available to polish.*\n\nLog tasks with \`/done <task>\` first (e.g. \`/done Fixed checkout bug\`), then tap **✨ AI Polish Standup**!`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "‹ Back to Standup", callback_data: "work_standup" }]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    const rawPrevText = prevLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "No explicit logs";
+    const rawTodayText = todayLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "Continue scheduled tasks & review";
+
+    const systemPrompt = `You are an elite software engineering manager and executive communicator.
+Transform messy or casual work logs into a top-tier, impact-oriented daily engineering standup update.
+Keep it concise, actionable, and professional. Use active verbs (Implemented, Resolved, Streamlined, Spearheaded).`;
+
+    const userPrompt = `Engineer: ${cleanUsername}
+Date: ${todayDate}
+Previous Work Session (${effectivePrevDate}):
+${rawPrevText}
+
+Today's Tasks:
+${rawTodayText}
+
+Please write a polished, professional daily standup for Slack/Teams.
+Include:
+1. 🚀 Yesterday / Previous Focus (High impact, clear outcomes)
+2. 🎯 Today's Planned Focus (Clear deliverables)
+3. 🚧 Blockers / Dependencies (State 'None (All on track)' if none mentioned)
+
+Format cleanly in Telegram Markdown with emojis and bullet points.`;
+
+    const polishedText = await callAiTextModel(env, systemPrompt, userPrompt, 0.3);
+
+    if (!polishedText) {
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⚠️ *AI Standup Polish was unavailable.*\n\nPlease verify your \`GEMINI_API_KEY\` or Workers AI binding.`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "‹ Back to Standup", callback_data: "work_standup" }]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    const responseText = [
+        `✨ *AI-Polished Daily Standup*`,
+        `────────────────────`,
+        polishedText,
+        `────────────────────`,
+        `_Copy to clipboard or share with your team:_`
+    ].join("\n");
+
+    await safeEditOrSendMessage(env, chatId, messageId, responseText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "📋 Copy Block", callback_data: "work_standup_copy" },
+                    { text: "‹ Raw Standup", callback_data: "work_standup" }
+                ],
+                [
+                    { text: "⚡ Work Journal", callback_data: "work_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleAiPolishWorkReport(env, chatId, userId, period = "this_month", from, messageId = null, callbackId = null) {
+    if (callbackId) {
+        await answerCallback(env, callbackId, { text: "🧠 Polishing report with Gemini AI..." });
+    }
+    await ensureTables(env.DB);
+
+    const rawUsername = from?.first_name || from?.username || "Engineer";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
+
+    let label = "";
+    let query = "";
+    let bindArgs = [];
+
+    if (period === "this_month") {
+        label = monthLabel();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${monthPrefix()}%`];
+    } else if (period === "last_month") {
+        label = lastMonthLabel();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${lastMonthPrefix()}%`];
+    } else if (period === "this_week") {
+        const start = dateDaysAgo(6);
+        const end = today();
+        label = `Rolling 7 Days (${start} to ${end})`;
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, start, end];
+    } else {
+        label = period;
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${period}%`];
+    }
+
+    const { results } = await env.DB.prepare(query).bind(...bindArgs).all();
+    const logs = results || [];
+
+    if (logs.length === 0) {
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⚠️ *No work accomplishments found for ${label} to polish.*\n\nLog tasks with \`/done <task>\` first!`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "⚡ Work Journal", callback_data: "work_hub" }]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch (e) {}
+
+    const formattedTasks = logs.map(l => `• [${l.date}] [${l.category}] ${l.content}`).join("\n");
+
+    const systemPrompt = `You are a Principal Engineering Lead and Executive Performance Coach.
+Transform the provided work logs into an inspiring, executive-level Monthly Accomplishment Report suitable for high-stakes 1-on-1s and annual performance reviews.
+Group related tasks into impactful business deliverables. Emphasize engineering excellence, business impact, and proactive leadership.`;
+
+    const userPrompt = `Candidate: ${cleanUsername}
+Period: ${label}
+Completed Work Logs (${logs.length} tasks):
+${formattedTasks}
+
+Instructions:
+Produce a structured Executive Accomplishment Report formatted in Telegram Markdown:
+1. 🏆 Executive Summary: A punchy 2-sentence synthesis of key velocity and high-level milestones.
+2. 🚀 Core Deliverables & Features Shipped: Group tasks into major themes/initiatives, detailing the technical outcome and value.
+3. 🔧 Operational Excellence & Reliability: Bugfixes, refactors, tooling, performance improvements.
+4. 🤝 Collaboration & Leadership: Cross-functional syncs, documentation, mentorship, code reviews.
+5. 📈 Recommended Strategic Focus for Next Month: 2 high-leverage forward-looking opportunities.
+
+Use bullet points, emojis, bold headings, and impactful action verbs.`;
+
+    const polishedReport = await callAiTextModel(env, systemPrompt, userPrompt, 0.3);
+
+    if (!polishedReport) {
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⚠️ *AI Report Polish was unable to respond.*\n\nPlease verify your \`GEMINI_API_KEY\` or Workers AI binding.`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "‹ Back to Work Hub", callback_data: "work_hub" }]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    const exportCb = period === "last_month" ? "work_report_polish_export_last" : "work_report_polish_export_this";
+    const rawCb = period === "last_month" ? "work_report_last" : "work_report_this";
+    const switchMonthText = period === "last_month" ? "⏩ Polish This Month" : "⏪ Polish Last Month";
+    const switchMonthCb = period === "last_month" ? "work_report_polish_this" : "work_report_polish_last";
+
+    const header = [
+        `✨ *Executive Accomplishment Report*`,
+        `────────────────────`,
+        `● *Period:*  \`${label}\``,
+        `● *Engineer:* ${cleanUsername}`,
+        `● *Input:*    \`${logs.length} completed tasks\``,
+        `────────────────────`,
+        ``
+    ].join("\n");
+
+    const fullMessage = header + polishedReport;
+
+    if (fullMessage.length > 3800) {
+        const preview = fullMessage.slice(0, 3200) + "\n\n⚠️ _Report is extensive. Full polished file sent below..._";
+        await sendMessage(env, chatId, preview, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📄 Export Polished .txt", callback_data: exportCb },
+                        { text: "📊 Raw Report", callback_data: rawCb }
+                    ],
+                    [
+                        { text: "⚡ Work Journal", callback_data: "work_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        await sendPolishedWorkReportFile(env, chatId, cleanUsername, label, period, polishedReport);
+        return;
+    }
+
+    await safeEditOrSendMessage(env, chatId, messageId, fullMessage, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "📄 Export Polished .txt", callback_data: exportCb },
+                    { text: "📊 Raw Report", callback_data: rawCb }
+                ],
+                [
+                    { text: switchMonthText, callback_data: switchMonthCb },
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" }
+                ],
+                [
+                    { text: "⚡ Work Journal", callback_data: "work_hub" },
+                    { text: "🏠 Main Hub", callback_data: "hub" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleAiPolishWorkReportExport(env, chatId, userId, period = "this_month", from, callbackId = null) {
+    if (callbackId) {
+        await answerCallback(env, callbackId, { text: "📄 Preparing polished export..." });
+    }
+    await ensureTables(env.DB);
+    const rawUsername = from?.first_name || from?.username || "Engineer";
+    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
+
+    let label = "";
+    let query = "";
+    let bindArgs = [];
+
+    if (period === "this_month") {
+        label = monthLabel();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${monthPrefix()}%`];
+    } else if (period === "last_month") {
+        label = lastMonthLabel();
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${lastMonthPrefix()}%`];
+    } else {
+        label = period;
+        query = "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? AND date LIKE ? ORDER BY date ASC, time ASC, id ASC";
+        bindArgs = [userId, `${period}%`];
+    }
+
+    const { results } = await env.DB.prepare(query).bind(...bindArgs).all();
+    const logs = results || [];
+    if (logs.length === 0) {
+        await sendMessage(env, chatId, `⚠️ No work accomplishments found for ${label} to export.`);
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "upload_document" });
+    } catch (e) {}
+
+    const formattedTasks = logs.map(l => `• [${l.date}] [${l.category}] ${l.content}`).join("\n");
+    const systemPrompt = `You are a Principal Engineering Lead and Executive Performance Coach.
+Transform the provided work logs into an inspiring, executive-level Monthly Accomplishment Report suitable for high-stakes 1-on-1s and annual performance reviews.
+Group related tasks into impactful business deliverables. Emphasize engineering excellence, business impact, and proactive leadership.`;
+
+    const userPrompt = `Candidate: ${cleanUsername}
+Period: ${label}
+Completed Work Logs (${logs.length} tasks):
+${formattedTasks}
+
+Instructions:
+Produce a structured Executive Accomplishment Report formatted with clear headings:
+1. Executive Summary: 2-sentence synthesis of key velocity and high-level milestones.
+2. Core Deliverables & Features Shipped: Group tasks into major themes/initiatives, detailing the technical outcome and value.
+3. Operational Excellence & Reliability: Bugfixes, refactors, tooling, performance improvements.
+4. Collaboration & Leadership: Cross-functional syncs, documentation, mentorship, code reviews.
+5. Recommended Strategic Focus for Next Period: 2 high-leverage forward-looking opportunities.`;
+
+    const polishedReport = await callAiTextModel(env, systemPrompt, userPrompt, 0.3);
+    if (!polishedReport) {
+        await sendMessage(env, chatId, "⚠️ AI was unable to generate the polished export. Please try again.");
+        return;
+    }
+
+    await sendPolishedWorkReportFile(env, chatId, cleanUsername, label, period, polishedReport);
+}
+
+async function sendPolishedWorkReportFile(env, chatId, cleanUsername, label, period, polishedContent) {
+    const fileSuffix = period.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `executive_accomplishment_report_${fileSuffix}.txt`;
+
+    const fileText = [
+        "================================================================================",
+        "                   EXECUTIVE ACCOMPLISHMENT REPORT (AI POLISHED)",
+        "================================================================================",
+        `Period:          ${label}`,
+        `Prepared For:    ${cleanUsername}`,
+        `Generated At:    ${today()} ${currentTime()} (Phnom Penh)`,
+        "================================================================================",
+        "",
+        polishedContent.replace(/[*_`#]/g, ""),
+        "",
+        "================================================================================",
+        "Generated with AI Executive Polish by Personal Assistant Bot",
+        "================================================================================"
+    ].join("\n");
+
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    const file = new File([fileText], filename, { type: "text/plain" });
+    formData.append("document", file);
+    formData.append("caption", `✨ Executive Accomplishment Report (${label})\nAI-polished & formatted for performance reviews! 🚀`);
+
+    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!resp.ok) {
+        const detail = await resp.text();
+        console.error("sendPolishedWorkReportFile error:", detail);
+        await sendMessage(env, chatId, "❌ Failed to upload polished report file.");
+    }
+}
+
 async function sendLunchboxMenu(env, chatId, userId, messageId = null) {
     return sendRemindersMenu(env, chatId, userId, messageId);
 }
@@ -3273,7 +4051,7 @@ async function sendRemindersMenu(env, chatId, userId, messageId = null) {
         listText = reminders.map((r, idx) => {
             const status = r.is_active ? "●" : "○";
             const freq = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
-            const icon = r.type === "lunchbox" ? "🎒" : r.type === "expense_log" ? "💳" : "⏰";
+            const icon = r.type === "lunchbox" ? "🎒" : r.type === "standup" ? "🗣️" : r.type === "expense_log" ? "💳" : "⏰";
             return `${idx + 1}. ${status} ${icon} *${r.title}*\n    └ \`${r.reminder_time}\` (${freq})`;
         }).join("\n");
     }
@@ -3291,7 +4069,8 @@ async function sendRemindersMenu(env, chatId, userId, messageId = null) {
     const buttons = [
         [
             { text: "＋ Add Reminder", callback_data: "remind_prompt_add" },
-            { text: "🎒 Departure 17:30", callback_data: "remind_add_lunchbox" }
+            { text: "🗣️ Standup 09:00", callback_data: "remind_add_standup" },
+            { text: "🎒 17:30", callback_data: "remind_add_lunchbox" }
         ]
     ];
 
@@ -3854,11 +4633,14 @@ async function sendHelpMessage(env, chatId, messageId = null) {
         `• \`remind in 15m <task>\` — Quick one-time timer`,
         `• \`/reminders\` — Open Reminders Workspace`,
         ``,
-        `⚡ *Work Log & Monthly Manager Reports*`,
-        `• \`done <task>\` — Record accomplishment instantly`,
-        `• \`/report\` — Generate monthly manager report`,
+        `⚡ *Work Log, Standup & AI Reports*`,
+        `• \`done <task>\` — Record accomplishment instantly (supports \`#tag\`)`,
+        `• \`/standup\` — Daily standup generator (Yesterday, Today, Blockers)`,
+        `• \`/standup polish\` — AI-polished standup for Slack / Teams`,
+        `• \`/report\` — Generate monthly manager accomplishment report`,
+        `• \`/report polish\` — AI executive accomplishment synthesis`,
         `• \`/report export\` — Download report as .txt file`,
-        `• \`/work\` — View today's accomplishments`,
+        `• \`/work\` — Open Work Journal Workspace`,
         ``,
         `🧾 *Smart Receipt & Slip Scanner*`,
         `• Send or forward ABA Bank, Bakong, or KHQR slips to record automatically!`,
@@ -3876,11 +4658,14 @@ async function sendHelpMessage(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💳 Finance", callback_data: "finance_hub" },
+                    { text: "🗣️ Standup", callback_data: "work_standup" },
                     { text: "⚡ Work Log", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders", callback_data: "reminders" },
+                    { text: "💳 Finance", callback_data: "finance_hub" },
+                    { text: "⏰ Reminders", callback_data: "reminders" }
+                ],
+                [
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -3929,6 +4714,8 @@ async function processDueReminders(env) {
         try {
             if (r.type === "lunchbox") {
                 await sendLunchboxNotification(env, r.chat_id, r.id);
+            } else if (r.type === "standup") {
+                await sendStandupNotification(env, r.chat_id, r.user_id, r.id);
             } else if (r.type === "expense_log") {
                 await sendExpenseLogNotification(env, r.chat_id);
             } else {
@@ -3948,6 +4735,66 @@ async function processDueReminders(env) {
             console.error(`Failed to send reminder ${r.id} to chat ${r.chat_id}:`, err);
         }
     }
+}
+
+async function sendStandupNotification(env, chatId, userId, reminderId = 0) {
+    const todayDate = today();
+    const prevWorkday = getPreviousWorkdayDate();
+
+    let prevLogs = [];
+    let effectivePrevDate = prevWorkday;
+
+    const directPrevRows = await env.DB.prepare(
+        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+    ).bind(userId, prevWorkday).all();
+
+    if (directPrevRows.results && directPrevRows.results.length > 0) {
+        prevLogs = directPrevRows.results;
+    } else {
+        const priorRow = await env.DB.prepare(
+            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+        ).bind(userId, todayDate).first();
+        if (priorRow?.date) {
+            effectivePrevDate = priorRow.date;
+            const fallbackRows = await env.DB.prepare(
+                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+            ).bind(userId, effectivePrevDate).all();
+            prevLogs = fallbackRows.results || [];
+        }
+    }
+
+    const prevSummary = prevLogs.length > 0
+        ? prevLogs.map(item => `• ${getWorkCategoryIcon(item.category)} ${item.content}`).slice(0, 4).join("\n")
+        : "_No tasks recorded for previous session._";
+
+    const text = [
+        `🌅 *Morning Standup Time!*`,
+        `────────────────────`,
+        `Ready to start your work day? 🚀`,
+        ``,
+        `⏮️ *Accomplished in last session (${effectivePrevDate}):*`,
+        prevSummary,
+        ``,
+        `🎯 *What are your top priorities for today?*`,
+        `────────────────────`,
+        `_Log anytime with: \`done <task description>\`_`
+    ].join("\n");
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🗣️ View Standup", callback_data: "work_standup" },
+                    { text: "✨ AI Polish", callback_data: "work_standup_polish" }
+                ],
+                [
+                    { text: "＋ Log Task", callback_data: "work_log_prompt" },
+                    { text: "⏰ Snooze 30m", callback_data: `su_snooze:${reminderId}` }
+                ]
+            ]
+        }
+    });
 }
 
 async function sendLunchboxNotification(env, chatId, reminderId = 0) {
@@ -4409,6 +5256,22 @@ function dateDaysAgo(days) {
         month: "2-digit",
         day: "2-digit",
     }).format(d);
+}
+
+function getPreviousWorkdayDate() {
+    const now = new Date();
+    const weekdayStr = new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        weekday: "short"
+    }).format(now); // "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
+
+    if (weekdayStr === "Mon") {
+        return dateDaysAgo(3); // Friday
+    } else if (weekdayStr === "Sun") {
+        return dateDaysAgo(2); // Friday
+    } else {
+        return dateDaysAgo(1); // Yesterday
+    }
 }
 
 async function sendWeeklyScheduledReports(env) {
