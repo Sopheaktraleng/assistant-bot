@@ -28,9 +28,9 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
 
-        if (request.method === "GET") {
+        if (request.method === "GET" || request.method === "HEAD") {
             if (url.pathname === "/dashboard") {
-                return new Response(dashboardHtml, {
+                return new Response(request.method === "HEAD" ? null : dashboardHtml, {
                     headers: { "Content-Type": "text/html; charset=utf-8" },
                 });
             }
