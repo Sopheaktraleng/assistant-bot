@@ -25,6 +25,7 @@ graph TD
     Hub --> Work["💼 Work Journal<br/>(Accomplishments, Manager Reports)"]
     Hub --> Alarms["⏰ Reminders & Habits<br/>(Departure Alarms, Custom Reminders)"]
     Hub --> Movies["🍿 Movies & Watchlist<br/>(AI Recommender, Watchlist, Vibe Search)"]
+    Hub --> Voice["🎙️ Voice Notes<br/>(Whisper AI + Gemini Speech)"]
     Hub --> Dashboard["📱 Web Mini-App<br/>(4-Tab Dashboard & Analytics)"]
 ```
 
@@ -76,6 +77,16 @@ Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboar
 * **"Pick For Tonight" Decider (`/watch pick`):** Eliminates movie night choice fatigue by randomly selecting an unwatched title from your personal watchlist!
 * **Web Mini-App Integration:** Fully accessible in the new 🍿 Movies tab inside `/dashboard`.
 
+### 8. 🎙️ Hands-Free Voice Notes & Speech-to-Action Module
+* **Instant Speech-to-Action:** Hold the Telegram mic button and speak naturally:
+  * *"Spent $4 on iced coffee"* ➔ Logs $4 expense under Coffee.
+  * *"Paid 10000 on lunch"* ➔ Logs 10,000 KHR under Food.
+  * *"Finished code review for payment gateway"* ➔ Logs accomplishment to Work Journal.
+  * *"Remind me in 30 minutes to check oven"* ➔ Schedules reminder alarm.
+  * *"How much did I spend this week?"* ➔ Gemini Copilot answers with spending breakdown.
+* **Dual-Engine Speech Recognition:** Edge-native **Cloudflare Workers AI Whisper** (`@cf/openai/whisper`) with **Google Gemini Multimodal Audio** fallback.
+* **Bilingual English & Khmer Support:** Recognizes native English, Khmer (*អក្សរខ្មែរ*), and mixed language speech.
+
 ---
 
 ## ⚡ Commands & Shortcuts
@@ -83,6 +94,7 @@ Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboar
 | Command | Shortcut | Workspace | Description |
 | :--- | :--- | :--- | :--- |
 | `/hub` | `/menu`, `menu`, `hub` | **Main Hub** | Open Personal Assistant Hub portal |
+| `/voice` | `/mic`, voice note | **Voice Notes** | Hands-free voice note guide & shortcuts |
 | `/ask <query>` | `/ai`, `/copilot`, casual text | **AI Copilot** | Ask anything about spending, budgets, tasks, or advice |
 | `/scan` | `/ocr`, `/receipt` | **Scanner** | Bank slip & receipt scanner guide (or just send a photo) |
 | `/finance` | `/f`, `money`, `balance` | **Finance** | Open Cashflow & Finance workspace |

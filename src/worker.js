@@ -806,6 +806,17 @@ async function handleMessage(message, env, origin) {
         return;
     }
 
+    // 0.1. 🎙️ Voice Note & Audio Transcription (Workers AI Whisper + Gemini Multimodal Fallback)
+    if (message.voice || message.audio || (message.document && message.document.mime_type && message.document.mime_type.startsWith("audio/"))) {
+        await handleVoiceMessage(message, env, origin);
+        return;
+    }
+
+    if (text === "/voice" || text === "/mic" || text === "/audio") {
+        await sendVoiceHelp(env, chatId);
+        return;
+    }
+
     if (text === "/scan" || text === "/receipt" || text === "/ocr" || text === "/slip") {
         await sendScanHelp(env, chatId);
         return;
@@ -1151,8 +1162,11 @@ async function handleMessage(message, env, origin) {
         }
 
         // 5. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5"
+        // Also supports spoken phrases: "spent $5 on coffee", "paid 10000 for lunch", "bought coffee for 5 dollars"
         const expMatch1 = text.match(/^(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
         const expMatch2 = text.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
+        const expMatch3 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:on|for)?\s*([a-zA-Z\s]+)$/i);
+        const expMatch4 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+([a-zA-Z\s]+)\s+(?:for|at)?\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?$/i);
 
         let amount = null;
         let category = null;
@@ -1166,14 +1180,22 @@ async function handleMessage(message, env, origin) {
             amount = Number(expMatch2[2].replace("$", ""));
             currencyHint = expMatch2[4] || (expMatch2[2].includes("$") ? "USD" : null);
             category = expMatch2[1].trim();
+        } else if (expMatch3) {
+            amount = Number(expMatch3[1].replace("$", ""));
+            currencyHint = expMatch3[2] || (expMatch3[1].includes("$") ? "USD" : null);
+            category = expMatch3[3].trim();
+        } else if (expMatch4) {
+            amount = Number(expMatch4[2].replace("$", ""));
+            currencyHint = expMatch4[3] || (expMatch4[2].includes("$") ? "USD" : null);
+            category = expMatch4[1].trim();
         }
 
         if (amount && Number.isFinite(amount) && amount > 0 && category && category.length < 30) {
             let curr = await getDisplayCurrency(env.DB, userId);
             if (currencyHint) {
                 const cUpper = currencyHint.toUpperCase();
-                if (cUpper === "$" || cUpper === "USD") curr = "USD";
-                else if (cUpper === "KHR") curr = "KHR";
+                if (cUpper === "$" || cUpper === "USD" || cUpper === "DOLLARS") curr = "USD";
+                else if (cUpper === "KHR" || cUpper === "RIEL") curr = "KHR";
             } else {
                 if (amount >= 500) curr = "KHR";
                 else curr = "USD";
@@ -1229,6 +1251,11 @@ async function handleCallback(callback, env, origin) {
 
     if (data === "finance_hub") {
         await sendFinanceHub(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data === "voice_help") {
+        await sendVoiceHelp(env, chatId, messageId);
         return;
     }
 
@@ -3174,6 +3201,252 @@ async function handleImageReceipt(message, env, origin) {
             `⚠️ *Scan processing error:* ${cleanMd(err.message)}`,
             ``,
             `💡 You can still log manually: \`5 coffee\` or \`/add 5 usd lunch\``
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, statusMsgId, errMsg, { parse_mode: "Markdown" });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 🎙️ Voice Notes & Speech-to-Text Engine
+// ---------------------------------------------------------------------------
+
+async function transcribeWithWorkersAI(env, arrayBuffer) {
+    if (!env.AI) return null;
+    try {
+        const input = {
+            audio: [...new Uint8Array(arrayBuffer)]
+        };
+        const res = await env.AI.run("@cf/openai/whisper", input);
+        const text = res?.text?.trim();
+        return text || null;
+    } catch (err) {
+        console.warn("Workers AI Whisper transcription error:", err.message || err);
+        return null;
+    }
+}
+
+async function transcribeWithGemini(env, base64Audio, mimeType = "audio/ogg") {
+    if (!env.GEMINI_API_KEY) return null;
+
+    const candidateModels = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash"
+    ];
+
+    const prompt = `Listen to this voice message carefully. Transcribe the spoken words accurately into text.
+The speaker may speak in English, Khmer (អក្សរខ្មែរ), or a mix of both (e.g. Cambodian Riel / USD / ABA).
+Rules:
+- Output ONLY the transcription text.
+- Do NOT add quotes, timestamps, or conversational commentary like "Here is the transcription:".
+- If the audio is completely silent or unrecognizable noise, reply with "SILENCE".`;
+
+    const requestBody = JSON.stringify({
+        contents: [
+            {
+                parts: [
+                    { text: prompt },
+                    {
+                        inline_data: {
+                            mime_type: mimeType,
+                            data: base64Audio
+                        }
+                    }
+                ]
+            }
+        ],
+        generationConfig: {
+            temperature: 0.1
+        }
+    });
+
+    for (const model of candidateModels) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+            const resp = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: requestBody
+            });
+
+            if (!resp.ok) {
+                const errText = await resp.text();
+                console.warn(`Gemini audio model ${model} failed (${resp.status}):`, errText);
+                continue;
+            }
+
+            const resJson = await resp.json();
+            const text = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text && text !== "SILENCE") {
+                return text;
+            }
+        } catch (e) {
+            console.warn(`Gemini audio error with ${model}:`, e.message);
+        }
+    }
+
+    return null;
+}
+
+async function transcribeAudioFile(env, arrayBuffer, mimeType = "audio/ogg") {
+    // 1. Try Workers AI Whisper first (edge-native, free)
+    let text = await transcribeWithWorkersAI(env, arrayBuffer);
+
+    // 2. Fallback to Google Gemini Multimodal Audio (excellent bilingual English/Khmer support)
+    if (!text && env.GEMINI_API_KEY) {
+        const base64Audio = arrayBufferToBase64(arrayBuffer);
+        text = await transcribeWithGemini(env, base64Audio, mimeType);
+    }
+
+    return text;
+}
+
+async function sendVoiceHelp(env, chatId, messageId = null) {
+    const text = [
+        `🎙️ *Hands-Free Voice Notes*`,
+        `────────────────────`,
+        `Speak directly to your personal assistant instead of typing!`,
+        ``,
+        `💡 *What you can say:*`,
+        `• 💰 *Log Spending:* _"Spent 5 dollars on iced coffee"_ or _"10000 lunch"_`,
+        `• 💵 *Log Income:* _"+500 freelance project"_`,
+        `• 💼 *Work Task:* _"Done: finished api authentication bugfix"_`,
+        `• ⏰ *Reminders:* _"Remind me in 30 minutes to check the oven"_`,
+        `• ✨ *Questions:* _"How much did I spend this week?"_ or _"Can I afford dinner?"_`,
+        ``,
+        `🗣️ *Languages Supported:* English, Khmer (*អក្សរខ្មែរ*), and mixed.`,
+        ``,
+        `👉 *To start:* Simply press and hold the 🎙️ **Microphone button** in Telegram and speak!`
+    ].join("\n");
+
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🏠 Main Hub", callback_data: "hub" },
+                    { text: "✨ AI Copilot", callback_data: "copilot_help" }
+                ]
+            ]
+        }
+    });
+}
+
+async function handleVoiceMessage(message, env, origin) {
+    const chatId = message.chat.id;
+    const userId = String(message.from?.id || chatId);
+
+    let fileId = null;
+    let mimeType = "audio/ogg";
+    let duration = 0;
+    let fileSize = 0;
+
+    if (message.voice) {
+        fileId = message.voice.file_id;
+        mimeType = message.voice.mime_type || "audio/ogg";
+        duration = message.voice.duration || 0;
+        fileSize = message.voice.file_size || 0;
+    } else if (message.audio) {
+        fileId = message.audio.file_id;
+        mimeType = message.audio.mime_type || "audio/mp3";
+        duration = message.audio.duration || 0;
+        fileSize = message.audio.file_size || 0;
+    } else if (message.document && message.document.mime_type && message.document.mime_type.startsWith("audio/")) {
+        fileId = message.document.file_id;
+        mimeType = message.document.mime_type;
+        fileSize = message.document.file_size || 0;
+    }
+
+    if (!fileId) return;
+
+    if (duration > 180 || fileSize > 15 * 1024 * 1024) {
+        await sendMessage(
+            env,
+            chatId,
+            `⚠️ *Voice note is too long*\nPlease send a voice message shorter than 3 minutes.`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: "record_voice" });
+    } catch (_) {}
+
+    let statusMsg = null;
+    try {
+        statusMsg = await sendMessage(
+            env,
+            chatId,
+            `🎙️ *Listening to your voice note...*\n_Transcribing with AI..._`,
+            { parse_mode: "Markdown" }
+        );
+    } catch (_) {}
+    const statusMsgId = statusMsg?.result?.message_id;
+
+    try {
+        const fileInfo = await telegram(env, "getFile", { file_id: fileId });
+        const filePath = fileInfo.result?.file_path;
+        if (!filePath) {
+            throw new Error("Could not retrieve voice file path from Telegram.");
+        }
+
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+        const audioResponse = await fetch(fileUrl);
+        if (!audioResponse.ok) {
+            throw new Error("Failed to download voice file from Telegram.");
+        }
+
+        const arrayBuffer = await audioResponse.arrayBuffer();
+        const rawTranscription = await transcribeAudioFile(env, arrayBuffer, mimeType);
+        const transcribedText = (rawTranscription || "").replace(/[.,!?;]+$/, "").trim();
+
+        if (!transcribedText || transcribedText.length < 2) {
+            const noRecognizeMsg = [
+                `⚠️ *Could not understand audio*`,
+                `────────────────────`,
+                `Please try speaking closer to the microphone, or type your message directly.`,
+                ``,
+                `💡 *Try saying:*`,
+                `• _"5 coffee"_ or _"Spent $4 on iced coffee"_`,
+                `• _"Done finished authentication bugfix"_`,
+                `• _"Remind me in 30 minutes to check oven"_`,
+                `• _"How much did I spend this week?"_`
+            ].join("\n");
+
+            await safeEditOrSendMessage(env, chatId, statusMsgId, noRecognizeMsg, { parse_mode: "Markdown" });
+            return;
+        }
+
+        // Display recognized transcript block
+        if (statusMsgId) {
+            await telegram(env, "editMessageText", {
+                chat_id: chatId,
+                message_id: statusMsgId,
+                text: `🎙️ _"${cleanMd(transcribedText)}"_`,
+                parse_mode: "Markdown"
+            }).catch(() => {});
+        }
+
+        // Pass transcribed text into handleMessage as a synthetic text message
+        const syntheticMessage = {
+            ...message,
+            text: transcribedText,
+            voice: undefined,
+            audio: undefined,
+            isFromVoice: true
+        };
+
+        await handleMessage(syntheticMessage, env, origin);
+    } catch (err) {
+        console.error("handleVoiceMessage error:", err);
+        const errMsg = [
+            `⚠️ *Voice processing error:* ${cleanMd(err.message)}`,
+            ``,
+            `💡 You can still type directly: \`5 coffee\` or \`/hub\``
         ].join("\n");
 
         await safeEditOrSendMessage(env, chatId, statusMsgId, errMsg, { parse_mode: "Markdown" });
@@ -5236,6 +5509,10 @@ async function sendHelpMessage(env, chatId, messageId = null) {
     const text = [
         `💡 *Personal Assistant Guide*`,
         `────────────────────`,
+        `🎙️ *Hands-Free Voice Notes*`,
+        `• Press & hold 🎙️ to speak: _"Spent $4 on iced coffee"_, _"Done code review"_, _"Remind 17:30 call mom"_`,
+        `• English, Khmer (*អក្សរខ្មែរ*), and mixed speech fully supported!`,
+        ``,
         `⚡ *Natural Typing (No Commands Needed)*`,
         `• Reminders: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\``,
         `• Expense: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
