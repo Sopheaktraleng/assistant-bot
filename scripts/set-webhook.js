@@ -8,7 +8,9 @@ if (!token) {
 }
 
 if (!workerUrl) {
-    console.error("Missing WORKER_URL. Example: https://cashflow-bot.your-name.workers.dev");
+    console.error(
+        "Missing WORKER_URL. Example: https://cashflow-bot.your-name.workers.dev",
+    );
     process.exit(1);
 }
 
@@ -23,11 +25,14 @@ if (secret) {
     body.secret_token = secret;
 }
 
-const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-});
+const response = await fetch(
+    `https://api.telegram.org/bot${token}/setWebhook`,
+    {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    },
+);
 
 const data = await response.json();
 

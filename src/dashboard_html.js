@@ -1028,6 +1028,21 @@ export default `<!DOCTYPE html>
     </div>
 
     <script>
+        // Automatically attach Telegram WebApp authentication headers to all API requests
+        const originalFetch = window.fetch;
+        window.fetch = function(resource, init = {}) {
+            const urlStr = typeof resource === "string" ? resource : (resource?.url || "");
+            if (urlStr.startsWith("/api/")) {
+                init = init || {};
+                const headers = new Headers(init.headers || {});
+                if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) {
+                    headers.set("X-Telegram-Init-Data", Telegram.WebApp.initData);
+                }
+                init.headers = headers;
+            }
+            return originalFetch(resource, init);
+        };
+
         const EXCHANGE_RATE = 4000;
 
         function formatKhr(value) {
@@ -1121,7 +1136,11 @@ export default `<!DOCTYPE html>
             try {
                 const response = await fetch(\`/api/data?user_id=\${id}\`);
                 if (!response.ok) {
-                    throw new Error("Could not load database records.");
+                    const errJson = await response.json().catch(() => ({}));
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error(errJson.error || "Authentication required. For your privacy, please open this app directly from Telegram.");
+                    }
+                    throw new Error(errJson.error || "Could not load database records.");
                 }
                 const data = await response.json();
                 renderDashboard(data);
