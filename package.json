@@ -9,7 +9,9 @@
         "deploy": "wrangler deploy",
         "db:migrate:local": "wrangler d1 execute cashflow_bot --local --file=./schema.sql",
         "db:migrate:remote": "wrangler d1 execute cashflow_bot --remote --file=./schema.sql",
-        "set:webhook": "node scripts/set-webhook.js"
+        "set:webhook": "node scripts/set-webhook.js",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "keywords": [
         "telegram",
@@ -20,6 +22,7 @@
     "author": "",
     "license": "ISC",
     "devDependencies": {
+        "vitest": "^5.0.5",
         "wrangler": "^4.20.3"
     }
 }

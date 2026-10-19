@@ -81,3 +81,22 @@ CREATE TABLE IF NOT EXISTS pending_scans (
 CREATE INDEX IF NOT EXISTS idx_pending_scans_user
 ON pending_scans (user_id);
 
+CREATE TABLE IF NOT EXISTS watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    year TEXT,
+    genre TEXT,
+    rating TEXT,
+    runtime TEXT,
+    platforms TEXT,
+    synopsis TEXT,
+    why_love TEXT,
+    status TEXT NOT NULL DEFAULT 'plan_to_watch', -- 'plan_to_watch', 'watched'
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    watched_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlist_user
+ON watchlist (user_id, status);
+
