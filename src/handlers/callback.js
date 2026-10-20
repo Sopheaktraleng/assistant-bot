@@ -115,13 +115,8 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    // --- Movie Recommender & Watchlist Callbacks ---
-    if (data === "movie_hub") {
-        await sendMovieRecommenderHub(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data === "watchlist" || data.startsWith("wl_") || data === "movie_hub") {
+    // --- Retired Movie Recommender & Watchlist Callbacks ---
+    if (data === "movie_hub" || data === "watchlist" || data.startsWith("wl_")) {
         await answerCallback(env, callback.id, { text: "Watchlist feature has been retired." });
         await sendMainHub(env, chatId, userId, callback.from, origin, messageId);
         return;

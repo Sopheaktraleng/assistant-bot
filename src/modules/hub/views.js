@@ -113,53 +113,33 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
 
 export async function sendHelpMessage(env, chatId, messageId = null) {
     const text = [
-        `💡 *Personal Assistant Guide*`,
+        `💡 *Help & Shortcuts Guide*`,
         `────────────────────`,
-        `🎙️ *Hands-Free Voice Notes*`,
-        `• Press & hold 🎙️ to speak: _"Spent $4 on iced coffee"_, _"Done code review"_, _"Remind 17:30 call mom"_`,
-        `• English, Khmer (*អក្សរខ្មែរ*), and mixed speech fully supported!`,
+        `⚡ *Fast Natural Logging (No Commands Needed)*`,
+        `• *Expense:* \`5 coffee\` or \`12000 lunch\` or \`3.50 grab\``,
+        `• *Income:* \`+500 salary\` or \`+50 freelance\``,
+        `• *Work Task:* \`done Fixed payment timeout bug\``,
+        `• *Reminder:* \`remind 17:30 Daily sync\` or \`remind in 25m Review PR\``,
         ``,
-        `⚡ *Natural Typing (No Commands Needed)*`,
-        `• Reminders: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\``,
-        `• Expense: \`5 coffee\` or \`10000 lunch\` or \`3.50 grab\``,
-        `• Income: \`+500 salary\` or \`+50 bonus\``,
-        `• Work log: \`done Fixed checkout bug\` or \`done Team sprint planning\``,
-        `• Today ledger: \`today\` or \`ledger\``,
-        `• Main menu: \`menu\` or \`hub\``,
+        `🎙️ *Hands-Free Voice & Slip Scanner*`,
+        `• *Voice Note:* Hold 🎙️ and speak in English or Khmer (*អក្សរខ្មែរ*)`,
+        `• *Receipt OCR:* Send ABA Bank, Bakong, KHQR, or receipt photos`,
         ``,
-        `✨ *AI Copilot (Khmer & English)*`,
-        `• \`/ask <question>\` or \`/ai <question>\``,
-        `• Ask: *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*`,
-        ``,
-        `⏰ *Reminders & Alarms*`,
-        `• \`remind 17:30 <task>\` — Daily recurring reminder`,
-        `• \`remind in 15m <task>\` — Quick one-time timer`,
-        `• \`/reminders\` — Open Reminders Workspace`,
-        ``,
-        `⚡ *Work Log, Standup & AI Reports*`,
-        `• \`done <task>\` — Record accomplishment instantly (supports \`#tag\`)`,
-        `• \`/standup\` — Daily standup generator (Yesterday, Today, Blockers)`,
-        `• \`/standup polish\` — AI-polished standup for Slack / Teams`,
-        `• \`/report\` — Generate monthly manager accomplishment report`,
-        `• \`/report polish\` — AI executive accomplishment synthesis`,
-        `• \`/report export\` — Download report as .txt file`,
-        `• \`/work\` — Open Work Journal Workspace`,
-        ``,
-        `🧾 *Smart Receipt & Slip Scanner*`,
-        `• Send or forward ABA Bank, Bakong, or KHQR slips to record automatically!`,
-        `• Send paper receipt photos to extract itemized totals`,
+        `💼 *Work Journal & Daily Standup*`,
+        `• \`/standup\` — Yesterday, Today & Blockers sync`,
+        `• \`/standup polish\` — AI-polished update for Slack / Teams`,
+        `• \`/report\` — Monthly manager accomplishment report`,
+        `• \`/work\` — Open Work Journal dashboard`,
         ``,
         `💳 *Finance & Cashflow*`,
-        `• \`/add 5 usd coffee\` or \`/income 500 usd salary\``,
-        `• \`/today\` — Today's transactions`,
-        `• \`/summary\` — Spending statistics & breakdown`,
-        `• \`/settings\` — Currency toggle & budget limit`,
+        `• \`/today\` — Today's transactions & balance`,
+        `• \`/summary\` — Monthly spending breakdown & analytics`,
+        `• \`/settings\` — Currency toggle (USD / KHR) & monthly budget`,
         ``,
-        `🍿 *Movies, Series & Watchlist*`,
-        `• \`/watch <vibe>\` — AI movie recommendations (e.g. \`/watch sci-fi thriller\`)`,
-        `• \`/watch add <title>\` — Save a movie/show directly (e.g. \`/watch add Dune 2\`)`,
-        `• \`/watch\` — Browse recommender by genres & moods`,
-        `• \`/watchlist\` — View saved movies, mark watched, or pick one for tonight`
+        `🤖 *AI Copilot*`,
+        `• \`/ask <question>\` — e.g. _"How much did I spend on food this week?"_`,
+        `────────────────────`,
+        `_Tap any button below to jump directly to that workspace:_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -167,15 +147,14 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🗣️ Standup", callback_data: "work_standup" },
-                    { text: "⚡ Work Log", callback_data: "work_hub" }
+                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
+                    { text: "⚡ Work Journal", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "💳 Finance", callback_data: "finance_hub" },
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
                     { text: "⏰ Reminders", callback_data: "reminders" }
                 ],
                 [
-                    { text: "🍿 Movies", callback_data: "movie_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
