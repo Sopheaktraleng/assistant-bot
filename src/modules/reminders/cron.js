@@ -126,14 +126,14 @@ export async function sendStandupNotification(env, chatId, userId, reminderId = 
 
 export async function sendLunchboxNotification(env, chatId, reminderId = 0) {
     const text = [
-        `🎒 *Departure Reminder*`,
+        `🎒 *End-of-Day Departure Alert*`,
         `────────────────────`,
-        `Wrapping up your work day? 🥪`,
+        `Wrapping up your workday? 🚪`,
         ``,
-        `Don't forget to grab your *lunch box* from the fridge or pantry before you head out!`,
-        ``,
-        `💡 *Habit:* Take 10 seconds to log today's accomplishments: \`/done <task>\``,
-        ``,
+        `Don't forget to:`,
+        `• Grab your lunchbox, bag, and personal belongings`,
+        `• Log your daily accomplishments: \`/done <task>\``,
+        `────────────────────`,
         `_Safe travels home! ✨_`
     ].join("\n");
 
@@ -156,11 +156,11 @@ export async function sendLunchboxNotification(env, chatId, reminderId = 0) {
 
 export async function sendExpenseLogNotification(env, chatId) {
     const text = [
-        `💳 *Daily Check-in*`,
+        `💳 *Daily Cashflow Check-in*`,
         `────────────────────`,
-        `Did you spend or earn anything today?`,
+        `Did you spend or earn anything today? 📊`,
         ``,
-        `Take 10 seconds to record your day's transactions and keep your cashflow on track! 📊`
+        `Take 10 seconds to record your day's transactions and keep your budget balanced!`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
@@ -168,8 +168,8 @@ export async function sendExpenseLogNotification(env, chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "＋ Expense", callback_data: "add_expense" },
-                    { text: "＋ Income", callback_data: "add_income" }
+                    { text: "＋ Log Expense", callback_data: "add_expense" },
+                    { text: "＋ Log Income", callback_data: "add_income" }
                 ],
                 [
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" },
@@ -184,16 +184,23 @@ export async function sendCustomReminderNotification(env, chatId, title, time, r
     const text = [
         `⏰ *Reminder Alert*`,
         `────────────────────`,
-        `📌 *${title}*`,
-        ``,
-        `● *Time:* \`${time}\``
+        `🔔 *${title}*`,
+        `● *Scheduled:* \`${time}\``,
+        `────────────────────`,
+        `_Take action or snooze below:_`
     ].join("\n");
 
     await sendMessage(env, chatId, text, {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
-                [{ text: "✓ Done", callback_data: `remind_done:${reminderId}` }]
+                [
+                    { text: "✅ Done / Dismiss", callback_data: `remind_done:${reminderId}` }
+                ],
+                [
+                    { text: "⏰ Snooze 10m", callback_data: `remind_snooze:${reminderId}:10` },
+                    { text: "⏰ Snooze 30m", callback_data: `remind_snooze:${reminderId}:30` }
+                ]
             ]
         }
     });

@@ -155,14 +155,14 @@ export async function handleRemindCommand(env, chatId, userId, text) {
 
     const buttons = [
         [
-            { text: "⏰ Reminders", callback_data: "reminders" },
+            { text: "⏰ Reminders Hub", callback_data: "reminders" },
             { text: "🏠 Main Hub", callback_data: "hub" }
         ]
     ];
     if (newId) {
         buttons.unshift([
-            { text: "⏰ Adjust Time", callback_data: `remind_time_menu:${newId}` },
-            { text: "✕ Delete", callback_data: `remind_del:${newId}` }
+            { text: "⚙️ Manage", callback_data: `remind_time_menu:${newId}` },
+            { text: "🗑️ Delete", callback_data: `remind_del:${newId}` }
         ]);
     }
 

@@ -84,8 +84,22 @@ export async function handleCallback(callback, env, origin) {
         "work_report_polish_last",
         "work_report_polish_export_this",
         "remind_add_standup",
-        "remind_add_lunchbox"
-    ].includes(data) || data.startsWith("remind_del_") || data.startsWith("work_del_") || data.startsWith("set_cur_") || data.startsWith("wl_");
+        "remind_add_lunchbox",
+        "toggle_expense_reminder",
+        "remind_test_general"
+    ].includes(data) || 
+    data.startsWith("remind_toggle") || 
+    data.startsWith("remind_quick_timer:") || 
+    data.startsWith("remind_shift:") || 
+    data.startsWith("remind_set_time:") || 
+    data.startsWith("remind_set_rel:") || 
+    data.startsWith("remind_freq:") || 
+    data.startsWith("remind_del:") || 
+    data.startsWith("remind_snooze:") || 
+    data.startsWith("remind_done:") || 
+    data.startsWith("work_del_") || 
+    data.startsWith("set_cur_") || 
+    data.startsWith("wl_");
 
     if (!hasCustomToast) {
         await answerCallback(env, callback.id);
@@ -446,9 +460,11 @@ export async function handleCallback(callback, env, origin) {
             "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'standup' LIMIT 1"
         ).bind(userId).first();
 
+        let newActive = 1;
         if (existing) {
-            await env.DB.prepare("UPDATE reminders SET is_active = 1, chat_id = ? WHERE id = ?")
-                .bind(String(chatId), existing.id)
+            newActive = existing.is_active ? 0 : 1;
+            await env.DB.prepare("UPDATE reminders SET is_active = ?, chat_id = ? WHERE id = ?")
+                .bind(newActive, String(chatId), existing.id)
                 .run();
         } else {
             await env.DB.prepare(`
@@ -457,7 +473,8 @@ export async function handleCallback(callback, env, origin) {
             `).bind(userId, String(chatId)).run();
         }
 
-        await answerCallback(env, callback.id, { text: "🗣️ Morning Standup alarm enabled (09:00 Mon–Fri)!" });
+        const toast = newActive ? "🟢 Morning Standup alarm ENABLED (09:00 Mon–Fri)!" : "⚪ Morning Standup alarm DISABLED.";
+        await answerCallback(env, callback.id, { text: toast });
         await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
@@ -468,18 +485,45 @@ export async function handleCallback(callback, env, origin) {
             "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
         ).bind(userId).first();
 
+        let newActive = 1;
         if (existing) {
-            await env.DB.prepare("UPDATE reminders SET is_active = 1, chat_id = ? WHERE id = ?")
-                .bind(String(chatId), existing.id)
+            newActive = existing.is_active ? 0 : 1;
+            await env.DB.prepare("UPDATE reminders SET is_active = ?, chat_id = ? WHERE id = ?")
+                .bind(newActive, String(chatId), existing.id)
                 .run();
         } else {
             await env.DB.prepare(`
                 INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-                VALUES (?, ?, 'Bring lunch box home', '17:30', 'weekdays', 'lunchbox', 1)
+                VALUES (?, ?, 'Departure & Lunchbox', '17:30', 'weekdays', 'lunchbox', 1)
             `).bind(userId, String(chatId)).run();
         }
 
-        await answerCallback(env, callback.id, { text: "🎒 Departure preset enabled (17:30 Mon–Fri)!" });
+        const toast = newActive ? "🟢 Departure alarm ENABLED (17:30 Mon–Fri)!" : "⚪ Departure alarm DISABLED.";
+        await answerCallback(env, callback.id, { text: toast });
+        await sendRemindersMenu(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data.startsWith("remind_quick_timer:")) {
+        const mins = parseInt(data.slice(19), 10) || 15;
+        const now = new Date();
+        const targetDate = new Date(now.getTime() + mins * 60 * 1000);
+        const targetTimeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(targetDate);
+
+        const timerTitle = mins >= 60 ? `${mins / 60}h Countdown Timer` : `${mins}m Countdown Timer`;
+
+        await ensureTables(env.DB);
+        await env.DB.prepare(`
+            INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
+            VALUES (?, ?, ?, ?, 'once', 'custom', 1)
+        `).bind(userId, String(chatId), timerTitle, targetTimeStr).run();
+
+        await answerCallback(env, callback.id, { text: `⏱️ ${timerTitle} set for ${targetTimeStr}!` });
         await sendRemindersMenu(env, chatId, userId, messageId);
         return;
     }
@@ -500,6 +544,25 @@ export async function handleCallback(callback, env, origin) {
             await answerCallback(env, callback.id, { text: statusTxt });
         }
         await sendRemindersMenu(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data.startsWith("remind_toggle_inspect:")) {
+        const id = parseInt(data.slice(22), 10);
+        await ensureTables(env.DB);
+        const existing = await env.DB.prepare(
+            "SELECT id, is_active, title FROM reminders WHERE id = ? AND user_id = ?"
+        ).bind(id, userId).first();
+
+        if (existing) {
+            const newActive = existing.is_active ? 0 : 1;
+            await env.DB.prepare("UPDATE reminders SET is_active = ?, chat_id = ? WHERE id = ?")
+                .bind(newActive, String(chatId), id)
+                .run();
+            const statusTxt = newActive ? `🟢 "${existing.title}" is now ON!` : `⚪ "${existing.title}" is now OFF.`;
+            await answerCallback(env, callback.id, { text: statusTxt });
+        }
+        await sendReminderTimeMenu(env, chatId, userId, id, messageId);
         return;
     }
 
@@ -592,6 +655,45 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data.startsWith("remind_shift:")) {
+        const parts = data.split(":");
+        const id = parseInt(parts[1], 10);
+        const addMins = parseInt(parts[2], 10) || 15;
+
+        await ensureTables(env.DB);
+        const existing = await env.DB.prepare(
+            "SELECT reminder_time FROM reminders WHERE id = ? AND user_id = ?"
+        ).bind(id, userId).first();
+
+        if (existing) {
+            const now = new Date();
+            let baseDate = now;
+            const timeParts = (existing.reminder_time || "").split(":");
+            if (timeParts.length === 2) {
+                const targetToday = new Date(now);
+                targetToday.setHours(parseInt(timeParts[0], 10), parseInt(timeParts[1], 10), 0, 0);
+                if (targetToday.getTime() > now.getTime() - 10 * 60 * 1000) {
+                    baseDate = targetToday;
+                }
+            }
+            const newDate = new Date(baseDate.getTime() + addMins * 60 * 1000);
+            const newTimeStr = new Intl.DateTimeFormat("en-GB", {
+                timeZone: TIME_ZONE,
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+            }).format(newDate);
+
+            await env.DB.prepare(
+                "UPDATE reminders SET reminder_time = ?, is_active = 1, chat_id = ? WHERE id = ? AND user_id = ?"
+            ).bind(newTimeStr, String(chatId), id, userId).run();
+
+            await answerCallback(env, callback.id, { text: `⏰ Shifted +${addMins}m to ${newTimeStr}!` });
+        }
+        await sendReminderTimeMenu(env, chatId, userId, id, messageId);
+        return;
+    }
+
     if (data.startsWith("remind_del:")) {
         const id = parseInt(data.slice(11), 10);
         await env.DB.prepare("DELETE FROM reminders WHERE id = ? AND user_id = ?").bind(id, userId).run();
@@ -601,9 +703,11 @@ export async function handleCallback(callback, env, origin) {
     }
 
     if (data.startsWith("remind_snooze:")) {
-        const id = parseInt(data.slice(14), 10);
+        const parts = data.slice(14).split(":");
+        const id = parseInt(parts[0], 10);
+        const mins = parts[1] ? parseInt(parts[1], 10) : 15;
         const now = new Date();
-        const snoozeTime = new Date(now.getTime() + 15 * 60 * 1000);
+        const snoozeTime = new Date(now.getTime() + mins * 60 * 1000);
         const snoozeStr = new Intl.DateTimeFormat("en-GB", {
             timeZone: TIME_ZONE,
             hour: "2-digit",
@@ -615,7 +719,7 @@ export async function handleCallback(callback, env, origin) {
         let title = "Reminder";
         if (id) {
             const r = await env.DB.prepare("SELECT title FROM reminders WHERE id = ?").bind(id).first();
-            if (r?.title) title = r.title;
+            if (r?.title) title = r.title.replace(/\s*\(Snoozed\)/i, "");
         }
 
         await env.DB.prepare(`
@@ -623,7 +727,7 @@ export async function handleCallback(callback, env, origin) {
             VALUES (?, ?, ?, ?, 'once', 'custom', 1)
         `).bind(userId, String(chatId), `${title} (Snoozed)`, snoozeStr).run();
 
-        await answerCallback(env, callback.id, { text: `⏰ Snoozed 15 mins (until ${snoozeStr})` });
+        await answerCallback(env, callback.id, { text: `⏰ Snoozed ${mins}m (until ${snoozeStr})` });
         try {
             await telegram(env, "editMessageText", {
                 chat_id: chatId,
@@ -631,8 +735,8 @@ export async function handleCallback(callback, env, origin) {
                 text: [
                     `⏰ *Reminder Snoozed*`,
                     `────────────────────`,
-                    `📌 *${title}*`,
-                    `Alert snoozed for 15 minutes.`,
+                    `🔔 *${title}*`,
+                    `Alert snoozed for ${mins} minutes.`,
                     `We will alert you again at \`${snoozeStr}\`.`
                 ].join("\n"),
                 parse_mode: "Markdown"

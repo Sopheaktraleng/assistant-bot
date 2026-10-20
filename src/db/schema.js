@@ -94,3 +94,7 @@ export async function ensureTables(db) {
         console.error("ensureTables batch error:", e);
     }
 }
+
+export function resetTablesEnsuredForTest() {
+    tablesEnsured = false;
+}

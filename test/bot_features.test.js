@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS } from "../src/config/constants.js";
-import { ensureTables } from "../src/db/schema.js";
+import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
 import { handleMessage } from "../src/handlers/message.js";
 import { answerCallback } from "../src/services/telegram.js";
+import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
 
 describe("Bot Improvements & Stability", () => {
     describe("AI Configuration", () => {
@@ -30,8 +31,75 @@ describe("Bot Improvements & Stability", () => {
         });
     });
 
+    describe("Reminders & Alerts UI", () => {
+        it("should render clean Reminders Hub with smart automation toggles and quick timers", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        all: vi.fn().mockResolvedValue({
+                            results: [
+                                { id: 1, title: "Morning Standup Sync", reminder_time: "09:00", frequency: "weekdays", type: "standup", is_active: 1 },
+                                { id: 2, title: "Departure & Lunchbox", reminder_time: "17:30", frequency: "weekdays", type: "lunchbox", is_active: 0 },
+                                { id: 3, title: "Team sync with designer", reminder_time: "14:00", frequency: "once", type: "custom", is_active: 1 }
+                            ]
+                        }),
+                        first: vi.fn().mockResolvedValue(null),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            await sendRemindersMenu(mockEnv, 123456, "user_1");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Reminders & Alerts Hub");
+            expect(payload.text).toContain("Daily Routine Automations");
+            expect(payload.text).toContain("Team sync with designer");
+
+            // Verify clean buttons exist
+            const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
+            expect(buttonTexts).toContain("＋ New Reminder");
+            expect(buttonTexts).toContain("⏱️ Quick Timers");
+            expect(buttonTexts).toContain("🟢 Standup 09:00");
+            expect(buttonTexts).toContain("⚪ Departure 17:30");
+            expect(buttonTexts).toContain("⚙️ Edit");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("should render 1-tap quick timer countdown buttons in sendPromptAddReminder", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockEnv = { TELEGRAM_BOT_TOKEN: "mock_token" };
+            await sendPromptAddReminder(mockEnv, 123456);
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Quick Timers & Reminders");
+            expect(payload.text).toContain("1-Tap Countdown Timers");
+
+            const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
+            expect(buttonTexts).toContain("⏱️ In 10 Mins");
+            expect(buttonTexts).toContain("⏱️ In 15 Mins");
+            expect(buttonTexts).toContain("⏱️ In 30 Mins");
+            expect(buttonTexts).toContain("⏱️ In 1 Hour");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
     describe("Database Optimization", () => {
         it("should execute ensureTables via db.batch in a single round-trip", async () => {
+            resetTablesEnsuredForTest();
             const batchSpy = vi.fn().mockResolvedValue([]);
             const prepareSpy = vi.fn().mockReturnValue({ run: vi.fn() });
             const mockDb = {
