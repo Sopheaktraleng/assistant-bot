@@ -55,10 +55,6 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💸 Log Expense", callback_data: "add_expense" },
-                    { text: "💵 Log Income", callback_data: "add_income" }
-                ],
-                [
                     { text: "💳 Finance Hub", callback_data: "finance_hub" },
                     { text: "💼 Work Journal", callback_data: "work_hub" }
                 ],
