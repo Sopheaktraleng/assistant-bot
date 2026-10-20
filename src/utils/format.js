@@ -10,20 +10,34 @@ export function sanitizeMd(str) {
     return String(str).replace(/([_*`[\]])/g, " ");
 }
 
-export function formatMoney(value) {
+export function formatMoney(value, minDecimals = 0, maxDecimals = 2) {
     const num = Number(value);
     if (!Number.isFinite(num)) return "0";
     return num.toLocaleString("en-US", {
-        maximumFractionDigits: 2,
+        minimumFractionDigits: minDecimals,
+        maximumFractionDigits: maxDecimals,
     });
 }
 
-export function formatAmount(amountInKhr, displayCurrency) {
+export function formatAmount(amountInKhr, displayCurrency, forceDecimals = false) {
+    const numKhr = Number(amountInKhr) || 0;
     if (displayCurrency === "USD") {
-        const usd = amountInKhr / EXCHANGE_RATE;
-        return `$${formatMoney(usd)}`;
+        const usd = numKhr / EXCHANGE_RATE;
+        const isNegative = usd < 0;
+        const absUsd = Math.abs(usd);
+        const hasCents = absUsd % 1 !== 0;
+        const formatted = absUsd.toLocaleString("en-US", {
+            minimumFractionDigits: (forceDecimals || hasCents) ? 2 : 0,
+            maximumFractionDigits: 2,
+        });
+        return isNegative ? `-$${formatted}` : `$${formatted}`;
     }
-    return `${formatMoney(amountInKhr)} ៛`;
+    const isNegative = numKhr < 0;
+    const absKhr = Math.abs(numKhr);
+    const formatted = absKhr.toLocaleString("en-US", {
+        maximumFractionDigits: 0,
+    });
+    return isNegative ? `-${formatted} ៛` : `${formatted} ៛`;
 }
 
 export function capitalize(value) {

@@ -12,14 +12,18 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
     const monthSummary = await getFinancialSummary(env.DB, userId, "month");
     const allSummary = await getFinancialSummary(env.DB, userId, "all");
 
+    const netBalance = allSummary?.balanceKhr || 0;
+    const isNegative = netBalance < 0;
+    const balanceIndicator = isNegative ? "🔴" : "🟢";
+
     const text = [
         `💳 *Finance & Cashflow*`,
-        `────────────────────`,
-        `● *Net Balance:*   \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
-        `● *This Month:*    \`${formatAmount(monthSummary.totalExpenseInKhr, displayCurrency)}\``,
-        `● *Spent Today:*   \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
-        `────────────────────`,
-        `_Tip: Send an ABA / KHQR slip screenshot or type \`5 coffee\`_`
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `${balanceIndicator} *Net Balance:*  \`${formatAmount(netBalance, displayCurrency)}\``,
+        `📅 *This Month:*   \`${formatAmount(monthSummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
+        `📊 *Spent Today:*  \`${formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `_📸 Snap any ABA / KHQR receipt or type: \`5 coffee\` or \`+500 salary\`_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -28,8 +32,8 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
             inline_keyboard: [
                 [
                     { text: "📸 Scan Slip", callback_data: "scan_prompt" },
-                    { text: "＋ Expense", callback_data: "add_expense" },
-                    { text: "＋ Income", callback_data: "add_income" }
+                    { text: "💸 Expense", callback_data: "add_expense" },
+                    { text: "💵 Income", callback_data: "add_income" }
                 ],
                 [
                     { text: "📜 Today's Ledger", callback_data: "view_transactions" },
@@ -37,6 +41,9 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
                 ],
                 [
                     { text: "🎯 Budget", callback_data: "budget_help" },
+                    { text: "📥 Export CSV", callback_data: "export_csv" }
+                ],
+                [
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]

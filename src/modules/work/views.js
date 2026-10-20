@@ -30,15 +30,15 @@ export async function sendWorkHub(env, chatId, userId, from, messageId = null) {
         : "_No tasks logged today yet._";
 
     const text = [
-        `⚡ *Work Journal*`,
-        `────────────────────`,
-        `● *This Month:*  \`${monthCount} tasks\` in ${mLabel}`,
-        `● *Today:*       \`${todayLogs.length} logged\``,
-        `────────────────────`,
-        `*Today's Activity:*`,
+        `💼 *Work Journal & Tasks*`,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `🏆 *This Month:*  \`${monthCount} tasks\` _(${mLabel})_`,
+        `⚡ *Logged Today:* \`${todayLogs.length} tasks\``,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `📋 *Today's Activity:*`,
         todayList,
-        `────────────────────`,
-        `_Log anytime with: \`done <task description>\`_`
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `_💡 Log anytime: \`done <task>\` or generate \`/standup\`_`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {

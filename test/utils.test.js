@@ -49,6 +49,12 @@ describe("Formatting Utilities", () => {
             expect(formatAmount(20000, "USD")).toBe("$5");
             expect(formatAmount(4000, "USD")).toBe("$1");
             expect(formatAmount(5000, "USD")).toBe("$1.25");
+            expect(formatAmount(2000, "USD")).toBe("$0.50"); // 0.5 USD formatted cleanly as $0.50
+        });
+
+        it("should format negative amounts correctly with sign preceding symbol", () => {
+            expect(formatAmount(-163080, "USD")).toBe("-$40.77"); // Not $-40.77
+            expect(formatAmount(-4000, "KHR")).toBe("-4,000 ៛");
         });
 
         it("should format KHR amounts with Riel symbol", () => {

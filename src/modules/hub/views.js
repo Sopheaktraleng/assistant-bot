@@ -23,11 +23,11 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
     ).bind(userId).all();
     const remList = allReminders || [];
     const activeRems = remList.filter(r => r.is_active);
-    let remStatus = "○ None";
+    let remLine = "_No active reminders_";
     if (activeRems.length > 0) {
         const first = activeRems[0];
-        const shortTitle = first.title.length > 14 ? first.title.slice(0, 13) + "…" : first.title;
-        remStatus = `● ${activeRems.length} active (${first.reminder_time} ${shortTitle})`;
+        const shortTitle = first.title.length > 20 ? first.title.slice(0, 19) + "…" : first.title;
+        remLine = `\`${activeRems.length} active\` _(${first.reminder_time} ${shortTitle})_`;
     }
 
     const wlRow = await env.DB.prepare(
@@ -35,16 +35,23 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
     ).bind(userId).first();
     const wlCount = wlRow?.count || 0;
 
+    const netBalance = allSummary?.balanceKhr || 0;
+    const isNegative = netBalance < 0;
+    const balanceIndicator = isNegative ? "🔴" : "🟢";
+    const balanceStr = formatAmount(netBalance, displayCurrency);
+    const todayStr = formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency);
+
     const text = [
-        `*Personal Assistant Hub*`,
-        `────────────────────`,
-        `● *Balance:*   \`${formatAmount(allSummary.balanceKhr, displayCurrency)}\``,
-        `● *Today:*     \`${formatAmount(todaySummary.totalExpenseInKhr, displayCurrency)}\``,
-        `● *Work:*      \`${workCount} tasks\` in ${monthLabel()}`,
-        `● *Watchlist:* \`${wlCount} to watch\``,
-        `● *Alerts:*    \`${remStatus}\``,
-        `────────────────────`,
-        `_Select a workspace below or type naturally:_`
+        `🌟 *Personal Assistant Hub*`,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `${balanceIndicator} *Net Balance:*  \`${balanceStr}\``,
+        `📊 *Spent Today:*  \`${todayStr}\``,
+        `💼 *Work Journal:* \`${workCount} tasks\` _(${monthLabel()})_`,
+        `🍿 *Watchlist:*    \`${wlCount} to watch\``,
+        `⏰ *Reminders:*    ${remLine}`,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `👇 *Choose a workspace or type naturally:*`,
+        `_💡 e.g. \`5 coffee\`, \`done code review\`, or \`remind 17:30\``
     ].join("\n");
 
     const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
@@ -54,24 +61,24 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "＋ Expense", callback_data: "add_expense" },
-                    { text: "＋ Income", callback_data: "add_income" }
+                    { text: "💸 Log Expense", callback_data: "add_expense" },
+                    { text: "💵 Log Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "💳 Finance", callback_data: "finance_hub" },
-                    { text: "⚡ Work Log", callback_data: "work_hub" }
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
+                    { text: "💼 Work Journal", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "✨ AI Copilot", callback_data: "copilot_help" },
+                    { text: "🤖 AI Copilot", callback_data: "copilot_help" },
                     { text: "⏰ Reminders", callback_data: "reminders" }
                 ],
                 [
                     { text: `🍿 Movies (${wlCount})`, callback_data: "movie_hub" },
-                    { text: "🌐 Dashboard", web_app: { url: webAppUrl } }
+                    { text: "📱 Web App", web_app: { url: webAppUrl } }
                 ],
                 [
                     { text: "⚙️ Settings", callback_data: "settings" },
-                    { text: "💡 Guide & Shortcuts", callback_data: "help" }
+                    { text: "💡 Shortcuts & Help", callback_data: "help" }
                 ]
             ]
         }
@@ -94,10 +101,10 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
 
     const text = [
         `⚙️ *System Settings*`,
-        `────────────────────`,
-        `● *Display Currency:*  \`${displayCurrency}\``,
-        `● *Monthly Budget:*   \`${budgetStr}\``,
-        `────────────────────`,
+        `━━━━━━━━━━━━━━━━━━━━━`,
+        `💱 *Display Currency:* \`${displayCurrency}\``,
+        `🎯 *Monthly Budget:*   \`${budgetStr}\``,
+        `━━━━━━━━━━━━━━━━━━━━━`,
         `_Configure preferences or manage your records below:_`
     ].join("\n");
 
@@ -107,6 +114,7 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
             inline_keyboard: [
                 [{ text: toggleLabel, callback_data: "toggle_currency" }],
                 [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
+                [{ text: "📥 Export CSV Backup", callback_data: "export_csv" }],
                 [
                     { text: "🗑️ Clear Today", callback_data: "clear_today_warn" },
                     { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
