@@ -100,3 +100,11 @@ export async function sendTelegramDocument(env, chatId, file, caption = "") {
 
     return response.json();
 }
+
+export async function sendChatAction(env, chatId, action = "typing") {
+    try {
+        return await telegram(env, "sendChatAction", { chat_id: chatId, action });
+    } catch (_) {
+        return null;
+    }
+}

@@ -1,4 +1,4 @@
-import { TIME_ZONE, EXCHANGE_RATE } from "../config/constants.js";
+import { TIME_ZONE, EXCHANGE_RATE, GEMINI_MODELS } from "../config/constants.js";
 import { today, currentTime } from "../utils/time.js";
 import { cleanMd, normalizeCategory } from "../utils/format.js";
 import { arrayBufferToBase64 } from "../utils/crypto.js";
@@ -66,12 +66,7 @@ export async function parseReceiptWithGemini(env, base64Data, mimeType = "image/
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey) return null;
 
-    const candidateModels = [
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-2.5-flash"
-    ];
+    const candidateModels = GEMINI_MODELS;
 
     const prompt = `You are an expert OCR financial receipt and bank slip analyzer for Cambodia and international transactions.
 Examine this image carefully. Common types include:
@@ -406,14 +401,7 @@ export async function askAiCopilot(env, userQuery, context) {
     const prompt = buildCopilotPrompt(userQuery, context);
 
     if (env.GEMINI_API_KEY) {
-        const candidateModels = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-flash-latest"
-        ];
+        const candidateModels = GEMINI_MODELS;
 
         const requestBody = JSON.stringify({
             contents: [
@@ -483,14 +471,7 @@ export async function askAiCopilot(env, userQuery, context) {
 }
 
 export async function callAiTextModel(env, systemPrompt, userPrompt, temperature = 0.3) {
-    const candidateModels = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-flash-latest"
-    ];
+    const candidateModels = GEMINI_MODELS;
 
     if (env.GEMINI_API_KEY) {
         const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
@@ -572,13 +553,7 @@ export async function transcribeWithWorkersAI(env, arrayBuffer) {
 export async function transcribeWithGemini(env, base64Audio, mimeType = "audio/ogg") {
     if (!env.GEMINI_API_KEY) return null;
 
-    const candidateModels = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash"
-    ];
+    const candidateModels = GEMINI_MODELS;
 
     const prompt = `Listen to this voice message carefully. Transcribe the spoken words accurately into text.
 The speaker may speak in English, Khmer (អក្សរខ្មែរ), or a mix of both (e.g. Cambodian Riel / USD / ABA).

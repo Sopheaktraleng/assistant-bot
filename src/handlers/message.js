@@ -20,7 +20,9 @@ import {
 import {
     addTransactionFromCommand,
     handleBudgetCommand,
-    askClearConfirmation
+    askClearConfirmation,
+    handleExportLedgerCommand,
+    handleSearchExpensesCommand
 } from "../modules/finance/commands.js";
 import {
     handleImageReceipt,
@@ -65,9 +67,15 @@ import { sendVoiceHelp, handleVoiceMessage } from "../modules/voice/handler.js";
 import { handleAiCopilotQuery } from "../modules/copilot/handler.js";
 
 export async function handleMessage(message, env, origin) {
-    const text = (message.text || "").trim();
+    const rawText = (message.text || "").trim();
+    // Normalize command by stripping bot username suffix if present (e.g., /today@my_bot -> /today)
+    const text = rawText.startsWith("/")
+        ? rawText.replace(/^(\/[a-zA-Z0-9_]+)@[a-zA-Z0-9_]+/, "$1")
+        : rawText;
     const chatId = message.chat.id;
     const userId = String(message.from?.id || chatId);
+    const chatType = message.chat?.type || "private";
+    const isGroup = chatType === "group" || chatType === "supergroup";
 
     // 0. Smart Bank Slip & Receipt Scanner (Photo or Image Document)
     if (message.photo || (message.document && message.document.mime_type && message.document.mime_type.startsWith("image/"))) {
@@ -302,6 +310,16 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
+    if (text === "/export" || text.startsWith("/export ") || text === "/backup") {
+        await handleExportLedgerCommand(env, chatId, userId);
+        return;
+    }
+
+    if (text.startsWith("/find") || text.startsWith("/search")) {
+        await handleSearchExpensesCommand(env, chatId, userId, text);
+        return;
+    }
+
     if (text === "/clear") {
         await askClearConfirmation(env, chatId);
         return;
@@ -316,6 +334,11 @@ export async function handleMessage(message, env, origin) {
     // Smart Natural Text Detection (Zero Command Friction!)
     // =========================================================================
     if (!text.startsWith("/")) {
+        // In group chats, ignore arbitrary conversational text unless directly replying to the bot
+        if (isGroup && !message.reply_to_message?.from?.is_bot) {
+            return;
+        }
+
         const lower = text.toLowerCase();
 
         // 1. Natural Navigation Keywords

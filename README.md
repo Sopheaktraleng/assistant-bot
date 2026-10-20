@@ -101,6 +101,8 @@ Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboar
 | `/add <amt> <curr> <cat>` | `5 coffee`, `10000 lunch` | **Finance** | Log an expense |
 | `/income <amt> <curr>` | `+500 salary` | **Finance** | Log income |
 | `/today` | `/t`, `today`, `ledger` | **Finance** | View today's itemized transactions |
+| `/export` | `/backup` | **Finance** | Export complete itemized cashflow ledger as `.csv` |
+| `/find <query>` | `/search` | **Finance** | Search transactions by keyword or amount |
 | `/summary` | — | **Finance** | Today's spending stats & category progress |
 | `/week` | — | **Finance** | 7-day spending report with chart |
 | `/month` | — | **Finance** | Current month summary & budget progress |

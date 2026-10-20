@@ -33,7 +33,8 @@ import {
 } from "../modules/finance/views.js";
 import {
     askClearConfirmation,
-    sendCSVBackup
+    sendCSVBackup,
+    handleExportLedgerCommand
 } from "../modules/finance/commands.js";
 import {
     sendScanHelp,
@@ -839,6 +840,11 @@ export async function handleCallback(callback, env, origin) {
                 ],
             },
         });
+        return;
+    }
+
+    if (data === "export_csv" || data === "backup_csv") {
+        await handleExportLedgerCommand(env, chatId, userId);
         return;
     }
 

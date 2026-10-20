@@ -247,6 +247,28 @@ export async function handleApiRequest(request, env) {
                 watchedCount
             });
         }
+
+        if (url.pathname === "/api/export") {
+            await ensureTables(env.DB);
+            const { results } = await env.DB.prepare(
+                "SELECT date, category, amount, currency, type, created_at FROM expenses WHERE user_id = ? ORDER BY date ASC, id ASC"
+            )
+            .bind(userId)
+            .all();
+
+            let csv = "Date,Type,Category,Amount,Currency,Created At\n";
+            for (const r of (results || [])) {
+                const escapedCat = String(r.category || "").replace(/"/g, '""');
+                csv += `"${r.date}","${r.type}","${escapedCat}",${r.amount},"${r.currency}","${r.created_at}"\n`;
+            }
+
+            return new Response(csv, {
+                headers: {
+                    "Content-Type": "text/csv; charset=utf-8",
+                    "Content-Disposition": `attachment; filename="cashflow_${today()}.csv"`
+                }
+            });
+        }
     }
 
     if (request.method === "POST") {
