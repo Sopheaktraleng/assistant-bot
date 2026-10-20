@@ -64,12 +64,6 @@ import {
     sendReminderTimeMenu
 } from "../modules/reminders/views.js";
 import { sendCustomReminderNotification } from "../modules/reminders/cron.js";
-import {
-    sendMovieRecommenderHub,
-    sendWatchlistMenu,
-    handleGenerateMovieRecommendation
-} from "../modules/watchlist/views.js";
-import { handlePickRandomMovie } from "../modules/watchlist/commands.js";
 import { handleAiCopilotQuery } from "../modules/copilot/handler.js";
 import { sendVoiceHelp } from "../modules/voice/handler.js";
 
@@ -114,109 +108,9 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data === "watchlist") {
-        await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
-        return;
-    }
-
-    if (data.startsWith("wl_filter:")) {
-        const filter = data.slice(10);
-        await sendWatchlistMenu(env, chatId, userId, filter, 1, messageId);
-        return;
-    }
-
-    if (data.startsWith("wl_page:")) {
-        const [, pStr, filter] = data.split(":");
-        const page = parseInt(pStr, 10) || 1;
-        await sendWatchlistMenu(env, chatId, userId, filter || "all", page, messageId);
-        return;
-    }
-
-    if (data === "wl_pick") {
-        await handlePickRandomMovie(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data.startsWith("wl_genre:")) {
-        const genre = data.slice(9);
-        await handleGenerateMovieRecommendation(env, chatId, userId, genre, callback.from, messageId);
-        return;
-    }
-
-    if (data.startsWith("wl_roll:")) {
-        const genre = decodeURIComponent(data.slice(8)) || "random";
-        await handleGenerateMovieRecommendation(env, chatId, userId, genre, callback.from, messageId);
-        return;
-    }
-
-    if (data.startsWith("wl_save:")) {
-        const id = parseInt(data.slice(8), 10);
-        if (id) {
-            await env.DB.prepare("UPDATE watchlist SET status = 'plan_to_watch' WHERE id = ? AND user_id = ?").bind(id, userId).run();
-            await answerCallback(env, callback.id, { text: "⭐ Saved to your Watchlist!" });
-            if (callback.message?.reply_markup) {
-                const updatedMarkup = JSON.parse(JSON.stringify(callback.message.reply_markup));
-                if (updatedMarkup.inline_keyboard?.[0]?.[0]) {
-                    updatedMarkup.inline_keyboard[0][0] = { text: "✅ In Watchlist", callback_data: "watchlist" };
-                }
-                try {
-                    await telegram(env, "editMessageReplyMarkup", {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        reply_markup: updatedMarkup
-                    });
-                } catch (e) {}
-            }
-        }
-        return;
-    }
-
-    if (data.startsWith("wl_watched:")) {
-        const id = parseInt(data.slice(11), 10);
-        if (id) {
-            await env.DB.prepare("UPDATE watchlist SET status = 'watched', watched_at = ? WHERE id = ? AND user_id = ?").bind(today(), id, userId).run();
-            await answerCallback(env, callback.id, { text: "🍿 Marked as watched! Enjoy!" });
-            if (callback.message?.reply_markup) {
-                const updatedMarkup = JSON.parse(JSON.stringify(callback.message.reply_markup));
-                if (updatedMarkup.inline_keyboard?.[0]) {
-                    updatedMarkup.inline_keyboard[0] = [
-                        { text: "🍿 Marked Watched ✅", callback_data: "watchlist" }
-                    ];
-                }
-                try {
-                    await telegram(env, "editMessageReplyMarkup", {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        reply_markup: updatedMarkup
-                    });
-                } catch (e) {}
-            }
-        }
-        return;
-    }
-
-    if (data.startsWith("wl_toggle:")) {
-        const id = parseInt(data.slice(10), 10);
-        if (id) {
-            const cur = await env.DB.prepare("SELECT status FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).first();
-            if (cur) {
-                const newStatus = cur.status === "watched" ? "plan_to_watch" : "watched";
-                const watchedAt = newStatus === "watched" ? today() : null;
-                await env.DB.prepare("UPDATE watchlist SET status = ?, watched_at = ? WHERE id = ? AND user_id = ?").bind(newStatus, watchedAt, id, userId).run();
-                await answerCallback(env, callback.id, { text: newStatus === "watched" ? "🍿 Marked watched!" : "⭐ Moved to Plan to Watch!" });
-                await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
-            }
-        }
-        return;
-    }
-
-    if (data.startsWith("wl_del:")) {
-        const id = parseInt(data.slice(7), 10);
-        if (id) {
-            await env.DB.prepare("DELETE FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).run();
-            await answerCallback(env, callback.id, { text: "🗑️ Removed from watchlist." });
-            await sendWatchlistMenu(env, chatId, userId, "all", 1, messageId);
-        }
+    if (data === "watchlist" || data.startsWith("wl_") || data === "movie_hub") {
+        await answerCallback(env, callback.id, { text: "Watchlist feature has been retired." });
+        await sendMainHub(env, chatId, userId, callback.from, origin, messageId);
         return;
     }
 

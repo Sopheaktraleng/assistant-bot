@@ -51,17 +51,6 @@ import {
     handleRemindCommand
 } from "../modules/reminders/commands.js";
 
-// Watchlist
-import {
-    sendMovieRecommenderHub,
-    handleGenerateMovieRecommendation,
-    sendWatchlistMenu
-} from "../modules/watchlist/views.js";
-import {
-    handleAddMovieCommand,
-    handlePickRandomMovie
-} from "../modules/watchlist/commands.js";
-
 // Voice & Copilot
 import { sendVoiceHelp, handleVoiceMessage } from "../modules/voice/handler.js";
 import { handleAiCopilotQuery } from "../modules/copilot/handler.js";
@@ -179,46 +168,25 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
-    // 3. Movie & Series Recommender + Watchlist Commands
+    // 3. Movie Watchlist (Retired for focus)
     if (
-        text === "/watch" || text.startsWith("/watch ") || 
-        text === "/movie" || text.startsWith("/movie ") ||
-        text === "/movies" || text.startsWith("/movies ") ||
-        text === "/film" || text.startsWith("/film ")
+        text.startsWith("/watch") || 
+        text.startsWith("/movie") || 
+        text.startsWith("/film") || 
+        text.startsWith("/watchlist") || 
+        text.startsWith("/wl")
     ) {
-        const query = text.replace(/^\/(watch|movie|movies|film)(@\w+)?\s*/i, "").trim();
-        if (!query) {
-            await sendMovieRecommenderHub(env, chatId, userId);
-            return;
-        }
-
-        if (query.startsWith("add ")) {
-            const movieTitle = query.slice(4).trim();
-            await handleAddMovieCommand(env, chatId, userId, movieTitle);
-            return;
-        }
-
-        if (query === "pick" || query === "random") {
-            await handlePickRandomMovie(env, chatId, userId);
-            return;
-        }
-
-        await handleGenerateMovieRecommendation(env, chatId, userId, query, message.from);
-        return;
-    }
-
-    if (text === "/watchlist" || text.startsWith("/watchlist ") || text === "/wl" || text.startsWith("/wl ")) {
-        const query = text.replace(/^\/(watchlist|wl)(@\w+)?\s*/i, "").trim();
-        if (query.startsWith("add ")) {
-            const movieTitle = query.slice(4).trim();
-            await handleAddMovieCommand(env, chatId, userId, movieTitle);
-            return;
-        }
-        if (query === "pick" || query === "random") {
-            await handlePickRandomMovie(env, chatId, userId);
-            return;
-        }
-        await sendWatchlistMenu(env, chatId, userId, "all", 1);
+        await sendMessage(
+            env,
+            chatId,
+            `💡 *Streamlined Workspace*\n\nThe entertainment watchlist has been removed to keep this bot fast and focused on *Cashflow & Work Productivity*.\n\nUse \`/hub\` to view your active workspaces.`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [[{ text: "🌟 Open Hub", callback_data: "hub" }]]
+                }
+            }
+        );
         return;
     }
 
@@ -379,30 +347,6 @@ export async function handleMessage(message, env, origin) {
 
         if (lower === "reminder" || lower === "reminders" || lower === "alarm" || lower === "alarms" || lower === "lunchbox" || lower === "lunch") {
             await sendRemindersMenu(env, chatId, userId);
-            return;
-        }
-
-        if (lower === "watch" || lower === "movie" || lower === "movies" || lower === "film" || lower === "cinema") {
-            await sendMovieRecommenderHub(env, chatId, userId);
-            return;
-        }
-
-        if (lower === "watchlist") {
-            await sendWatchlistMenu(env, chatId, userId, "all", 1);
-            return;
-        }
-
-        if (lower.startsWith("watch ") || lower.startsWith("movie ")) {
-            const cleanQuery = text.replace(/^(watch|movie)\s+/i, "").trim();
-            if (cleanQuery.startsWith("add ")) {
-                await handleAddMovieCommand(env, chatId, userId, cleanQuery.slice(4).trim());
-                return;
-            }
-            if (cleanQuery === "pick" || cleanQuery === "random") {
-                await handlePickRandomMovie(env, chatId, userId);
-                return;
-            }
-            await handleGenerateMovieRecommendation(env, chatId, userId, cleanQuery, message.from);
             return;
         }
 

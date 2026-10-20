@@ -30,11 +30,6 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         remLine = `\`${activeRems.length} active\` _(${first.reminder_time} ${shortTitle})_`;
     }
 
-    const wlRow = await env.DB.prepare(
-        "SELECT COUNT(*) as count FROM watchlist WHERE user_id = ? AND status = 'plan_to_watch'"
-    ).bind(userId).first();
-    const wlCount = wlRow?.count || 0;
-
     const netBalance = allSummary?.balanceKhr || 0;
     const isNegative = netBalance < 0;
     const balanceIndicator = isNegative ? "🔴" : "🟢";
@@ -47,7 +42,6 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         `${balanceIndicator} *Net Balance:*  \`${balanceStr}\``,
         `📊 *Spent Today:*  \`${todayStr}\``,
         `💼 *Work Journal:* \`${workCount} tasks\` _(${monthLabel()})_`,
-        `🍿 *Watchlist:*    \`${wlCount} to watch\``,
         `⏰ *Reminders:*    ${remLine}`,
         `━━━━━━━━━━━━━━━━━━━━━`,
         `👇 *Choose a workspace or type naturally:*`,
@@ -69,16 +63,12 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
                     { text: "💼 Work Journal", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "🤖 AI Copilot", callback_data: "copilot_help" },
-                    { text: "⏰ Reminders", callback_data: "reminders" }
-                ],
-                [
-                    { text: `🍿 Movies (${wlCount})`, callback_data: "movie_hub" },
-                    { text: "📱 Web App", web_app: { url: webAppUrl } }
+                    { text: "⏰ Reminders", callback_data: "reminders" },
+                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
                     { text: "⚙️ Settings", callback_data: "settings" },
-                    { text: "💡 Shortcuts & Help", callback_data: "help" }
+                    { text: "💡 Help & Shortcuts", callback_data: "help" }
                 ]
             ]
         }

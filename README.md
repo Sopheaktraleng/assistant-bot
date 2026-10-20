@@ -19,14 +19,12 @@ The bot is structured as an extensible **Personal Assistant Hub (`/hub`)**, orga
 ```mermaid
 graph TD
     Hub["🌟 Personal Assistant Hub (/hub)"]
-    Hub --> Copilot["🤖 AI Copilot<br/>(Live Financial & Task Q&A)"]
-    Hub --> Scanner["🧾 Smart OCR Scanner<br/>(ABA, Bakong, KHQR, Receipts)"]
-    Hub --> Finance["💰 Cashflow & Finance<br/>(Ledger, Budgets, USD & KHR)"]
-    Hub --> Work["💼 Work Journal<br/>(Accomplishments, Manager Reports)"]
+    Hub --> Finance["💰 Cashflow & Finance<br/>(Ledger, Budgets, USD & KHR, OCR Scanner)"]
+    Hub --> Work["💼 Work Journal<br/>(Accomplishments, Manager Reports, Standup)"]
     Hub --> Alarms["⏰ Reminders & Habits<br/>(Departure Alarms, Custom Reminders)"]
-    Hub --> Movies["🍿 Movies & Watchlist<br/>(AI Recommender, Watchlist, Vibe Search)"]
-    Hub --> Voice["🎙️ Voice Notes<br/>(Whisper AI + Gemini Speech)"]
-    Hub --> Dashboard["📱 Web Mini-App<br/>(4-Tab Dashboard & Analytics)"]
+    Hub --> Dashboard["📱 Web Mini-App<br/>(3-Tab Dashboard & Analytics)"]
+    Hub -.-> Copilot["🤖 Ambient AI Copilot<br/>(Live Financial & Task Q&A)"]
+    Hub -.-> Voice["🎙️ Ambient Voice Notes<br/>(Whisper AI + Gemini Speech)"]
 ```
 
 ### 1. 🤖 AI Financial & Work Copilot Module
@@ -62,22 +60,13 @@ graph TD
 * **Natural Reminders:** Supports exact and relative times: `remind 17:30 Standup` or `remind in 20m Check oven`.
 * **Automated Cron Engine:** Powered by Cloudflare Worker cron triggers running every minute.
 
-### 6. 📱 Interactive Web Mini-App 4-Tab Dashboard
-Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboard`:
+### 6. 📱 Interactive Web Mini-App 3-Tab Dashboard
+Accessible directly inside Telegram via `/hub` -> `📱 Web Dashboard` or `/dashboard`:
 * **💰 Cashflow Tab:** Live net balance hero, monthly budget runway gauge, interactive spending trend & category breakdown charts powered by **Chart.js**, and paginated searchable ledger with 1-tap delete.
 * **💼 Work Journal Tab:** Monthly accomplishment metrics & active days velocity, live Daily Standup preview with 1-tap copy block for Slack/Teams, quick task creator with category pills (`Dev`, `Bugfix`, `Meeting`, `Release`), category breakdown, and searchable work history.
 * **⏰ Reminders Tab:** Active alarms counter, 1-tap presets (`Standup 09:00`, `Departure 17:30`, `Spending 21:00`), custom reminder scheduler with frequency selector (daily/weekdays/once), interactive instant toggle switches (ON/OFF), and 1-tap reminder deletion.
-* **🍿 Movies Tab:** Total titles counter, plan-to-watch vs finished stats, 1-tap title creator, category/status filters, "Pick for Tonight" randomizer, and interactive mark watched toggles.
 
-### 7. 🍿 AI Movie & Series Recommender + Watchlist Module
-* **Smart Vibe Search:** Type `/watch sci-fi thriller like Inception` or `/watch funny sitcom for dinner` to receive tailored, critically acclaimed recommendations.
-* **Instant Metadata Enrichment:** Rich synopsis, IMDb & Rotten Tomatoes rating, runtime, streaming platforms, and "Why You'll Love It" highlights.
-* **1-Tap Interactive Actions:** Directly save to watchlist `[⭐ Save to Watchlist]`, mark watched `[🍿 Watched]`, or roll another recommendation `[🎲 Roll Another]`.
-* **Personal Watchlist Manager (`/watchlist`):** Keep track of movies and series you plan to watch vs. finished, with 1-tap watched toggles and deletion.
-* **"Pick For Tonight" Decider (`/watch pick`):** Eliminates movie night choice fatigue by randomly selecting an unwatched title from your personal watchlist!
-* **Web Mini-App Integration:** Fully accessible in the new 🍿 Movies tab inside `/dashboard`.
-
-### 8. 🎙️ Hands-Free Voice Notes & Speech-to-Action Module
+### 7. 🎙️ Hands-Free Voice Notes & Speech-to-Action Module
 * **Instant Speech-to-Action:** Hold the Telegram mic button and speak naturally:
   * *"Spent $4 on iced coffee"* ➔ Logs $4 expense under Coffee.
   * *"Paid 10000 on lunch"* ➔ Logs 10,000 KHR under Food.
@@ -117,11 +106,6 @@ Accessible directly inside Telegram via `/hub` -> `🌐 Dashboard` or `/dashboar
 | `/report export` | — | **Work** | Export accomplishment report as a `.txt` document |
 | `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace (standup, departure, custom) |
 | `/remind <time> <title>` | `remind in 15m ...` | **Reminders** | Set custom reminder (24h or relative time) |
-| `/watch <vibe>` | `/movie`, `watch ...` | **Entertainment** | Get AI movie/show recommendation based on mood |
-| `/watch add <title>` | `/wl add ...` | **Entertainment** | Add a title directly with AI auto-metadata enrichment |
-| `/watch` | `movie` | **Entertainment** | Open Movie Discovery Hub with genre buttons |
-| `/watchlist` | `/wl`, `watchlist` | **Entertainment** | View & manage your movie/series watchlist |
-| `/watchlist pick` | `/watch pick` | **Entertainment** | Pick a random unwatched movie for tonight |
 | `/settings` | — | **Settings** | Currency toggle (USD/KHR) & budget configuration |
 | `/help` | `/h`, `help` | **Help** | View interactive bot guide |
 

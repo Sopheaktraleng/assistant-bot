@@ -671,9 +671,6 @@ export default `<!DOCTYPE html>
                 <button class="nav-tab" id="nav-btn-reminders" onclick="switchMainTab('reminders')">
                     <span>⏰</span> Reminders
                 </button>
-                <button class="nav-tab" id="nav-btn-watchlist" onclick="switchMainTab('watchlist')">
-                    <span>🍿</span> Movies
-                </button>
             </nav>
 
             <!-- ============================================================== -->
@@ -958,69 +955,6 @@ export default `<!DOCTYPE html>
                     </div>
                 </div>
             </div>
-
-            <!-- ============================================================== -->
-            <!-- TAB 4: MOVIE & SERIES WATCHLIST                                -->
-            <!-- ============================================================== -->
-            <div id="tab-pane-watchlist" style="display: none;">
-                <!-- Hero Watchlist Card -->
-                <div class="hero-card" style="background: radial-gradient(135.5% 80.2% at 50% 0%, rgba(236, 72, 153, 0.22) 0%, rgba(18, 22, 33, 0.75) 100%); border-color: rgba(236, 72, 153, 0.25);">
-                    <div class="hero-label">Movie & Series Vault</div>
-                    <div class="hero-value" id="wl-hero-count">0 Titles</div>
-                    <div class="hero-subvalue" id="wl-hero-sub">0 To Watch • 0 Watched</div>
-                </div>
-
-                <!-- Watchlist Quick Stats -->
-                <div class="mini-grid">
-                    <div class="mini-card">
-                        <div class="mini-label"><div class="mini-indicator" style="background: var(--accent);"></div> To Watch</div>
-                        <div class="mini-value" id="wl-plan-stat">0</div>
-                        <div class="mini-subvalue">Ready for tonight</div>
-                    </div>
-                    <div class="mini-card">
-                        <div class="mini-label"><div class="mini-indicator income"></div> Finished</div>
-                        <div class="mini-value" id="wl-watched-stat">0</div>
-                        <div class="mini-subvalue">Completed titles</div>
-                    </div>
-                </div>
-
-                <!-- Add Movie or Series -->
-                <div class="section-card">
-                    <div class="section-title">
-                        <span>➕ Add Title</span>
-                        <button type="button" class="btn-sm" onclick="pickRandomMovieTonight()" style="background: rgba(236, 72, 153, 0.15); color: var(--accent); border: 1px solid rgba(236, 72, 153, 0.3);">
-                            🎲 Pick for Tonight
-                        </button>
-                    </div>
-                    <form id="form-add-movie" onsubmit="event.preventDefault(); submitNewMovie();">
-                        <div class="input-row">
-                            <input type="text" class="text-input" id="movie-title-input" placeholder="Title (e.g. Inception, Severance, Arcane...)" required />
-                            <button type="submit" class="btn-action" id="btn-submit-movie" style="background: linear-gradient(135deg, var(--accent) 0%, #be185d 100%);">
-                                <span>➕</span> Add
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Filter & Search -->
-                <div class="section-card">
-                    <div class="section-title">
-                        <span>Watchlist Catalog</span>
-                    </div>
-
-                    <div class="pill-group" id="wl-filter-pills" style="margin-bottom: 12px;">
-                        <button class="pill-btn active" data-filter="all">All Titles</button>
-                        <button class="pill-btn" data-filter="plan_to_watch">⭐ Plan to Watch</button>
-                        <button class="pill-btn" data-filter="watched">✅ Watched</button>
-                    </div>
-
-                    <input type="text" class="text-input" id="wl-search-input" placeholder="Filter by title or genre..." style="margin-bottom: 12px; width: 100%;" />
-
-                    <div class="tx-list" id="watchlist-cards-list">
-                        <!-- Dynamic movie cards render here -->
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- Toast Notification -->
@@ -1103,7 +1037,6 @@ export default `<!DOCTYPE html>
         let currentTab = 'finance';
         let workDataLoaded = false;
         let remindersDataLoaded = false;
-        let watchlistDataLoaded = false;
 
         function switchMainTab(tab) {
             currentTab = tab;
@@ -1118,14 +1051,11 @@ export default `<!DOCTYPE html>
             document.getElementById('history-view').style.display = 'none';
             document.getElementById('tab-pane-work').style.display = tab === 'work' ? 'block' : 'none';
             document.getElementById('tab-pane-reminders').style.display = tab === 'reminders' ? 'block' : 'none';
-            document.getElementById('tab-pane-watchlist').style.display = tab === 'watchlist' ? 'block' : 'none';
 
             if (tab === 'work' && !workDataLoaded) {
                 loadWorkData();
             } else if (tab === 'reminders' && !remindersDataLoaded) {
                 loadRemindersData();
-            } else if (tab === 'watchlist' && !watchlistDataLoaded) {
-                loadWatchlistData();
             }
         }
 
@@ -1889,190 +1819,6 @@ export default `<!DOCTYPE html>
             btnPrevPage.disabled = historyPage <= 1;
             btnNextPage.disabled = historyPage >= totalPages;
         }
-
-        // =====================================================================
-        // TAB 4: MOVIE & SERIES WATCHLIST LOGIC
-        // =====================================================================
-        let cachedWatchlist = [];
-        let currentWlFilter = 'all';
-
-        async function loadWatchlistData() {
-            try {
-                const res = await fetch(\`/api/watchlist?user_id=\${userId}\`);
-                const data = await res.json();
-                if (data.ok) {
-                    cachedWatchlist = data.items || [];
-                    document.getElementById('wl-hero-count').innerText = \`\${data.total || 0} Titles\`;
-                    document.getElementById('wl-hero-sub').innerText = \`\${data.planCount || 0} To Watch • \${data.watchedCount || 0} Watched\`;
-                    document.getElementById('wl-plan-stat').innerText = data.planCount || 0;
-                    document.getElementById('wl-watched-stat').innerText = data.watchedCount || 0;
-                    renderWatchlistCards(cachedWatchlist, currentWlFilter);
-                    watchlistDataLoaded = true;
-                }
-            } catch (err) {
-                console.error("Failed to load watchlist:", err);
-            }
-        }
-
-        function renderWatchlistCards(items, filter = 'all', searchQuery = '') {
-            const container = document.getElementById('watchlist-cards-list');
-            container.innerHTML = '';
-
-            let filtered = items;
-            if (filter === 'plan_to_watch') {
-                filtered = items.filter(i => i.status === 'plan_to_watch');
-            } else if (filter === 'watched') {
-                filtered = items.filter(i => i.status === 'watched');
-            }
-
-            if (searchQuery && searchQuery.trim()) {
-                const q = searchQuery.toLowerCase().trim();
-                filtered = filtered.filter(i => 
-                    (i.title && i.title.toLowerCase().includes(q)) || 
-                    (i.genre && i.genre.toLowerCase().includes(q)) ||
-                    (i.synopsis && i.synopsis.toLowerCase().includes(q))
-                );
-            }
-
-            if (filtered.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.85rem;">No titles found in this list.</p>';
-                return;
-            }
-
-            filtered.forEach(m => {
-                const isWatched = m.status === 'watched';
-                const statusBadge = isWatched 
-                    ? '<span style="font-size: 0.7rem; font-weight: 700; color: var(--success); background: var(--success-bg); padding: 3px 8px; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">✅ Watched</span>'
-                    : '<span style="font-size: 0.7rem; font-weight: 700; color: var(--accent); background: rgba(236, 72, 153, 0.15); padding: 3px 8px; border-radius: 10px; border: 1px solid rgba(236, 72, 153, 0.3);">⭐ To Watch</span>';
-
-                const yearStr = m.year ? \`(\${m.year})\` : '';
-                const ratingBadge = m.rating ? \`<span style="font-size: 0.75rem; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 2px 6px; border-radius: 6px; font-weight: 600;">⭐ \${m.rating}</span>\` : '';
-                const genreBadge = m.genre ? \`<span style="font-size: 0.72rem; color: var(--text-muted); background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 6px;">\${m.genre}</span>\` : '';
-                const lengthBadge = m.runtime ? \`<span style="font-size: 0.72rem; color: var(--text-muted);">⏱️ \${m.runtime}</span>\` : '';
-
-                const toggleLabel = isWatched ? '↩️ Unwatch' : '🍿 Watched';
-                const toggleBg = isWatched ? 'rgba(255, 255, 255, 0.08)' : 'rgba(236, 72, 153, 0.18)';
-                const toggleColor = isWatched ? 'var(--text-color)' : 'var(--accent)';
-
-                const card = document.createElement('div');
-                card.className = 'tx-row';
-                card.style.flexDirection = 'column';
-                card.style.alignItems = 'stretch';
-                card.style.gap = '8px';
-                card.style.padding = '14px';
-
-                card.innerHTML = \`
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                        <div>
-                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                <strong style="font-size: 0.95rem; color: #ffffff;">\${m.title}</strong>
-                                <span style="font-size: 0.8rem; color: var(--text-muted);">\${yearStr}</span>
-                                \${statusBadge}
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
-                                \${ratingBadge}
-                                \${genreBadge}
-                                \${lengthBadge}
-                            </div>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <button onclick="toggleMovieStatus(\${m.id})" style="background: \${toggleBg}; color: \${toggleColor}; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 5px 9px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;">
-                                \${toggleLabel}
-                            </button>
-                            <button onclick="deleteMovieItem(\${m.id})" style="background: none; border: none; color: var(--danger); opacity: 0.5; cursor: pointer; font-size: 1rem; padding: 4px;">
-                                🗑️
-                            </button>
-                        </div>
-                    </div>
-                    \${m.synopsis ? \`<div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">\${m.synopsis}</div>\` : ''}
-                \`;
-                container.appendChild(card);
-            });
-        }
-
-        async function submitNewMovie() {
-            const input = document.getElementById('movie-title-input');
-            const title = (input.value || '').trim();
-            if (!title) return;
-
-            const btn = document.getElementById('btn-submit-movie');
-            btn.disabled = true;
-            btn.innerText = '...';
-
-            try {
-                const res = await fetch(\`/api/watchlist/add?user_id=\${userId}\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    input.value = '';
-                    showToast('⭐ Added to Watchlist!');
-                    await loadWatchlistData();
-                } else {
-                    showToast('Failed to add title');
-                }
-            } catch (err) {
-                console.error('Error adding movie:', err);
-                showToast('Error adding title');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span>➕</span> Add';
-            }
-        }
-
-        async function toggleMovieStatus(id) {
-            try {
-                const res = await fetch(\`/api/watchlist/toggle?user_id=\${userId}&id=\${id}\`, { method: 'POST' });
-                const data = await res.json();
-                if (data.ok) {
-                    showToast(data.newStatus === 'watched' ? '🍿 Marked as watched!' : '⭐ Moved to Plan to Watch!');
-                    await loadWatchlistData();
-                }
-            } catch (err) {
-                console.error('Error toggling movie:', err);
-            }
-        }
-
-        async function deleteMovieItem(id) {
-            if (!confirm('Remove this title from your watchlist?')) return;
-            try {
-                const res = await fetch(\`/api/watchlist/delete?user_id=\${userId}&id=\${id}\`, { method: 'POST' });
-                const data = await res.json();
-                if (data.ok) {
-                    showToast('🗑️ Removed from Watchlist');
-                    await loadWatchlistData();
-                }
-            } catch (err) {
-                console.error('Error deleting movie:', err);
-            }
-        }
-
-        function pickRandomMovieTonight() {
-            const unwatched = cachedWatchlist.filter(i => i.status === 'plan_to_watch');
-            if (unwatched.length === 0) {
-                showToast('No unwatched titles in your watchlist yet! Add one first.');
-                return;
-            }
-            const pick = unwatched[Math.floor(Math.random() * unwatched.length)];
-            alert(\`🎲 Tonight's Movie Pick!\n\n🎬 \${pick.title} \${pick.year ? '(' + pick.year + ')' : ''}\n⭐ \${pick.rating || 'Recommended'}\n🎭 \${pick.genre || ''}\n\n\${pick.synopsis || 'Ready to watch tonight!'}\`);
-        }
-
-        // Watchlist filter pills and search listeners
-        document.getElementById('wl-filter-pills').addEventListener('click', (e) => {
-            const btn = e.target.closest('.pill-btn');
-            if (!btn) return;
-            document.querySelectorAll('#wl-filter-pills .pill-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentWlFilter = btn.getAttribute('data-filter') || 'all';
-            const searchVal = document.getElementById('wl-search-input').value;
-            renderWatchlistCards(cachedWatchlist, currentWlFilter, searchVal);
-        });
-
-        document.getElementById('wl-search-input').addEventListener('input', (e) => {
-            renderWatchlistCards(cachedWatchlist, currentWlFilter, e.target.value);
-        });
     </script>
 </body>
 </html>
