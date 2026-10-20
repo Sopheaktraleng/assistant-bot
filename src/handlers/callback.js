@@ -76,7 +76,20 @@ export async function handleCallback(callback, env, origin) {
     const userId = String(callback.from?.id || chatId);
     const messageId = callback.message?.message_id;
 
-    await answerCallback(env, callback.id);
+    // Callbacks that show their own specific toast notification will invoke answerCallback with text
+    const hasCustomToast = [
+        "work_standup_copy",
+        "work_standup_polish",
+        "work_report_polish_this",
+        "work_report_polish_last",
+        "work_report_polish_export_this",
+        "remind_add_standup",
+        "remind_add_lunchbox"
+    ].includes(data) || data.startsWith("remind_del_") || data.startsWith("work_del_") || data.startsWith("set_cur_") || data.startsWith("wl_");
+
+    if (!hasCustomToast) {
+        await answerCallback(env, callback.id);
+    }
 
     if (!chatId) return;
 

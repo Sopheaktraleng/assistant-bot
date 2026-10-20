@@ -512,145 +512,159 @@ export async function sendStandupCopyBlock(env, chatId, userId, from, callbackId
         await answerCallback(env, callbackId, { text: "📋 1-tap copy block generated!" });
     }
 
-    const rawUsername = from?.first_name || from?.username || "Team Member";
-    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Team Member";
-    const todayDate = today();
-    const prevWorkday = getPreviousWorkdayDate();
+    try {
+        await ensureTables(env.DB);
+        const rawUsername = from?.first_name || from?.username || "Team Member";
+        const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Team Member";
+        const todayDate = today();
+        const prevWorkday = getPreviousWorkdayDate();
 
-    const todayRows = await env.DB.prepare(
-        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    ).bind(userId, todayDate).all();
-    const todayLogs = todayRows.results || [];
+        const todayRows = await env.DB.prepare(
+            "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, todayDate).all();
+        const todayLogs = todayRows.results || [];
 
-    let prevLogs = [];
-    let effectivePrevDate = prevWorkday;
-    const directPrevRows = await env.DB.prepare(
-        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    ).bind(userId, prevWorkday).all();
-    if (directPrevRows.results && directPrevRows.results.length > 0) {
-        prevLogs = directPrevRows.results;
-    } else {
-        const priorRow = await env.DB.prepare(
-            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
-        ).bind(userId, todayDate).first();
-        if (priorRow?.date) {
-            effectivePrevDate = priorRow.date;
-            const fallbackRows = await env.DB.prepare(
-                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-            ).bind(userId, effectivePrevDate).all();
-            prevLogs = fallbackRows.results || [];
+        let prevLogs = [];
+        let effectivePrevDate = prevWorkday;
+        const directPrevRows = await env.DB.prepare(
+            "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, prevWorkday).all();
+        if (directPrevRows.results && directPrevRows.results.length > 0) {
+            prevLogs = directPrevRows.results;
+        } else {
+            const priorRow = await env.DB.prepare(
+                "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+            ).bind(userId, todayDate).first();
+            if (priorRow?.date) {
+                effectivePrevDate = priorRow.date;
+                const fallbackRows = await env.DB.prepare(
+                    "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+                ).bind(userId, effectivePrevDate).all();
+                prevLogs = fallbackRows.results || [];
+            }
         }
-    }
 
-    const prevBullets = prevLogs.length > 0
-        ? prevLogs.map(item => `  - [${item.category}] ${item.content}`).join("\n")
-        : "  - Continued regular deliverables";
+        const prevBullets = prevLogs.length > 0
+            ? prevLogs.map(item => `  - [${item.category}] ${String(item.content || "").replace(/[`]/g, "'")}`).join("\n")
+            : "  - Continued regular deliverables";
 
-    const todayBullets = todayLogs.length > 0
-        ? todayLogs.map(item => `  - [${item.category}] ${item.content}`).join("\n")
-        : "  - Continue development and scheduled sprint tasks";
+        const todayBullets = todayLogs.length > 0
+            ? todayLogs.map(item => `  - [${item.category}] ${String(item.content || "").replace(/[`]/g, "'")}`).join("\n")
+            : "  - Continue development and scheduled sprint tasks";
 
-    const copyBlock = [
-        `Daily Standup - ${todayDate}`,
-        `Name: ${cleanUsername}`,
-        ``,
-        `1. Yesterday / Previous (${effectivePrevDate}):`,
-        prevBullets,
-        ``,
-        `2. Today:`,
-        todayBullets,
-        ``,
-        `3. Blockers: None`
-    ].join("\n");
+        const copyBlock = [
+            `Daily Standup - ${todayDate}`,
+            `Name: ${cleanUsername}`,
+            ``,
+            `1. Yesterday / Previous (${effectivePrevDate}):`,
+            prevBullets,
+            ``,
+            `2. Today:`,
+            todayBullets,
+            ``,
+            `3. Blockers: None`
+        ].join("\n").replace(/```/g, "'''");
 
-    const message = [
-        `📋 *Tap the block below to copy:*`,
-        ``,
-        `\`\`\``,
-        copyBlock,
-        `\`\`\``,
-        `_Paste directly into Slack, Microsoft Teams, or Telegram!_`
-    ].join("\n");
+        const message = [
+            `📋 *Tap the block below to copy:*`,
+            ``,
+            `\`\`\``,
+            copyBlock,
+            `\`\`\``,
+            `_Paste directly into Slack, Microsoft Teams, or Telegram!_`
+        ].join("\n");
 
-    await sendMessage(env, chatId, message, {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
-                    { text: "⚡ Work Journal", callback_data: "work_hub" }
+        await sendMessage(env, chatId, message, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "🗣️ Daily Standup", callback_data: "work_standup" },
+                        { text: "⚡ Work Journal", callback_data: "work_hub" }
+                    ]
                 ]
-            ]
-        }
-    });
+            }
+        });
+    } catch (err) {
+        console.error("sendStandupCopyBlock error:", err);
+        await sendMessage(env, chatId, "⚠️ Failed to generate standup copy block. Please try again.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🗣️ Daily Standup", callback_data: "work_standup" }]
+                ]
+            }
+        });
+    }
 }
 
 export async function handleAiPolishStandup(env, chatId, userId, from, messageId = null, callbackId = null) {
     if (callbackId) {
         await answerCallback(env, callbackId, { text: "🧠 Polishing with AI..." });
     }
-    await ensureTables(env.DB);
-
-    const rawUsername = from?.first_name || from?.username || "Engineer";
-    const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
-    const todayDate = today();
-    const prevWorkday = getPreviousWorkdayDate();
-
-    const todayRows = await env.DB.prepare(
-        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    ).bind(userId, todayDate).all();
-    const todayLogs = todayRows.results || [];
-
-    let prevLogs = [];
-    let effectivePrevDate = prevWorkday;
-    const directPrevRows = await env.DB.prepare(
-        "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    ).bind(userId, prevWorkday).all();
-    if (directPrevRows.results && directPrevRows.results.length > 0) {
-        prevLogs = directPrevRows.results;
-    } else {
-        const priorRow = await env.DB.prepare(
-            "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
-        ).bind(userId, todayDate).first();
-        if (priorRow?.date) {
-            effectivePrevDate = priorRow.date;
-            const fallbackRows = await env.DB.prepare(
-                "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
-            ).bind(userId, effectivePrevDate).all();
-            prevLogs = fallbackRows.results || [];
-        }
-    }
-
-    if (prevLogs.length === 0 && todayLogs.length === 0) {
-        await safeEditOrSendMessage(
-            env,
-            chatId,
-            messageId,
-            `⚠️ *No work logs available to polish.*\n\nLog tasks with \`/done <task>\` first (e.g. \`/done Fixed checkout bug\`), then tap **✨ AI Polish Standup**!`,
-            {
-                parse_mode: "Markdown",
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: "‹ Back to Standup", callback_data: "work_standup" }]
-                    ]
-                }
-            }
-        );
-        return;
-    }
 
     try {
-        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
-    } catch (e) {}
+        await ensureTables(env.DB);
 
-    const rawPrevText = prevLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "No explicit logs";
-    const rawTodayText = todayLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "Continue scheduled tasks & review";
+        const rawUsername = from?.first_name || from?.username || "Engineer";
+        const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Engineer";
+        const todayDate = today();
+        const prevWorkday = getPreviousWorkdayDate();
 
-    const systemPrompt = `You are an elite software engineering manager and executive communicator.
+        const todayRows = await env.DB.prepare(
+            "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, todayDate).all();
+        const todayLogs = todayRows.results || [];
+
+        let prevLogs = [];
+        let effectivePrevDate = prevWorkday;
+        const directPrevRows = await env.DB.prepare(
+            "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, prevWorkday).all();
+        if (directPrevRows.results && directPrevRows.results.length > 0) {
+            prevLogs = directPrevRows.results;
+        } else {
+            const priorRow = await env.DB.prepare(
+                "SELECT DISTINCT date FROM work_logs WHERE user_id = ? AND date < ? ORDER BY date DESC LIMIT 1"
+            ).bind(userId, todayDate).first();
+            if (priorRow?.date) {
+                effectivePrevDate = priorRow.date;
+                const fallbackRows = await env.DB.prepare(
+                    "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+                ).bind(userId, effectivePrevDate).all();
+                prevLogs = fallbackRows.results || [];
+            }
+        }
+
+        if (prevLogs.length === 0 && todayLogs.length === 0) {
+            await safeEditOrSendMessage(
+                env,
+                chatId,
+                messageId,
+                `⚠️ *No work logs available to polish.*\n\nLog tasks with \`/done <task>\` first (e.g. \`/done Fixed checkout bug\`), then tap **✨ AI Polish Standup**!`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "‹ Back to Standup", callback_data: "work_standup" }]
+                        ]
+                    }
+                }
+            );
+            return;
+        }
+
+        try {
+            await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+        } catch (e) {}
+
+        const rawPrevText = prevLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "No explicit logs";
+        const rawTodayText = todayLogs.map(i => `[${i.category}] ${i.content}`).join("\n") || "Continue scheduled tasks & review";
+
+        const systemPrompt = `You are an elite software engineering manager and executive communicator.
 Transform messy or casual work logs into a top-tier, impact-oriented daily engineering standup update.
 Keep it concise, actionable, and professional. Use active verbs (Implemented, Resolved, Streamlined, Spearheaded).`;
 
-    const userPrompt = `Engineer: ${cleanUsername}
+        const userPrompt = `Engineer: ${cleanUsername}
 Date: ${todayDate}
 Previous Work Session (${effectivePrevDate}):
 ${rawPrevText}
@@ -666,14 +680,56 @@ Include:
 
 Format cleanly in Telegram Markdown with emojis and bullet points.`;
 
-    const polishedText = await callAiTextModel(env, systemPrompt, userPrompt, 0.3);
+        const polishedText = await callAiTextModel(env, systemPrompt, userPrompt, 0.3);
 
-    if (!polishedText) {
+        if (!polishedText) {
+            await safeEditOrSendMessage(
+                env,
+                chatId,
+                messageId,
+                `⚠️ *AI Standup Polish was unavailable.*\n\nPlease verify your \`GEMINI_API_KEY\` or Workers AI binding.`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "‹ Back to Standup", callback_data: "work_standup" }]
+                        ]
+                    }
+                }
+            );
+            return;
+        }
+
+        const responseText = [
+            `✨ *AI-Polished Daily Standup*`,
+            `────────────────────`,
+            polishedText,
+            `────────────────────`,
+            `_Copy to clipboard or share with your team:_`
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, messageId, responseText, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📋 Copy Block", callback_data: "work_standup_copy" },
+                        { text: "‹ Raw Standup", callback_data: "work_standup" }
+                    ],
+                    [
+                        { text: "⚡ Work Journal", callback_data: "work_hub" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+    } catch (err) {
+        console.error("handleAiPolishStandup error:", err);
         await safeEditOrSendMessage(
             env,
             chatId,
             messageId,
-            `⚠️ *AI Standup Polish was unavailable.*\n\nPlease verify your \`GEMINI_API_KEY\` or Workers AI binding.`,
+            `⚠️ *AI Polish encountered an unexpected error.*\n\n${cleanMd(err.message || "Please try again.")}`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -683,32 +739,7 @@ Format cleanly in Telegram Markdown with emojis and bullet points.`;
                 }
             }
         );
-        return;
     }
-
-    const responseText = [
-        `✨ *AI-Polished Daily Standup*`,
-        `────────────────────`,
-        polishedText,
-        `────────────────────`,
-        `_Copy to clipboard or share with your team:_`
-    ].join("\n");
-
-    await safeEditOrSendMessage(env, chatId, messageId, responseText, {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "📋 Copy Block", callback_data: "work_standup_copy" },
-                    { text: "‹ Raw Standup", callback_data: "work_standup" }
-                ],
-                [
-                    { text: "⚡ Work Journal", callback_data: "work_hub" },
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
-        }
-    });
 }
 
 export async function handleAiPolishWorkReport(env, chatId, userId, period = "this_month", from, messageId = null, callbackId = null) {

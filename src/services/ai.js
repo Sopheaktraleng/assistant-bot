@@ -117,7 +117,8 @@ Return ONLY pure JSON.`;
             const response = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: requestBody
+                body: requestBody,
+                signal: AbortSignal.timeout(6000)
             });
 
             if (!response.ok) {
@@ -421,7 +422,8 @@ export async function askAiCopilot(env, userQuery, context) {
                 const resp = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: requestBody
+                    body: requestBody,
+                    signal: AbortSignal.timeout(6000)
                 });
 
                 if (!resp.ok) {
@@ -492,7 +494,8 @@ export async function callAiTextModel(env, systemPrompt, userPrompt, temperature
                 const resp = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: requestBody
+                    body: requestBody,
+                    signal: AbortSignal.timeout(6000)
                 });
 
                 if (!resp.ok) {
@@ -587,7 +590,8 @@ Rules:
             const resp = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: requestBody
+                body: requestBody,
+                signal: AbortSignal.timeout(6000)
             });
 
             if (!resp.ok) {

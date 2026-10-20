@@ -39,11 +39,16 @@ export async function sendMessage(env, chatId, text, extra = {}) {
 }
 
 export async function answerCallback(env, callbackQueryId, extra = {}) {
-    if (!callbackQueryId) return;
-    return telegram(env, "answerCallbackQuery", {
-        callback_query_id: callbackQueryId,
-        ...extra,
-    });
+    if (!callbackQueryId) return null;
+    try {
+        return await telegram(env, "answerCallbackQuery", {
+            callback_query_id: callbackQueryId,
+            ...extra,
+        });
+    } catch (err) {
+        console.warn("answerCallback warning (non-fatal):", err.message);
+        return null;
+    }
 }
 
 export async function safeEditOrSendMessage(env, chatId, messageId, text, extra = {}) {

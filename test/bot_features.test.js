@@ -2,15 +2,31 @@ import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS } from "../src/config/constants.js";
 import { ensureTables } from "../src/db/schema.js";
 import { handleMessage } from "../src/handlers/message.js";
+import { answerCallback } from "../src/services/telegram.js";
 
 describe("Bot Improvements & Stability", () => {
     describe("AI Configuration", () => {
-        it("should have valid, standard Gemini production models ordered by speed", () => {
-            expect(GEMINI_MODELS).toContain("gemini-2.0-flash");
-            expect(GEMINI_MODELS).toContain("gemini-1.5-flash");
-            expect(GEMINI_MODELS).not.toContain("gemini-3.5-flash-lite");
-            expect(GEMINI_MODELS).not.toContain("gemini-3.8-flash");
-            expect(GEMINI_MODELS[0]).toBe("gemini-2.0-flash");
+        it("should have valid, active Gemini production models ordered by speed", () => {
+            expect(GEMINI_MODELS).toContain("gemini-3.5-flash-lite");
+            expect(GEMINI_MODELS).toContain("gemini-3-flash-preview");
+            expect(GEMINI_MODELS).toContain("gemini-3.5-flash");
+            expect(GEMINI_MODELS[0]).toBe("gemini-3.5-flash-lite");
+        });
+    });
+
+    describe("Telegram Callback Resilience", () => {
+        it("should silently handle failed or duplicate answerCallbackQuery without throwing", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({
+                    ok: false,
+                    error_code: 400,
+                    description: "Bad Request: query is too old and response timeout expired or query ID is invalid"
+                }), { status: 400 })
+            );
+
+            const result = await answerCallback({ TELEGRAM_BOT_TOKEN: "mock_token" }, "expired_query_123", { text: "Hello" });
+            expect(result).toBeNull();
+            fetchSpy.mockRestore();
         });
     });
 
