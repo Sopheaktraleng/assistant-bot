@@ -1,143 +1,79 @@
-# 🌟 Personal Assistant Bot
+# Personal Assistant Bot
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Runtime-Cloudflare%20Workers-orange?style=for-the-badge&logo=cloudflare" alt="Cloudflare Workers" />
-  <img src="https://img.shields.io/badge/Database-Cloudflare%20D1%20(SQLite)-blue?style=for-the-badge&logo=sqlite" alt="Cloudflare D1" />
-  <img src="https://img.shields.io/badge/AI-Google%20Gemini-4285F4?style=for-the-badge&logo=google" alt="Google Gemini" />
-  <img src="https://img.shields.io/badge/Platform-Telegram%20Bot-0088cc?style=for-the-badge&logo=telegram" alt="Telegram" />
-  <img src="https://img.shields.io/badge/Cost-100%25%20Free%20Tier-success?style=for-the-badge" alt="Free Tier" />
+  <img src="https://img.shields.io/badge/Runtime-Cloudflare%20Workers-orange?style=flat-square&logo=cloudflare" alt="Cloudflare Workers" />
+  <img src="https://img.shields.io/badge/Database-Cloudflare%20D1-blue?style=flat-square&logo=sqlite" alt="Cloudflare D1" />
+  <img src="https://img.shields.io/badge/AI-Google%20Gemini-4285F4?style=flat-square&logo=google" alt="Google Gemini" />
+  <img src="https://img.shields.io/badge/Platform-Telegram-0088cc?style=flat-square&logo=telegram" alt="Telegram" />
+  <img src="https://img.shields.io/badge/License-ISC-green?style=flat-square" alt="License" />
 </p>
 
-An all-in-one, 24/7 personal productivity and organization assistant hosted on **Cloudflare Workers** with **Cloudflare D1**. Built with a serverless edge architecture—consuming **0 MB RAM and 0% CPU when idle** while delivering sub-second response times worldwide.
-
-The bot is structured as an extensible **Personal Assistant Hub (`/hub`)**, organizing your daily workflow into dedicated modules and workspaces.
+A serverless Telegram assistant for personal finance, work tracking, and automated reminders. Built on Cloudflare Workers and Cloudflare D1 with zero idle resource consumption and sub-second response times worldwide.
 
 ---
 
-## 🌟 Modular Workspaces
+## Overview
 
-```mermaid
-graph TD
-    Hub["🌟 Personal Assistant Hub (/hub)"]
-    Hub --> Finance["💰 Cashflow & Finance<br/>(Ledger, Budgets, USD & KHR, OCR Scanner)"]
-    Hub --> Work["💼 Work Journal<br/>(Accomplishments, Manager Reports, Standup)"]
-    Hub --> Alarms["⏰ Reminders & Habits<br/>(Departure Alarms, Custom Reminders)"]
-    Hub --> Dashboard["📱 Web Mini-App<br/>(3-Tab Dashboard & Analytics)"]
-    Hub -.-> Copilot["🤖 Ambient AI Copilot<br/>(Live Financial & Task Q&A)"]
-    Hub -.-> Voice["🎙️ Ambient Voice Notes<br/>(Whisper AI + Gemini Speech)"]
-```
+The bot functions as a centralized productivity hub (`/hub`), integrating daily operational workflows into a single conversational interface:
 
-### 1. 🤖 AI Financial & Work Copilot Module
-* **Conversational Financial Intelligence:** Chat naturally to check your balances, spending habits, budget runway, or work records without remembering rigid command syntax.
-* **Context-Aware Live Ledger:** Gemini / Workers AI inspects your live D1 data (today, 7-day rolling, month-to-date, category totals, active budget, recent work tasks, and reminders).
-* **Bilingual Support:** Ask freely in English or Khmer (*អក្សរខ្មែរ*): *"How much did I spend this week?"*, *"Can I afford a $50 dinner?"*, *"What tasks did I finish today?"*, or *"ថ្ងៃនេះខ្ញុំចាយអស់ប៉ុន្មាន?"*.
-* **Smart Conversational Actions:** Understands natural requests like *"I paid $15 for groceries yesterday"* and automatically records the transaction with proper date and categorization.
-
-### 2. 🧾 Smart OCR & Receipt Scanner Module
-* **Zero-Friction Logging:** Snap or forward any ABA Mobile payment, Bakong KHQR transfer, Acleda slip, or printed store receipt directly into chat.
-* **Instant Extraction:** Automatically parses amount, currency (`USD` / `KHR`), merchant name, date, and smart category.
-* **Interactive Confirmation:** 1-tap confirmation `[✅ Confirm]`, instant category switcher `[🏷️ Category]`, and `[🔄 Make Income]` toggle.
-* **Powered by Gemini AI:** High accuracy with bilingual recognition for English and Khmer script (អក្សរខ្មែរ).
-
-### 3. 💰 Cashflow & Finance Module
-* **Dual Currency Support:** Tracks in both USD ($) and Cambodian Riel (៛), with automatic conversion at 1 USD = 4,000 KHR.
-* **Natural Text Entry:** Type `5 coffee`, `10000 lunch`, or `+500 salary`—no command syntax required.
-* **Itemized Daily Ledger:** Real-time itemized breakdown (`/today` or `today`).
-* **Visual Budget Gauges:** Set monthly spending limits (`/budget 300 usd`) with proactive threshold warnings.
-* **Data Portability:** 1-click CSV backup export (`/clear`).
-
-### 4. 💼 Work Journal & Manager Reports Module
-* **Daily Accomplishment Log:** Record completed tasks instantly with `/done Fixed checkout bug #bugfix` or `did code review`.
-* **Daily Standup Assistant (`/standup`):** Generates structured Scrum standups (Yesterday / Previous Workday, Today's Focus, Blockers) with a 1-tap copy block ready for Slack, Microsoft Teams, or Telegram.
-* **AI Standup Polish (`/standup polish`):** Uses Gemini AI to transform casual task notes into crisp, high-impact engineering standup updates.
-* **AI Executive Report Polish (`/report polish`):** Automatically synthesizes raw monthly accomplishments into a structured, executive-ready performance review report (Executive Summary, Core Deliverables, Reliability & Bugfixes, Leadership, Strategic Recommendations).
-* **Morning Standup Alarm:** Automated 9:00 AM weekday reminder with previous workday context, snooze, and 1-tap logging.
-* **Exportable:** Download complete raw or AI-polished monthly reports as `.txt` files (`/report export`).
-
-### 5. ⏰ Reminders & Habits Module
-* **Morning Standup Alarm:** Weekday 9:00 AM prompt with previous tasks summary and 1-tap logging. Includes `[⏰ Snooze 30m]` button.
-* **Departure Alarms:** Weekday reminder (e.g. 5:30 PM) so you never leave your lunch box or belongings behind. Includes `[✅ Got it!]` and `[⏰ Snooze 15m]` buttons.
-* **Natural Reminders:** Supports exact and relative times: `remind 17:30 Standup` or `remind in 20m Check oven`.
-* **Automated Cron Engine:** Powered by Cloudflare Worker cron triggers running every minute.
-
-### 6. 📱 Interactive Web Mini-App 3-Tab Dashboard
-Accessible directly inside Telegram via `/hub` -> `📱 Web Dashboard` or `/dashboard`:
-* **💰 Cashflow Tab:** Live net balance hero, monthly budget runway gauge, interactive spending trend & category breakdown charts powered by **Chart.js**, and paginated searchable ledger with 1-tap delete.
-* **💼 Work Journal Tab:** Monthly accomplishment metrics & active days velocity, live Daily Standup preview with 1-tap copy block for Slack/Teams, quick task creator with category pills (`Dev`, `Bugfix`, `Meeting`, `Release`), category breakdown, and searchable work history.
-* **⏰ Reminders Tab:** Active alarms counter, 1-tap presets (`Standup 09:00`, `Departure 17:30`, `Spending 21:00`), custom reminder scheduler with frequency selector (daily/weekdays/once), interactive instant toggle switches (ON/OFF), and 1-tap reminder deletion.
-
-### 7. 🎙️ Hands-Free Voice Notes & Speech-to-Action Module
-* **Instant Speech-to-Action:** Hold the Telegram mic button and speak naturally:
-  * *"Spent $4 on iced coffee"* ➔ Logs $4 expense under Coffee.
-  * *"Paid 10000 on lunch"* ➔ Logs 10,000 KHR under Food.
-  * *"Finished code review for payment gateway"* ➔ Logs accomplishment to Work Journal.
-  * *"Remind me in 30 minutes to check oven"* ➔ Schedules reminder alarm.
-  * *"How much did I spend this week?"* ➔ Gemini Copilot answers with spending breakdown.
-* **Dual-Engine Speech Recognition:** Edge-native **Cloudflare Workers AI Whisper** (`@cf/openai/whisper`) with **Google Gemini Multimodal Audio** fallback.
-* **Bilingual English & Khmer Support:** Recognizes native English, Khmer (*អក្សរខ្មែរ*), and mixed language speech.
+- **Cashflow & Finance:** Dual-currency tracking (USD & KHR) with natural-language expense entry (`5 coffee`, `10000 lunch`), monthly budget gauges, CSV export, and receipt OCR for bank slips (ABA, Bakong KHQR, Acleda) via Gemini.
+- **Work Journal & Standups:** Log daily engineering accomplishments (`/done`), generate structured Scrum standups (`/standup`) with one-tap copy, and create executive-ready monthly performance reviews with Gemini AI polish.
+- **Reminders & Scheduler:** Automated morning standup and departure reminders, arbitrary relative timers (`remind in 20m`), driven by Cloudflare minute-interval cron triggers.
+- **AI Copilot & Voice Notes:** Bilingual conversational Q&A (English and Khmer) over your live database ledger, accompanied by speech-to-action audio processing via Cloudflare Workers AI (Whisper) and Gemini Multimodal.
+- **Telegram Web App:** Interactive embedded dashboard (`/dashboard`) featuring Chart.js visual analytics for spending trends, task records, and reminder management.
 
 ---
 
-## ⚡ Commands & Shortcuts
-
-| Command | Shortcut | Workspace | Description |
-| :--- | :--- | :--- | :--- |
-| `/hub` | `/menu`, `menu`, `hub` | **Main Hub** | Open Personal Assistant Hub portal |
-| `/voice` | `/mic`, voice note | **Voice Notes** | Hands-free voice note guide & shortcuts |
-| `/ask <query>` | `/ai`, `/copilot`, casual text | **AI Copilot** | Ask anything about spending, budgets, tasks, or advice |
-| `/scan` | `/ocr`, `/receipt` | **Scanner** | Bank slip & receipt scanner guide (or just send a photo) |
-| `/finance` | `/f`, `money`, `balance` | **Finance** | Open Cashflow & Finance workspace |
-| `/add <amt> <curr> <cat>` | `5 coffee`, `10000 lunch` | **Finance** | Log an expense |
-| `/income <amt> <curr>` | `+500 salary` | **Finance** | Log income |
-| `/today` | `/t`, `today`, `ledger` | **Finance** | View today's itemized transactions |
-| `/export` | `/backup` | **Finance** | Export complete itemized cashflow ledger as `.csv` |
-| `/find <query>` | `/search` | **Finance** | Search transactions by keyword or amount |
-| `/summary` | — | **Finance** | Today's spending stats & category progress |
-| `/week` | — | **Finance** | 7-day spending report with chart |
-| `/month` | — | **Finance** | Current month summary & budget progress |
-| `/budget <amt> <curr>` | `/b` | **Finance** | Set monthly spending limit (e.g. `/budget 300 usd`) |
-| `/work` | `/w`, `tasks` | **Work** | Open Work Journal workspace |
-| `/done <task>` | `did ...`, `finished ...` | **Work** | Log a completed work accomplishment (supports `#tag`) |
-| `/standup` | `/su`, `standup` | **Work** | Generate Daily Standup (Yesterday, Today, Blockers) with 1-tap copy |
-| `/standup polish` | — | **Work** | AI-polish standup update for Slack/Teams with Gemini |
-| `/report` | `report` | **Work** | Generate this month's manager accomplishment report |
-| `/report polish` | `/polish` | **Work** | AI executive synthesis for 1-on-1s and performance reviews |
-| `/report last` | — | **Work** | Generate last month's accomplishment report |
-| `/report export` | — | **Work** | Export accomplishment report as a `.txt` document |
-| `/reminders` | `/r` | **Reminders** | Open Reminders & Habits workspace (standup, departure, custom) |
-| `/remind <time> <title>` | `remind in 15m ...` | **Reminders** | Set custom reminder (24h or relative time) |
-| `/settings` | — | **Settings** | Currency toggle (USD/KHR) & budget configuration |
-| `/help` | `/h`, `help` | **Help** | View interactive bot guide |
-
----
-
-## 🏗️ Architecture & Security
+## Architecture
 
 ```mermaid
 flowchart LR
-    User["👤 User (Telegram)"] <-->|"HTTPS / TLS 1.3"| TG["Telegram Bot API"]
-    TG <-->|"Webhook with Secret Token"| CF["⚡ Cloudflare Worker<br/>(Edge Serverless)"]
-    CF <-->|"Parameterized SQL"| D1[("🗄️ Cloudflare D1<br/>(SQLite at Edge)")]
-    CF <-->|"Multimodal OCR"| Gemini["🧠 Google Gemini AI<br/>(gemini-3.5-flash-lite)"]
-    CF -.->|"Cron (Every Minute)"| Alarms["⏰ Reminder Engine"]
+    User["Telegram Client"] <-->|"HTTPS / TLS 1.3"| TG["Telegram Bot API"]
+    TG <-->|"Webhook + Secret Token"| CF["Cloudflare Worker"]
+    CF <-->|"Parameterized SQL"| D1[("Cloudflare D1 (SQLite)")]
+    CF <-->|"Multimodal Vision & Audio"| Gemini["Google Gemini API"]
+    CF -.->|"Cron Triggers (1 min)"| Alarms["Scheduler Engine"]
 ```
 
-### Security & Privacy Protections
-* **Encrypted in Transit & at Rest:** All communications use TLS 1.3. Cloudflare D1 data is encrypted at rest.
-* **Webhook Authentication:** Every incoming request verifies the `X-Telegram-Bot-Api-Secret-Token` header. Unauthorized HTTP requests are rejected immediately with `401 Unauthorized`.
-* **Zero SQL Injection Risk:** All database queries utilize strictly parameterized bindings (`db.prepare(...).bind(...)`).
-* **Secret Isolation:** Credentials (`TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `WEBHOOK_SECRET`) reside in Cloudflare's encrypted environment storage and are never exposed in code or client responses.
-* **Zero Idle Footprint:** Serverless V8 isolates run on-demand in milliseconds when a message arrives and shut down immediately, leaving no persistent processes or open attack surfaces.
+### Security & Design Highlights
+- **Zero Idle Overhead:** Runs entirely on Cloudflare edge isolates, spinning down to 0 MB RAM and 0% CPU when not processing requests.
+- **Strict Webhook Authentication:** Validates the `X-Telegram-Bot-Api-Secret-Token` header on every request; unauthorized traffic is rejected immediately.
+- **SQL Injection Prevention:** All database operations use strictly parameterized prepared statements.
+- **Secret Isolation:** Environment secrets (`TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, `GEMINI_API_KEY`) are managed via Cloudflare encrypted storage.
 
 ---
 
-## 🚀 Setup & Deployment
+## Command Reference
+
+| Command | Shortcut / Input | Description |
+| :--- | :--- | :--- |
+| `/hub` | `menu`, `hub` | Open the interactive navigation hub |
+| `/dashboard` | — | Launch the Telegram Web Mini-App |
+| `/today` | `/t`, `today` | View today's itemized transactions |
+| `/summary` | `/s` | View daily spending breakdown and budget status |
+| `/month` | `/m` | Current month financial summary |
+| `/add <amt> <curr>` | `5 coffee`, `10000 lunch` | Record an expense |
+| `/income <amt> <curr>` | `+500 salary` | Record income |
+| `/budget <amt> <curr>` | `/b 300 usd` | Set monthly spending threshold |
+| `/export` | `/backup` | Export full transaction history as CSV |
+| `/done <task>` | `did ...`, `finished ...` | Log a work accomplishment (supports `#tags`) |
+| `/standup` | `/su`, `standup` | Generate Scrum standup update with 1-tap copy |
+| `/standup polish` | — | Polish standup update for Slack/Teams using Gemini |
+| `/report` | `/report last` | Generate monthly accomplishment report |
+| `/report polish` | `/polish` | Synthesize monthly report into executive review format |
+| `/remind <time> <msg>` | `remind in 15m ...` | Set custom reminder (24h or relative format) |
+| `/ask <query>` | `/ai`, casual query | Ask natural questions about spending or work history |
+| `/voice` | voice note | Guide and shortcuts for hands-free voice commands |
+
+---
+
+## Getting Started
 
 ### Prerequisites
-1. **Node.js** (v18 or higher)
-2. **Cloudflare Account** (Free tier)
-3. **Telegram Bot Token** (from [@BotFather](https://t.me/BotFather))
-4. **Google Gemini API Key** (Free key from [Google AI Studio](https://aistudio.google.com/))
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- Cloudflare account with [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
+- Telegram Bot Token from [@BotFather](https://t.me/BotFather)
+- Google Gemini API key from [Google AI Studio](https://aistudio.google.com/)
 
 ### 1. Installation
 ```bash
@@ -146,16 +82,14 @@ cd personal-assistant-bot
 npm install
 ```
 
-### 2. Cloudflare Authentication
+### 2. Cloudflare D1 Setup
+Authenticate with Cloudflare and create the D1 database:
 ```bash
 npx wrangler login
-```
-
-### 3. Create Cloudflare D1 Database
-```bash
 npx wrangler d1 create cashflow_bot
 ```
-Copy the returned `database_id` and paste it into your `wrangler.toml`:
+
+Update `wrangler.toml` with the returned `database_id`:
 ```toml
 [[d1_databases]]
 binding = "DB"
@@ -163,31 +97,29 @@ database_name = "cashflow_bot"
 database_id = "your-database-id-here"
 ```
 
-### 4. Run Schema Migrations
+Apply database migrations:
 ```bash
 npm run db:migrate:remote
 ```
 
-### 5. Configure Cloudflare Secrets
-Securely store your secrets in Cloudflare:
+### 3. Configure Secrets
+Set the required secrets in your Cloudflare environment:
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 npx wrangler secret put GEMINI_API_KEY
 ```
-> [!TIP]
-> `WEBHOOK_SECRET` can be any random string (e.g. generated via `openssl rand -hex 24`). It protects your webhook endpoint against unauthorized traffic.
 
-### 6. Deploy Worker to Cloudflare
+> [!NOTE]
+> `WEBHOOK_SECRET` can be any secure random string (e.g., `openssl rand -hex 24`).
+
+### 4. Deploy & Register Webhook
+Deploy the worker:
 ```bash
 npm run deploy
 ```
-Note your deployment URL (e.g. `https://<worker-name>.<subdomain>.workers.dev`).
 
-### 7. Register the Telegram Webhook
-Run the automated webhook registration script:
-
-**On macOS / Linux:**
+Register your Cloudflare Worker URL with the Telegram Bot API:
 ```bash
 export TELEGRAM_BOT_TOKEN="your-bot-token"
 export WEBHOOK_SECRET="your-webhook-secret"
@@ -195,49 +127,42 @@ export WORKER_URL="https://<worker-name>.<subdomain>.workers.dev"
 npm run set:webhook
 ```
 
-**On Windows (PowerShell):**
-```powershell
-$env:TELEGRAM_BOT_TOKEN="your-bot-token"
-$env:WEBHOOK_SECRET="your-webhook-secret"
-$env:WORKER_URL="https://<worker-name>.<subdomain>.workers.dev"
-npm run set:webhook
-```
+---
+
+## Local Development
+
+1. Create a local environment file:
+   ```bash
+   cp .dev.vars.example .dev.vars
+   ```
+   Add your `TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, and `GEMINI_API_KEY`.
+
+2. Initialize the local SQLite database:
+   ```bash
+   npm run db:migrate:local
+   ```
+
+3. Run the development server and test suite:
+   ```bash
+   npm run dev
+   npm test
+   ```
 
 ---
 
-## 💻 Local Development
+## Free Tier Utilization
 
-1. Create your local environment file:
-```bash
-cp .dev.vars.example .dev.vars
-```
-Populate `.dev.vars` with your `TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, and `GEMINI_API_KEY`.
+The system is designed to operate 100% within free-tier quotas:
 
-2. Initialize your local SQLite database:
-```bash
-npm run db:migrate:local
-```
-
-3. Start the local server:
-```bash
-npm run dev
-```
-
----
-
-## 📊 Free Tier & Cost Breakdown
-
-| Component | Free Tier Allowance | Personal Assistant Bot Usage | Monthly Cost |
+| Provider / Service | Free Tier Allowance | Typical Usage | Est. Cost |
 | :--- | :--- | :--- | :--- |
-| **Cloudflare Workers** | 100,000 requests / day | ~100 – 1,000 requests / day | **$0.00** |
-| **Cloudflare D1** | 5M reads + 100k writes / day | ~500 reads + 200 writes / day | **$0.00** |
-| **Google Gemini API** | 15 RPM / 1,500 requests / day (Free tier) | ~10 – 50 receipt scans / day | **$0.00** |
-| **Telegram Bot API** | Unlimited messages | Standard bot traffic | **$0.00** |
+| **Cloudflare Workers** | 100,000 requests / day | 100 – 1,000 req/day | **$0.00** |
+| **Cloudflare D1** | 5,000,000 reads + 100,000 writes / day | < 1,000 operations/day | **$0.00** |
+| **Google Gemini API** | 15 RPM / 1,500 requests / day | 10 – 50 scans/day | **$0.00** |
+| **Telegram Bot API** | Unlimited | Standard messaging | **$0.00** |
 
 ---
 
-## 🛡️ Security Best Practices
-- Never commit `.dev.vars` or any file containing API keys into version control.
-- If your Telegram bot token is ever exposed, revoke and regenerate it immediately via [@BotFather](https://t.me/BotFather).
-- Rotate your `WEBHOOK_SECRET` periodically by updating the Cloudflare secret and re-running `npm run set:webhook`.
+## License
 
+This project is licensed under the [ISC License](package.json).
