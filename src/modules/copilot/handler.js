@@ -63,22 +63,36 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
     } catch (e) {}
 
     const context = await buildAiUserContext(env.DB, userId);
-    const result = await askAiCopilot(env, cleanQuery, context);
+    let result = await askAiCopilot(env, cleanQuery, context);
 
     if (!result || !result.reply) {
-        await sendMessage(
-            env,
-            chatId,
-            `⚠️ *F.R.I.D.A.Y. was unable to process that request right now.*\n\n` +
-            `Here are quick shortcuts:\n` +
-            `• \`/today\` — View today's transactions\n` +
-            `• \`/summary\` — Spending summary\n` +
-            `• \`/briefing\` — Tactical status briefing\n` +
-            `• \`/work\` — Work journal\n` +
-            `• \`/hub\` — Main Hub`,
-            { parse_mode: "Markdown" }
-        );
-        return;
+        const curr = context.displayCurrency || "USD";
+        const symbol = curr === "USD" ? "$" : "";
+        const suffix = curr === "KHR" ? " ៛" : "";
+        const totalInc = context.summary?.totalIncome || 0;
+        const totalExp = context.summary?.totalExpenses || 0;
+        const netBal = totalInc - totalExp;
+        const netSign = netBal >= 0 ? "+" : "-";
+        const todayBurn = (context.todayExpenses || []).reduce((acc, r) => acc + (r.amount || 0), 0);
+        const tasksCount = (context.todayWorkTasks || []).length;
+        const remsCount = (context.activeReminders || []).length;
+
+        result = {
+            reply: [
+                `🛡️ *F.R.I.D.A.Y. • Local Telemetry Mode*`,
+                `────────────────────`,
+                `External AI link timed out, Boss. Switching to onboard ledger data:`,
+                ``,
+                `● *Net Balance:*  \`${netSign}${symbol}${Math.abs(netBal)}${suffix}\``,
+                `● *Today's Burn:* \`${symbol}${todayBurn}${suffix}\``,
+                `● *Logged Tasks:* \`${tasksCount} active tasks\``,
+                `● *Active Alerts:* \`${remsCount} scheduled\``,
+                `────────────────────`,
+                `_All onboard records intact. Standing by._`
+            ].join("\n"),
+            voice_summary: `AI link delayed Boss. Local telemetry shows net balance is ${netSign} ${Math.abs(netBal)} dollars. All local systems operational.`,
+            action: null
+        };
     }
 
     // Process action if any

@@ -360,17 +360,21 @@ Return pure JSON only.`;
 export function parseCopilotResponse(rawText) {
     if (!rawText) return null;
     let clean = rawText.trim();
-    if (clean.startsWith("```json")) {
-        clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+
+    // Extract JSON block if surrounded by markdown code fences
+    const fenceMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenceMatch) {
+        clean = fenceMatch[1].trim();
     } else if (clean.startsWith("```")) {
-        clean = clean.replace(/^```\s*/, "").replace(/\s*```$/, "");
+        clean = clean.replace(/^```[a-zA-Z]*\s*/i, "").replace(/\s*```$/, "").trim();
     }
 
     try {
         const obj = JSON.parse(clean);
-        if (obj && typeof obj.reply === "string") {
+        const replyText = obj.reply || obj.message || obj.response || obj.text || obj.answer || obj.content;
+        if (obj && typeof replyText === "string") {
             return {
-                reply: obj.reply,
+                reply: replyText,
                 voice_summary: obj.voice_summary || null,
                 action: obj.action || null
             };
@@ -381,9 +385,10 @@ export function parseCopilotResponse(rawText) {
         if (start !== -1 && end > start) {
             try {
                 const subObj = JSON.parse(clean.substring(start, end + 1));
-                if (subObj && typeof subObj.reply === "string") {
+                const subReply = subObj.reply || subObj.message || subObj.response || subObj.text || subObj.answer || subObj.content;
+                if (subObj && typeof subReply === "string") {
                     return {
-                        reply: subObj.reply,
+                        reply: subReply,
                         voice_summary: subObj.voice_summary || null,
                         action: subObj.action || null
                     };
@@ -407,7 +412,8 @@ export async function askAiCopilot(env, userQuery, context) {
     const prompt = buildCopilotPrompt(userQuery, context);
 
     if (env.GEMINI_API_KEY) {
-        const candidateModels = GEMINI_MODELS;
+        // Prioritize healthy models that return 200 (excluding 503 preview)
+        const candidateModels = GEMINI_MODELS.filter(m => m !== "gemini-3-flash-preview");
 
         const requestBody = JSON.stringify({
             contents: [
@@ -428,7 +434,7 @@ export async function askAiCopilot(env, userQuery, context) {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: requestBody,
-                    signal: AbortSignal.timeout(6000)
+                    signal: AbortSignal.timeout(12000)
                 });
 
                 if (!resp.ok) {
