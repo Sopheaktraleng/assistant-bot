@@ -98,11 +98,26 @@ export async function handleMessage(message, env, origin) {
         text.startsWith("/briefing ")
     ) {
         const sub = text.replace(/^\/(friday|briefing|brief|status)(@\w+)?\s*/i, "").trim();
-        if (sub) {
-            await handleAiCopilotQuery(env, chatId, userId, sub, message.from, null, message.isFromVoice || false);
+        const wantsVoice = message.isFromVoice || /\b(voice|audio|speak|talk)\b/i.test(sub);
+        if (sub && !/^(voice|audio)$/i.test(sub)) {
+            await handleAiCopilotQuery(env, chatId, userId, sub, message.from, null, wantsVoice);
         } else {
-            await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: message.isFromVoice || false });
+            await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: wantsVoice });
         }
+        return;
+    }
+
+    // 0.45 🗣️ Direct Speech Command (/speak, /say, /talk)
+    if (
+        text.startsWith("/speak") || 
+        text.startsWith("/say") || 
+        text.startsWith("/talk") ||
+        text === "/speak" ||
+        text === "/say" ||
+        text === "/talk"
+    ) {
+        const query = text.replace(/^\/(speak|say|talk)(@\w+)?\s*/i, "").trim() || "Brief me on today's status, Boss.";
+        await handleAiCopilotQuery(env, chatId, userId, query, message.from, null, true);
         return;
     }
 
@@ -465,7 +480,8 @@ export async function handleMessage(message, env, origin) {
             if (/^(?:hey\s+)?friday[,:]?\s+/i.test(queryText)) {
                 queryText = queryText.replace(/^(?:hey\s+)?friday[,:]?\s+/i, "");
             }
-            await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, message.isFromVoice || false);
+            const wantsVoice = message.isFromVoice || /\b(speak to me|talk to me|in voice|by voice|voice note|say it)\b/i.test(text);
+            await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, wantsVoice);
             return;
         }
 
