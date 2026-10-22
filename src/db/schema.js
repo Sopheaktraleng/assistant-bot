@@ -37,6 +37,7 @@ const TABLE_SCHEMAS = [
         user_id TEXT PRIMARY KEY,
         display_currency TEXT NOT NULL DEFAULT 'KHR',
         monthly_budget REAL DEFAULT 0,
+        voice_mode TEXT DEFAULT 'off',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`,
     `CREATE TABLE IF NOT EXISTS processed_updates (

@@ -38,6 +38,47 @@ export async function setDisplayCurrency(db, userId, currency) {
         .run();
 }
 
+export async function getUserVoiceMode(db, userId) {
+    try {
+        const row = await db
+            .prepare("SELECT voice_mode FROM user_settings WHERE user_id = ?")
+            .bind(userId)
+            .first();
+        return row?.voice_mode || "off";
+    } catch (e) {
+        return "off";
+    }
+}
+
+export async function setUserVoiceMode(db, userId, mode = "off") {
+    try {
+        await db
+            .prepare(
+                "INSERT INTO user_settings (user_id, voice_mode) VALUES (?, ?) " +
+                "ON CONFLICT(user_id) DO UPDATE SET voice_mode = excluded.voice_mode"
+            )
+            .bind(userId, mode)
+            .run();
+        return true;
+    } catch (e) {
+        console.error("setUserVoiceMode error:", e);
+        return false;
+    }
+}
+
+export async function getLastModelChatMessage(db, userId) {
+    try {
+        const row = await db
+            .prepare("SELECT content FROM chat_history WHERE user_id = ? AND role = 'model' ORDER BY id DESC LIMIT 1")
+            .bind(userId)
+            .first();
+        return row?.content || null;
+    } catch (e) {
+        console.error("getLastModelChatMessage error:", e);
+        return null;
+    }
+}
+
 export async function getFinancialSummary(db, userId, period) {
     let condition = "";
     let bindParams = [userId];

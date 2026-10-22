@@ -1,6 +1,7 @@
 import { today, dateDaysAgo } from "../utils/time.js";
 import { formatAmount } from "../utils/format.js";
-import { sendMessage } from "../services/telegram.js";
+import { sendMessage, sendTelegramVoice } from "../services/telegram.js";
+import { generateSpeechAudio } from "../services/ai.js";
 import {
     getDisplayCurrency,
     getTotalExpenses,
@@ -9,7 +10,10 @@ import {
     saveUserMemory,
     deleteUserMemory,
     clearUserMemories,
-    clearChatHistory
+    clearChatHistory,
+    getUserVoiceMode,
+    setUserVoiceMode,
+    getLastModelChatMessage
 } from "../db/queries.js";
 
 // Hub
@@ -87,8 +91,72 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
+    if (
+        text === "/voice on" || 
+        text === "/speak on" || 
+        text === "/audio on" ||
+        text.startsWith("/voice on") ||
+        text.startsWith("/speak on")
+    ) {
+        await setUserVoiceMode(env.DB, userId, "on");
+        await sendMessage(
+            env,
+            chatId,
+            `🎙️ *Auto-Voice Mode: ENABLED*\n────────────────────\nBoss, I will now speak back with neural audio notes for every response. You won't have to read long texts anymore!\n\n_Type \`/voice off\` anytime to return to standard text mode._`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                }
+            }
+        );
+        return;
+    }
+
+    if (
+        text === "/voice off" || 
+        text === "/speak off" || 
+        text === "/audio off" ||
+        text.startsWith("/voice off") ||
+        text.startsWith("/speak off")
+    ) {
+        await setUserVoiceMode(env.DB, userId, "off");
+        await sendMessage(
+            env,
+            chatId,
+            `📝 *Auto-Voice Mode: DISABLED*\n────────────────────\nSwitched back to standard text. Each message will still have a \`🔊 Read Aloud\` button if you're lazy to read!`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                }
+            }
+        );
+        return;
+    }
+
     if (text === "/voice" || text === "/mic" || text === "/audio") {
-        await sendVoiceHelp(env, chatId);
+        const mode = await getUserVoiceMode(env.DB, userId);
+        const modeStatus = mode === "on" ? "🟢 *ENABLED* (Always Speaking)" : "⚪ *DISABLED* (Text + On-demand Voice)";
+        await sendMessage(
+            env,
+            chatId,
+            `🎙️ *F.R.I.D.A.Y. • Voice Synthesis & Hearing*\n────────────────────\nCurrent Mode: ${modeStatus}\n\n💡 *Voice Shortcuts:*\n• \`/voice on\` — Speak back automatically to every query\n• \`/voice off\` — Standard text mode with on-demand voice buttons\n• \`/speak\` — Read aloud my last response\n• \`/speak <query>\` — Ask a question and hear the answer\n• Hold 🎙️ mic button — Speak in English or Khmer (*អក្សរខ្មែរ*)`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: mode === "on" ? "📝 Turn Voice OFF" : "🎙️ Turn Voice ON", callback_data: "toggle_voice_mode" }
+                        ],
+                        [
+                            { text: "🔊 Read Aloud Last Msg", callback_data: "speak_last" },
+                            { text: "🏠 Main Hub", callback_data: "hub" }
+                        ]
+                    ]
+                }
+            }
+        );
         return;
     }
 
@@ -126,11 +194,42 @@ export async function handleMessage(message, env, origin) {
         text === "/talk"
     ) {
         const query = text.replace(/^\/(speak|say|talk)(@\w+)?\s*/i, "").trim();
+
+        // 1. If Boss replied to a message with /speak, read that replied message aloud!
+        const repliedText = message.reply_to_message?.text;
+        if (repliedText) {
+            try {
+                const audioBuffer = await generateSpeechAudio(repliedText);
+                if (audioBuffer) {
+                    await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission");
+                    return;
+                }
+            } catch (e) {
+                console.warn("Failed to speak replied message:", e);
+            }
+        }
+
+        // 2. If Boss just typed /speak without any query, read Friday's last response aloud!
         if (!query) {
-            // Fast-path sub-second spoken briefing directly from live ledger
+            const lastMessage = await getLastModelChatMessage(env.DB, userId);
+            if (lastMessage) {
+                try {
+                    const audioBuffer = await generateSpeechAudio(lastMessage);
+                    if (audioBuffer) {
+                        await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission");
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("Failed to speak last model message:", e);
+                }
+            }
+
+            // Fallback: If no chat history exists, speak tactical briefing
             await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: true });
             return;
         }
+
+        // 3. Boss typed /speak <question>: answer and speak back concurrently!
         await handleAiCopilotQuery(env, chatId, userId, query, message.from, null, true);
         return;
     }

@@ -459,4 +459,62 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             expect(history[1].role).toBe("model");
         });
     });
+
+    describe("Voice UX & Auto-Voice Mode", () => {
+        it("should read last model response when /speak is invoked with no arguments", async () => {
+            const fakeAudio = new Uint8Array([1, 2, 3]).buffer;
+            fetchSpy = vi.spyOn(globalThis, "fetch")
+                .mockResolvedValueOnce(new Response(fakeAudio, { status: 200 })) // TTS
+                .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })); // Telegram sendVoice
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ content: "Boss, dropping $45 will put you in prototype debt." }),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/speak"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const voiceCall = fetchSpy.mock.calls.find(c => String(c[0]).includes("/sendVoice") || String(c[0]).includes("/sendAudio"));
+            expect(voiceCall).toBeDefined();
+        });
+
+        it("should enable auto-voice mode via /voice on command", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/voice on"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Auto-Voice Mode: ENABLED");
+        });
+    });
 });

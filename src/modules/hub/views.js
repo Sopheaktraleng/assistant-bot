@@ -1,5 +1,5 @@
 import { ensureTables } from "../../db/schema.js";
-import { getDisplayCurrency, getFinancialSummary } from "../../db/queries.js";
+import { getDisplayCurrency, getFinancialSummary, getUserVoiceMode } from "../../db/queries.js";
 import { monthPrefix, monthLabel } from "../../utils/time.js";
 import { formatAmount } from "../../utils/format.js";
 import { safeEditOrSendMessage } from "../../services/telegram.js";
@@ -91,6 +91,7 @@ export async function sendMainMenu(env, chatId, userId, from, origin, messageId 
 
 export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
     const displayCurrency = await getDisplayCurrency(env.DB, userId);
+    const voiceMode = await getUserVoiceMode(env.DB, userId);
     const settingsRow = await env.DB.prepare(
         "SELECT monthly_budget FROM user_settings WHERE user_id = ?"
     ).bind(userId).first();
@@ -98,12 +99,14 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
     const budgetKhr = settingsRow?.monthly_budget || 0;
     const budgetStr = budgetKhr > 0 ? formatAmount(budgetKhr, displayCurrency) : "Off (No limit)";
     const toggleLabel = displayCurrency === "USD" ? "💱 Switch to KHR (៛)" : "💱 Switch to USD ($)";
+    const voiceToggleLabel = voiceMode === "on" ? "🎙️ Auto-Voice: ON (Always Speak)" : "📝 Auto-Voice: OFF (Tap to Enable)";
 
     const text = [
         `⚙️ *System Settings*`,
         `━━━━━━━━━━━━━━━━━━━━━`,
         `💱 *Display Currency:* \`${displayCurrency}\``,
         `🎯 *Monthly Budget:*   \`${budgetStr}\``,
+        `🎙️ *Auto-Voice Mode:*  \`${voiceMode === "on" ? "Enabled (Always Speak)" : "Disabled (Text + On-demand)"}\``,
         `━━━━━━━━━━━━━━━━━━━━━`,
         `_Configure preferences or manage your records below:_`
     ].join("\n");
@@ -113,6 +116,7 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: toggleLabel, callback_data: "toggle_currency" }],
+                [{ text: voiceToggleLabel, callback_data: "toggle_voice_mode" }],
                 [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
                 [{ text: "📥 Export CSV Backup", callback_data: "export_csv" }],
                 [

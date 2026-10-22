@@ -1,5 +1,5 @@
 import { today, currentTime } from "../../utils/time.js";
-import { addExpenseRecord, saveChatMessage, saveUserMemory } from "../../db/queries.js";
+import { addExpenseRecord, saveChatMessage, saveUserMemory, getUserVoiceMode } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
 import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
@@ -141,8 +141,11 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             return;
         }
 
+        const userVoicePref = await getUserVoiceMode(env.DB, userId);
+        const shouldVoice = isVoice || userVoicePref === "on";
+
         try {
-            await telegram(env, "sendChatAction", { chat_id: chatId, action: isVoice ? "record_voice" : "typing" });
+            await telegram(env, "sendChatAction", { chat_id: chatId, action: shouldVoice ? "record_voice" : "typing" });
         } catch (e) {}
 
         const context = await buildAiUserContext(env.DB, userId);
@@ -213,15 +216,18 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         const replyMarkup = {
             inline_keyboard: [
                 [
+                    { text: shouldVoice ? "🔊 Replay Voice" : "🔊 Read Aloud (Voice)", callback_data: "speak_last" }
+                ],
+                [
                     { text: "🏠 Main Hub", callback_data: "hub" },
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
-                    { text: "💼 Work Hub", callback_data: "work_hub" }
+                    { text: "💰 Finance", callback_data: "finance_hub" },
+                    { text: "💼 Work", callback_data: "work_hub" }
                 ]
             ]
         };
 
-        // If input originated from a voice note or /speak, speak back to user via neural voice!
-        if (isVoice) {
+        // If input originated from voice note, /speak, or user has auto-voice enabled:
+        if (shouldVoice) {
             try {
                 const spokenText = result.voice_summary || result.reply;
                 const audioBuffer = await generateSpeechAudio(spokenText);

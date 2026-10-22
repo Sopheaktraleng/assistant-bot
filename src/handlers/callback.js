@@ -10,14 +10,19 @@ import {
     clearToday,
     clearAllExpenses,
     getUserMemories,
-    clearUserMemories
+    clearUserMemories,
+    getUserVoiceMode,
+    setUserVoiceMode,
+    getLastModelChatMessage
 } from "../db/queries.js";
 import {
     telegram,
     sendMessage,
     answerCallback,
-    safeEditOrSendMessage
+    safeEditOrSendMessage,
+    sendTelegramVoice
 } from "../services/telegram.js";
+import { generateSpeechAudio } from "../services/ai.js";
 import {
     sendMainHub,
     sendMainMenu,
@@ -986,6 +991,37 @@ export async function handleCallback(callback, env, origin) {
                 }
             }
         );
+        return;
+    }
+
+    // --- Voice & Speech Callbacks ---
+    if (data === "speak_last") {
+        await answerCallback(env, callback.id, { text: "🎙️ Reading aloud..." });
+        try {
+            const textToSpeak = callback.message?.text || await getLastModelChatMessage(env.DB, userId);
+            if (textToSpeak) {
+                const audioBuffer = await generateSpeechAudio(textToSpeak);
+                if (audioBuffer) {
+                    await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission");
+                    return;
+                }
+            }
+            await sendMessage(env, chatId, "⚠️ Unable to synthesize voice for this message, Boss.", { parse_mode: "Markdown" });
+        } catch (err) {
+            console.error("speak_last callback error:", err);
+            await sendMessage(env, chatId, "⚠️ Voice link timed out. Please try again.", { parse_mode: "Markdown" });
+        }
+        return;
+    }
+
+    if (data === "toggle_voice_mode") {
+        const curMode = await getUserVoiceMode(env.DB, userId);
+        const newMode = curMode === "on" ? "off" : "on";
+        await setUserVoiceMode(env.DB, userId, newMode);
+        await answerCallback(env, callback.id, { 
+            text: newMode === "on" ? "🎙️ Auto-Voice Mode: ENABLED" : "📝 Auto-Voice Mode: DISABLED" 
+        });
+        await sendSettingsMenu(env, chatId, userId, messageId);
         return;
     }
 
