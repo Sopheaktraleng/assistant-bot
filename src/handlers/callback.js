@@ -250,6 +250,12 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data === "speak_status") {
+        await answerCallback(env, callback.id, { text: "Synthesizing spoken voice..." });
+        await handleAiCopilotQuery(env, chatId, userId, "Give me a quick tactical voice briefing, Boss.", callback.from, null, true);
+        return;
+    }
+
     if (data === "help") {
         await sendHelpMessage(env, chatId, messageId);
         return;

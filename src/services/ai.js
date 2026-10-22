@@ -340,7 +340,8 @@ Persona & Operating Instructions:
 5. Action Execution: If Boss asks to log an expense, add income, record work done, or set a reminder, specify the "action" object. Otherwise set "action" to null.
 6. Format: You MUST return ONLY valid JSON matching this schema:
 {
-  "reply": "Conversational markdown message to Boss.",
+  "reply": "Visually crisp, beautifully structured markdown message for Boss's screen (use *bold*, clean bullet points, emojis where appropriate).",
+  "voice_summary": "Crisp 1-2 sentence spoken update written specifically for human ears. Use natural conversational cadence, NO asterisks, NO emojis, NO markdown syntax, NO bullet points.",
   "action": null | {
     "type": "add_expense" | "add_income" | "add_work" | "add_reminder",
     "amount": number (for expense/income),
@@ -370,6 +371,7 @@ export function parseCopilotResponse(rawText) {
         if (obj && typeof obj.reply === "string") {
             return {
                 reply: obj.reply,
+                voice_summary: obj.voice_summary || null,
                 action: obj.action || null
             };
         }
@@ -382,6 +384,7 @@ export function parseCopilotResponse(rawText) {
                 if (subObj && typeof subObj.reply === "string") {
                     return {
                         reply: subObj.reply,
+                        voice_summary: subObj.voice_summary || null,
                         action: subObj.action || null
                     };
                 }
@@ -392,6 +395,7 @@ export function parseCopilotResponse(rawText) {
     if (clean && clean.length > 3) {
         return {
             reply: clean,
+            voice_summary: null,
             action: null
         };
     }
@@ -651,25 +655,63 @@ export function parseMovieJson(rawText) {
 export async function generateSpeechAudio(text, preferredLang = "en-gb") {
     if (!text || typeof text !== "string") return null;
 
-    // Clean markdown, symbols, URLs, and formatting for clean voice delivery
-    let cleanText = text
-        .replace(/[*_`#~\[\]()><]/g, " ")
-        .replace(/https?:\/\/\S+/g, "")
-        .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
-        .replace(/\s+/g, " ")
-        .trim();
-
-    if (!cleanText) return null;
-
     // Detect Khmer script to use Khmer TTS voice
-    const khmerCharMatch = cleanText.match(/[\u1780-\u17FF]/g);
+    const khmerCharMatch = text.match(/[\u1780-\u17FF]/g);
     const lang = (khmerCharMatch && khmerCharMatch.length > 5) ? "km" : preferredLang;
 
-    // Snappy speech snippet (first 1-2 sentences, max 200 chars) for responsive audio
-    const sentences = cleanText.split(/(?<=[.?!])\s+/);
-    let spokenSnippet = sentences.slice(0, 2).join(" ");
-    if (spokenSnippet.length > 200) {
-        spokenSnippet = spokenSnippet.substring(0, 197) + "...";
+    let cleanText = text;
+
+    if (lang !== "km") {
+        // Strip markdown links [label](url) -> label
+        cleanText = cleanText.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+        // Strip URLs
+        cleanText = cleanText.replace(/https?:\/\/\S+/g, "");
+        // Clean markdown syntax, dividers, bullet points, brackets, and quotes
+        cleanText = cleanText.replace(/[*_`#~\[\]()><|•●═─━—\-]/g, " ");
+        // Strip all emojis
+        cleanText = cleanText.replace(/\p{Extended_Pictographic}/gu, " ");
+        // Convert currencies and symbols into spoken words
+        cleanText = cleanText.replace(/\$(\d+(?:\.\d+)?)/g, "$1 dollars");
+        cleanText = cleanText.replace(/(\d+)\s*(?:៛|khr|riel)/gi, "$1 riel");
+        cleanText = cleanText.replace(/\+/g, "plus ");
+        cleanText = cleanText.replace(/&/g, " and ");
+        cleanText = cleanText.replace(/%/g, " percent ");
+        cleanText = cleanText.replace(/[:;/\\{}"]/g, " ");
+        // Normalize whitespace
+        cleanText = cleanText.replace(/\s+/g, " ").trim();
+    } else {
+        cleanText = cleanText
+            .replace(/https?:\/\/\S+/g, "")
+            .replace(/[*_`#~\[\]()><|•●═─━—\-]/g, " ")
+            .replace(/\p{Extended_Pictographic}/gu, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    if (!cleanText || cleanText.length < 2) return null;
+
+    // Take whole sentences rather than breaking off mid-phrase
+    const sentences = cleanText.match(/[^.!?]+[.!?]*/g) || [cleanText];
+    let spokenSnippet = "";
+    for (const s of sentences) {
+        if ((spokenSnippet + " " + s).trim().length <= 220) {
+            spokenSnippet = (spokenSnippet + " " + s).trim();
+        } else {
+            break;
+        }
+    }
+
+    if (!spokenSnippet) {
+        spokenSnippet = cleanText.substring(0, 200);
+        const lastSpace = spokenSnippet.lastIndexOf(" ");
+        if (lastSpace > 50) {
+            spokenSnippet = spokenSnippet.substring(0, lastSpace);
+        }
+    }
+
+    // Ensure sentence ends with punctuation for smooth pitch drop
+    if (!/[.!?]$/.test(spokenSnippet)) {
+        spokenSnippet += ".";
     }
 
     try {
@@ -678,7 +720,7 @@ export async function generateSpeechAudio(text, preferredLang = "en-gb") {
             headers: {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
-            signal: AbortSignal.timeout(5000)
+            signal: AbortSignal.timeout(6000)
         });
 
         if (!response.ok) {

@@ -73,7 +73,8 @@ export async function sendFridayTacticalBriefing(env, chatId, userId, options = 
             const spokenSummary = `Good morning Boss. Friday online. Your net balance is ${netBalance >= 0 ? "positive" : "negative"} ${formatMoney(Math.abs(netBalance))} dollars. You have ${activeTasksCount} tasks and ${remindersCount} alerts scheduled today. Standing by.`;
             const audioBuffer = await generateSpeechAudio(spokenSummary, "en-gb");
             if (audioBuffer) {
-                await sendTelegramVoice(env, chatId, audioBuffer, text, {
+                await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Tactical Briefing");
+                await sendMessage(env, chatId, text, {
                     parse_mode: "Markdown",
                     reply_markup: keyboard
                 });

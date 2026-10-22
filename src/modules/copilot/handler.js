@@ -125,12 +125,16 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         ]
     };
 
-    // If input originated from a voice note, speak back to user via neural voice!
+    // If input originated from a voice note or /speak, speak back to user via neural voice!
     if (isVoice) {
         try {
-            const audioBuffer = await generateSpeechAudio(result.reply);
+            const spokenText = result.voice_summary || result.reply;
+            const audioBuffer = await generateSpeechAudio(spokenText);
             if (audioBuffer) {
-                await sendTelegramVoice(env, chatId, audioBuffer, result.reply, {
+                // 1. Send clean audio voice note without cluttered caption
+                await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission");
+                // 2. Send the rich visual card with action buttons
+                await sendMessage(env, chatId, result.reply, {
                     parse_mode: "Markdown",
                     reply_markup: replyMarkup
                 });

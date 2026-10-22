@@ -37,15 +37,20 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
     const todayStr = formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency);
 
     const text = [
-        `🌟 *Personal Assistant Hub*`,
+        `⚡ *F.R.I.D.A.Y. • COMMAND CENTER*`,
         `━━━━━━━━━━━━━━━━━━━━━`,
-        `${balanceIndicator} *Net Balance:*  \`${balanceStr}\``,
-        `📊 *Spent Today:*  \`${todayStr}\``,
-        `💼 *Work Journal:* \`${workCount} tasks\` _(${monthLabel()})_`,
-        `⏰ *Reminders:*    ${remLine}`,
+        `👤 *Commander:* \`${cleanUsername}\``,
+        `🟢 *Status:* \`All Systems Nominal\``,
+        ``,
+        `💳 *FINANCIAL DEFENSE*`,
+        `● *Net Balance:*  \`${balanceStr}\``,
+        `● *Spent Today:*  \`${todayStr}\``,
+        ``,
+        `⚡ *OPERATIONS & AGENDA*`,
+        `● *Work Logged:*  \`${workCount} tasks\` _(${monthLabel()})_`,
+        `● *Active Alerts:* ${remLine}`,
         `━━━━━━━━━━━━━━━━━━━━━`,
-        `👇 *Choose a workspace or type naturally:*`,
-        `_💡 e.g. \`5 coffee\`, \`done code review\`, or \`remind 17:30\``
+        `_Hold 🎙️ to talk, use \`/speak\`, or select a module:_`
     ].join("\n");
 
     const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
@@ -55,19 +60,20 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🛡️ F.R.I.D.A.Y. Briefing", callback_data: "friday_briefing" },
-                    { text: "💳 Finance Hub", callback_data: "finance_hub" }
+                    { text: "🛡️ Tactical Briefing", callback_data: "friday_briefing" },
+                    { text: "🗣️ Voice Check", callback_data: "speak_status" }
                 ],
                 [
-                    { text: "💼 Work Journal", callback_data: "work_hub" },
-                    { text: "⏰ Reminders", callback_data: "reminders" }
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
+                    { text: "💼 Work Journal", callback_data: "work_hub" }
                 ],
                 [
-                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } },
-                    { text: "⚙️ Settings", callback_data: "settings" }
+                    { text: "⏰ Reminders", callback_data: "reminders" },
+                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
                 ],
                 [
-                    { text: "💡 Help & Shortcuts", callback_data: "help" }
+                    { text: "⚙️ Settings", callback_data: "settings" },
+                    { text: "💡 Help & Guide", callback_data: "help" }
                 ]
             ]
         }
