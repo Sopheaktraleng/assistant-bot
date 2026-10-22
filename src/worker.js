@@ -33,7 +33,7 @@ async function handleUpdateSafely(update, env, origin) {
 }
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         const url = new URL(request.url);
 
         // 1. Static Dashboard Mini-App Delivery
@@ -72,6 +72,11 @@ export default {
             } catch (e) {
                 console.error("Failed to parse update JSON:", e);
                 return json({ ok: false, error: "Invalid JSON" }, 400);
+            }
+
+            if (ctx && typeof ctx.waitUntil === "function") {
+                ctx.waitUntil(handleUpdateSafely(update, env, url.origin));
+                return json({ ok: true });
             }
 
             await handleUpdateSafely(update, env, url.origin);

@@ -1,4 +1,5 @@
-let tablesEnsured = false;
+// Production D1 tables are pre-migrated via schema.sql; default to true to eliminate DDL schema locks on hot requests
+let tablesEnsured = true;
 
 const TABLE_SCHEMAS = [
     `CREATE TABLE IF NOT EXISTS reminders (

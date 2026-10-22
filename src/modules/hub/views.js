@@ -8,20 +8,25 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
     await ensureTables(env.DB);
     const rawUsername = from?.first_name || from?.username || "Friend";
     const cleanUsername = rawUsername.replace(/[_*`[\]]/g, " ").trim() || "Friend";
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
-    const todaySummary = await getFinancialSummary(env.DB, userId, "today");
-    const allSummary = await getFinancialSummary(env.DB, userId, "all");
     const monthStr = monthPrefix();
 
-    const workRow = await env.DB.prepare(
-        "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
-    ).bind(userId, `${monthStr}%`).first();
-    const workCount = workRow?.count || 0;
+    // Fetch all hub data concurrently in parallel roundtrip
+    const [
+        displayCurrency,
+        todaySummary,
+        allSummary,
+        workRow,
+        allReminders
+    ] = await Promise.all([
+        getDisplayCurrency(env.DB, userId),
+        getFinancialSummary(env.DB, userId, "today"),
+        getFinancialSummary(env.DB, userId, "all"),
+        env.DB.prepare("SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?").bind(userId, `${monthStr}%`).first(),
+        env.DB.prepare("SELECT id, title, reminder_time, is_active FROM reminders WHERE user_id = ? ORDER BY id ASC").bind(userId).all()
+    ]);
 
-    const { results: allReminders } = await env.DB.prepare(
-        "SELECT id, title, reminder_time, is_active FROM reminders WHERE user_id = ? ORDER BY id ASC"
-    ).bind(userId).all();
-    const remList = allReminders || [];
+    const workCount = workRow?.count || 0;
+    const remList = allReminders?.results || [];
     const activeRems = remList.filter(r => r.is_active);
     let remLine = "_No active reminders_";
     if (activeRems.length > 0) {
