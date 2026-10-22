@@ -72,6 +72,20 @@ const TABLE_SCHEMAS = [
         status TEXT NOT NULL DEFAULT 'plan_to_watch',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         watched_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS user_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'preference',
+        fact TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`
 ];
 

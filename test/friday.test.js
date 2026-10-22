@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { generateSpeechAudio, analyzeImageWithAi, buildCopilotPrompt } from "../src/services/ai.js";
+import { generateSpeechAudio, analyzeImageWithAi, buildCopilotPrompt, buildGeminiContents } from "../src/services/ai.js";
 import { sendTelegramVoice } from "../src/services/telegram.js";
 import { sendFridayTacticalBriefing } from "../src/modules/copilot/briefing.js";
 import { handleMessage } from "../src/handlers/message.js";
 import { buildSmartLocalFallback } from "../src/modules/copilot/handler.js";
+import {
+    saveChatMessage,
+    getRecentChatHistory,
+    clearChatHistory,
+    saveUserMemory,
+    getUserMemories,
+    deleteUserMemory,
+    clearUserMemories
+} from "../src/db/queries.js";
 
 describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
     let fetchSpy;
@@ -223,6 +232,231 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             expect(fallback.reply).toContain("Local Operations Telemetry");
             expect(fallback.reply).toContain("Setup CI/CD pipeline");
             expect(fallback.voice_summary).toContain("1 tasks logged");
+        });
+    });
+
+    describe("Multi-Turn Conversation Memory - buildGeminiContents", () => {
+        it("should return a single user turn when history is empty", () => {
+            const contents = buildGeminiContents([], "Hello Friday");
+            expect(contents).toEqual([
+                { role: "user", parts: [{ text: "Hello Friday" }] }
+            ]);
+        });
+
+        it("should construct strictly alternating user and model turns", () => {
+            const history = [
+                { role: "user", content: "Tell me a joke" },
+                { role: "model", content: "Why did the robot cross the road? To recharge." }
+            ];
+            const contents = buildGeminiContents(history, "Tell me another one");
+            expect(contents).toHaveLength(3);
+            expect(contents[0].role).toBe("user");
+            expect(contents[0].parts[0].text).toBe("Tell me a joke");
+            expect(contents[1].role).toBe("model");
+            expect(contents[1].parts[0].text).toBe("Why did the robot cross the road? To recharge.");
+            expect(contents[2].role).toBe("user");
+            expect(contents[2].parts[0].text).toBe("Tell me another one");
+        });
+
+        it("should discard leading model turns so the first turn is always role user", () => {
+            const history = [
+                { role: "model", content: "Welcome Boss" },
+                { role: "user", content: "Check budget" },
+                { role: "model", content: "All green" }
+            ];
+            const contents = buildGeminiContents(history, "Can I buy lunch?");
+            expect(contents[0].role).toBe("user");
+            expect(contents[0].parts[0].text).toBe("Check budget");
+            expect(contents).toHaveLength(3);
+        });
+
+        it("should merge trailing user turns with the current query so role alternates properly", () => {
+            const history = [
+                { role: "user", content: "First query" },
+                { role: "model", content: "First reply" },
+                { role: "user", content: "Second query unanswered" }
+            ];
+            const contents = buildGeminiContents(history, "Third query");
+            expect(contents).toHaveLength(3);
+            expect(contents[0].role).toBe("user");
+            expect(contents[1].role).toBe("model");
+            expect(contents[2].role).toBe("user");
+            expect(contents[2].parts[0].text).toBe("Second query unanswered\n\nThird query");
+        });
+    });
+
+    describe("Long-Term Memory Matrix & Prompts", () => {
+        it("buildCopilotPrompt should inject user memories block into prompt when present", () => {
+            const prompt = buildCopilotPrompt("What should I have for breakfast?", {
+                currentDate: "2026-10-22",
+                currentTime: "10:00",
+                timezone: "Asia/Phnom_Penh",
+                displayCurrency: "USD",
+                userMemories: [
+                    { id: 1, category: "preference", fact: "Boss prefers black coffee without sugar" },
+                    { id: 2, category: "work", fact: "Boss is building a Cloudflare AI assistant" }
+                ]
+            });
+
+            expect(prompt).toContain("WHAT FRIDAY KNOWS ABOUT BOSS");
+            expect(prompt).toContain("Boss prefers black coffee without sugar");
+            expect(prompt).toContain("Boss is building a Cloudflare AI assistant");
+            expect(prompt).toContain("add_memory");
+        });
+    });
+
+    describe("Memory & Conversation Reset Commands", () => {
+        it("should handle /remember command and persist personal fact", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue(null),
+                        run: vi.fn().mockResolvedValue({ meta: { last_row_id: 1 } })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/remember I prefer dark roast coffee"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Memory Matrix Updated");
+            expect(payload.text).toContain("I prefer dark roast coffee");
+        });
+
+        it("should handle /memory command and display formatted list", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        all: vi.fn().mockResolvedValue({
+                            results: [
+                                { id: 1, category: "preference", fact: "Drinks green tea" },
+                                { id: 2, category: "work", fact: "Lead architect at startup" }
+                            ]
+                        })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/memory"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("F.R.I.D.A.Y. • Long-Term Memory Matrix");
+            expect(payload.text).toContain("Drinks green tea");
+            expect(payload.text).toContain("Lead architect at startup");
+        });
+
+        it("should handle /forget command and delete specific memory", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/forget 42"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Memory *#42* erased");
+        });
+
+        it("should handle /reset command and flush conversation buffer", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        run: vi.fn().mockResolvedValue({ meta: { changes: 5 } })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            const message = {
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/reset"
+            };
+
+            await handleMessage(message, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Conversation Buffer Flushed");
+        });
+    });
+
+    describe("Database Memory Queries", () => {
+        it("should prevent duplicate memories on saveUserMemory", async () => {
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ id: 99 }),
+                        run: vi.fn()
+                    })
+                })
+            };
+
+            const result = await saveUserMemory(mockDb, "user1", "I love spicy noodles", "preference");
+            expect(result).toBe(99);
+        });
+
+        it("should retrieve recent chat history ordered chronologically", async () => {
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        all: vi.fn().mockResolvedValue({
+                            results: [
+                                { role: "user", content: "Hi" },
+                                { role: "model", content: "Hello Boss" }
+                            ]
+                        })
+                    })
+                })
+            };
+
+            const history = await getRecentChatHistory(mockDb, "user1", 6);
+            expect(history).toHaveLength(2);
+            expect(history[0].role).toBe("user");
+            expect(history[1].role).toBe("model");
         });
     });
 });

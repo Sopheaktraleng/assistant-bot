@@ -1,5 +1,5 @@
 import { today, currentTime } from "../../utils/time.js";
-import { addExpenseRecord } from "../../db/queries.js";
+import { addExpenseRecord, saveChatMessage, saveUserMemory } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
 import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
@@ -195,10 +195,19 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                     await env.DB.prepare(
                         "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
                     ).bind(userId, String(chatId), cleanTitle, cleanTime, freq).run();
+                } else if (act.type === "add_memory" && act.fact) {
+                    const memCat = act.category || "preference";
+                    await saveUserMemory(env.DB, userId, act.fact.trim(), memCat);
                 }
             } catch (actErr) {
                 console.error("Failed to execute AI Copilot action:", actErr);
             }
+        }
+
+        // Asynchronously persist conversation history turns into chat_history
+        saveChatMessage(env.DB, userId, "user", cleanQuery).catch(() => {});
+        if (result.reply) {
+            saveChatMessage(env.DB, userId, "model", result.reply).catch(() => {});
         }
 
         const replyMarkup = {

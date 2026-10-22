@@ -1,7 +1,16 @@
 import { today, dateDaysAgo } from "../utils/time.js";
 import { formatAmount } from "../utils/format.js";
 import { sendMessage } from "../services/telegram.js";
-import { getDisplayCurrency, getTotalExpenses, addExpenseRecord } from "../db/queries.js";
+import {
+    getDisplayCurrency,
+    getTotalExpenses,
+    addExpenseRecord,
+    getUserMemories,
+    saveUserMemory,
+    deleteUserMemory,
+    clearUserMemories,
+    clearChatHistory
+} from "../db/queries.js";
 
 // Hub
 import { sendMainHub, sendHelpMessage, sendSettingsMenu } from "../modules/hub/views.js";
@@ -137,6 +146,177 @@ export async function handleMessage(message, env, origin) {
     ) {
         const query = text.replace(/^\/(ask|ai|copilot)(@\w+)?\s*/i, "").trim();
         await handleAiCopilotQuery(env, chatId, userId, query, message.from, null, message.isFromVoice || false);
+        return;
+    }
+
+    // 0.6. 🧠 F.R.I.D.A.Y. Long-Term Memory & Context Management
+    if (text.startsWith("/remember") || text.startsWith("/memorize")) {
+        const fact = text.replace(/^\/(remember|memorize)(@\w+)?\s*/i, "").trim();
+        if (!fact) {
+            await sendMessage(
+                env,
+                chatId,
+                `🧠 *F.R.I.D.A.Y. • Memory Matrix*\n────────────────────\nTeach me preferences, work rules, or facts about you!\n\n💡 *Usage Examples:*\n• \`/remember I only drink iced Americano with no sugar\`\n• \`/remember My work hours are 08:30 to 17:30\`\n• \`/remember My manager is Alex\`\n\n_I will remember this across all our conversations!_`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        let category = "preference";
+        if (/\b(work|job|boss|standup|company|office|team|client|project|manager)\b/i.test(fact)) {
+            category = "work";
+        } else if (/\b(name|call me|live in|birthday|age|identity)\b/i.test(fact)) {
+            category = "identity";
+        } else if (/\b(goal|target|plan|aim|aspire|saving for)\b/i.test(fact)) {
+            category = "goal";
+        } else if (/\b(rule|never|always|do not|don't|must)\b/i.test(fact)) {
+            category = "rule";
+        }
+
+        await saveUserMemory(env.DB, userId, fact, category);
+        await sendMessage(
+            env,
+            chatId,
+            `🧠 *Memory Matrix Updated*\n────────────────────\nCommitted to long-term memory, Boss:\n\n🏷️ *Category:* \`${category.toUpperCase()}\`\n📝 *Fact:* _"${fact}"_\n\n_Type \`/memory\` anytime to inspect what I remember about you._`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "🧠 View All Memories", callback_data: "view_memories" },
+                            { text: "🏠 Main Hub", callback_data: "hub" }
+                        ]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    if (text === "/memory" || text === "/memories" || text.startsWith("/memory ") || text.startsWith("/memories ")) {
+        const memories = await getUserMemories(env.DB, userId, 25);
+        if (!memories || memories.length === 0) {
+            await sendMessage(
+                env,
+                chatId,
+                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n────────────────────\nNo personal memories stored yet, Boss.\n\nTeach me by typing:\n• \`/remember <fact>\`\n• Or tell me in chat: _"Friday, remember that I prefer black coffee"_\n\nI adapt my tone and suggestions based on what you share!`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                    }
+                }
+            );
+            return;
+        }
+
+        const lines = memories.map(m => {
+            const catEmoji = m.category === "work" ? "💼" :
+                             m.category === "identity" ? "👤" :
+                             m.category === "goal" ? "🎯" :
+                             m.category === "rule" ? "⚠️" : "✨";
+            return `${catEmoji} *#${m.id}* [${(m.category || "pref").toUpperCase()}]: ${m.fact}`;
+        });
+
+        const card = [
+            `🧠 *F.R.I.D.A.Y. • Long-Term Memory Matrix*`,
+            `────────────────────`,
+            `Here are the personal facts and directives I keep on record:`,
+            ``,
+            ...lines,
+            ``,
+            `────────────────────`,
+            `💡 *Management Controls:*`,
+            `• Delete single: \`/forget <id>\` (e.g. \`/forget ${memories[0].id}\`)`,
+            `• Wipe all: \`/forget all\``,
+            `• Add new: \`/remember <fact>\``
+        ].join("\n");
+
+        await sendMessage(env, chatId, card, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "🗑️ Wipe Memories", callback_data: "clear_memories_warn" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    if (text.startsWith("/forget")) {
+        const arg = text.replace(/^\/forget(@\w+)?\s*/i, "").trim().toLowerCase();
+        if (!arg) {
+            await sendMessage(
+                env,
+                chatId,
+                `💡 *Forget Command Usage:*\n• \`/forget <id>\` — Remove a specific memory (see \`/memory\` for IDs)\n• \`/forget all\` — Wipe all stored memories`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        if (arg === "all" || arg === "clear") {
+            await clearUserMemories(env.DB, userId);
+            await sendMessage(
+                env,
+                chatId,
+                `🗑️ *Memory Matrix Wiped*\n\nAll personal preferences and remembered facts have been erased, Boss. Starting with a clean slate.`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                    }
+                }
+            );
+            return;
+        }
+
+        const memId = parseInt(arg.replace("#", ""), 10);
+        if (isNaN(memId) || memId <= 0) {
+            await sendMessage(env, chatId, "⚠️ Please provide a valid memory ID number, e.g. `/forget 3` (check `/memory` to view IDs).", { parse_mode: "Markdown" });
+            return;
+        }
+
+        const success = await deleteUserMemory(env.DB, userId, memId);
+        if (success) {
+            await sendMessage(
+                env,
+                chatId,
+                `✅ Memory *#${memId}* erased from memory matrix, Boss.`,
+                { parse_mode: "Markdown" }
+            );
+        } else {
+            await sendMessage(
+                env,
+                chatId,
+                `⚠️ Memory *#${memId}* not found. Check \`/memory\` for current IDs.`,
+                { parse_mode: "Markdown" }
+            );
+        }
+        return;
+    }
+
+    if (text === "/reset" || text === "/newchat" || text === "/clearhistory") {
+        await clearChatHistory(env.DB, userId);
+        await sendMessage(
+            env,
+            chatId,
+            `🧹 *Conversation Buffer Flushed*\n────────────────────\nActive multi-turn context has been reset, Boss.\n\n_(Note: Your long-term \`/memory\` and financial ledgers remain completely safe and intact.)_\n\nReady for your next command.`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "🛡️ Tactical Briefing", callback_data: "friday_briefing" },
+                            { text: "🏠 Main Hub", callback_data: "hub" }
+                        ]
+                    ]
+                }
+            }
+        );
         return;
     }
 

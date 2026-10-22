@@ -219,3 +219,115 @@ export async function getBudgetWarningText(db, userId) {
     }
     return "";
 }
+
+// ============================================================================
+// Multi-turn Conversation & Personal Long-Term Memory
+// ============================================================================
+
+export async function getRecentChatHistory(db, userId, limit = 8) {
+    try {
+        const { results } = await db
+            .prepare(
+                `SELECT role, content FROM (
+                    SELECT id, role, content FROM chat_history 
+                    WHERE user_id = ? 
+                    ORDER BY id DESC LIMIT ?
+                ) ORDER BY id ASC`
+            )
+            .bind(userId, limit)
+            .all();
+        return results || [];
+    } catch (e) {
+        console.error("getRecentChatHistory error:", e);
+        return [];
+    }
+}
+
+export async function saveChatMessage(db, userId, role, content) {
+    if (!content || !userId) return;
+    try {
+        await db
+            .prepare("INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)")
+            .bind(userId, role, content)
+            .run();
+
+        // Maintain lean storage: keep most recent 30 conversation turns per user
+        db.prepare(
+            "DELETE FROM chat_history WHERE user_id = ? AND id NOT IN (SELECT id FROM chat_history WHERE user_id = ? ORDER BY id DESC LIMIT 30)"
+        )
+            .bind(userId, userId)
+            .run()
+            .catch(() => {});
+    } catch (e) {
+        console.error("saveChatMessage error:", e);
+    }
+}
+
+export async function clearChatHistory(db, userId) {
+    try {
+        await db.prepare("DELETE FROM chat_history WHERE user_id = ?").bind(userId).run();
+        return true;
+    } catch (e) {
+        console.error("clearChatHistory error:", e);
+        return false;
+    }
+}
+
+export async function getUserMemories(db, userId, limit = 20) {
+    try {
+        const { results } = await db
+            .prepare("SELECT id, category, fact, created_at FROM user_memories WHERE user_id = ? ORDER BY id DESC LIMIT ?")
+            .bind(userId, limit)
+            .all();
+        return results || [];
+    } catch (e) {
+        console.error("getUserMemories error:", e);
+        return [];
+    }
+}
+
+export async function saveUserMemory(db, userId, fact, category = "preference") {
+    if (!fact || !fact.trim()) return null;
+    const cleanFact = fact.trim();
+    try {
+        const existing = await db
+            .prepare("SELECT id FROM user_memories WHERE user_id = ? AND LOWER(fact) = LOWER(?)")
+            .bind(userId, cleanFact)
+            .first();
+        if (existing) {
+            return existing.id;
+        }
+
+        const res = await db
+            .prepare("INSERT INTO user_memories (user_id, category, fact) VALUES (?, ?, ?)")
+            .bind(userId, category, cleanFact)
+            .run();
+        return res.meta?.last_row_id || true;
+    } catch (e) {
+        console.error("saveUserMemory error:", e);
+        return null;
+    }
+}
+
+export async function deleteUserMemory(db, userId, memoryId) {
+    try {
+        const res = await db
+            .prepare("DELETE FROM user_memories WHERE user_id = ? AND id = ?")
+            .bind(userId, memoryId)
+            .run();
+        return (res.meta?.changes || 0) > 0;
+    } catch (e) {
+        console.error("deleteUserMemory error:", e);
+        return false;
+    }
+}
+
+export async function clearUserMemories(db, userId) {
+    try {
+        await db.prepare("DELETE FROM user_memories WHERE user_id = ?").bind(userId).run();
+        return true;
+    } catch (e) {
+        console.error("clearUserMemories error:", e);
+        return false;
+    }
+}

@@ -2,7 +2,7 @@ import { TIME_ZONE, EXCHANGE_RATE, GEMINI_MODELS } from "../config/constants.js"
 import { today, currentTime } from "../utils/time.js";
 import { cleanMd, normalizeCategory } from "../utils/format.js";
 import { arrayBufferToBase64 } from "../utils/crypto.js";
-import { getDisplayCurrency, getFinancialSummary, getCategoryRows } from "../db/queries.js";
+import { getDisplayCurrency, getFinancialSummary, getCategoryRows, getRecentChatHistory, getUserMemories } from "../db/queries.js";
 
 export function parseExtractedJson(text) {
     if (!text) return null;
@@ -235,7 +235,9 @@ export async function buildAiUserContext(db, userId) {
         recentExpenses,
         todayTasks,
         recentTasks,
-        activeReminders
+        activeReminders,
+        recentChat,
+        memories
     ] = await Promise.all([
         getFinancialSummary(db, userId, "today"),
         getFinancialSummary(db, userId, "month"),
@@ -254,7 +256,9 @@ export async function buildAiUserContext(db, userId) {
         ).bind(userId).all(),
         db.prepare(
             "SELECT title, reminder_time, frequency, type FROM reminders WHERE user_id = ? AND is_active = 1 ORDER BY reminder_time ASC LIMIT 5"
-        ).bind(userId).all()
+        ).bind(userId).all(),
+        getRecentChatHistory(db, userId, 6),
+        getUserMemories(db, userId, 15)
     ]);
 
     const budgetKhr = settingsRow?.monthly_budget || 0;
@@ -315,19 +319,29 @@ export async function buildAiUserContext(db, userId) {
             title: r.title,
             time: r.reminder_time,
             frequency: r.frequency
-        }))
+        })),
+        chatHistory: (recentChat || []).map(c => ({ role: c.role, content: c.content })),
+        userMemories: (memories || []).map(m => ({ id: m.id, category: m.category, fact: m.fact }))
     };
 }
 
 export function buildCopilotPrompt(userQuery, context) {
     const entropySeed = Date.now();
+    let memoryBlock = "";
+    if (context?.userMemories && context.userMemories.length > 0) {
+        const memLines = context.userMemories
+            .map(m => `• [${(m.category || "PREFERENCE").toUpperCase()}] ${m.fact}`)
+            .join("\n");
+        memoryBlock = `\n=== WHAT FRIDAY KNOWS ABOUT BOSS (Long-term Personal Memory) ===\n${memLines}\n=================================================================\n`;
+    }
+
     return `You are F.R.I.D.A.Y. (Female Replacement Intelligent Digital Assistant Youth), the tactical, witty, and highly intelligent personal AI assistant for Tony Stark (addressed respectfully as 'Boss').
 You are embedded inside Boss's command center on Telegram in Cambodia.
 Exchange rate: 1 USD = 4,000 KHR.
-Today's Date: ${context.currentDate}, Time: ${context.currentTime} (${context.timezone}).
-Preferred Display Currency: ${context.displayCurrency}.
+Today's Date: ${context?.currentDate || today()}, Time: ${context?.currentTime || currentTime()} (${context?.timezone || TIME_ZONE}).
+Preferred Display Currency: ${context?.displayCurrency || "USD"}.
 Session Entropy Seed: ${entropySeed}.
-
+${memoryBlock}
 === ONBOARD LIVE TELEMETRY (Reference ONLY when Boss asks about money, work, or schedule) ===
 ${JSON.stringify(context, null, 2)}
 ============================================================================================
@@ -343,26 +357,63 @@ Core Operating Directives:
 2. Financial Defense & Task Execution:
    - When asked "Can I afford X?", calculate exact remaining discretionary funds and runway from telemetry.
    - When asked to record an expense, income, work task, or reminder, return the appropriate "action" object.
-3. Language:
+3. Long-Term Memory & Adaptation:
+   - Use what you know about Boss to personalize answers naturally (e.g. coffee preference, work habits, rules) without regurgitating every memory unprompted.
+   - When Boss shares personal facts, rules, preferences, or explicitly says "remember that...", "keep in mind that...", return an "add_memory" action so you remember it permanently.
+4. Language:
    - If Boss speaks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
-4. Output Format:
+5. Output Format:
    Return ONLY valid JSON matching this schema:
 {
   "reply": "Visually crisp, beautifully structured markdown message for Boss's screen (use *bold*, clean bullet points, emojis where appropriate).",
   "voice_summary": "Crisp 1-2 sentence spoken update written specifically for human ears. Use natural conversational cadence, NO asterisks, NO emojis, NO markdown syntax, NO bullet points.",
   "action": null | {
-    "type": "add_expense" | "add_income" | "add_work" | "add_reminder",
+    "type": "add_expense" | "add_income" | "add_work" | "add_reminder" | "add_memory",
     "amount": number (for expense/income),
     "currency": "USD" | "KHR" (for expense/income),
-    "category": string (for expense/income/work),
+    "category": string (for expense/income/work/memory: 'preference' | 'work' | 'identity' | 'goal' | 'rule'),
     "date": "YYYY-MM-DD" (optional, for expense/income),
     "content": string (for work task),
     "title": string (for reminder),
     "time": "HH:mm" (24h format, for reminder),
-    "frequency": "daily" | "weekdays" | "once" (for reminder)
+    "frequency": "daily" | "weekdays" | "once" (for reminder),
+    "fact": string (for add_memory)
   }
 }
 Return pure JSON only.`;
+}
+
+export function buildGeminiContents(chatHistory = [], currentQuery) {
+    const turns = [];
+    let lastRole = null;
+
+    if (Array.isArray(chatHistory)) {
+        for (const msg of chatHistory) {
+            const role = msg.role === "model" ? "model" : "user";
+            const text = (msg.content || "").trim();
+            if (!text) continue;
+
+            if (turns.length === 0 && role !== "user") {
+                continue;
+            }
+
+            if (role === lastRole) {
+                turns[turns.length - 1].parts[0].text += `\n${text}`;
+            } else {
+                turns.push({ role, parts: [{ text }] });
+                lastRole = role;
+            }
+        }
+    }
+
+    if (turns.length > 0 && turns[turns.length - 1].role === "user") {
+        const prevText = turns.pop().parts[0].text;
+        turns.push({ role: "user", parts: [{ text: `${prevText}\n\n${currentQuery}` }] });
+        return turns;
+    }
+
+    turns.push({ role: "user", parts: [{ text: currentQuery }] });
+    return turns;
 }
 
 export function parseCopilotResponse(rawText) {
@@ -427,12 +478,13 @@ export async function askAiCopilot(env, userQuery, context) {
         const isCreativeQuery = /\b(joke|funny|laugh|story|say anything|chat|talk to me|how are you|who are you|bored|poem|quote|opinion)\b/i.test(userQuery);
         const temperature = isCreativeQuery ? 0.85 : 0.65;
 
+        const contents = buildGeminiContents(context?.chatHistory || [], userQuery);
+
         const requestBody = JSON.stringify({
-            contents: [
-                {
-                    parts: [{ text: prompt }]
-                }
-            ],
+            system_instruction: {
+                parts: [{ text: prompt }]
+            },
+            contents,
             generationConfig: {
                 response_mime_type: "application/json",
                 temperature
@@ -442,12 +494,29 @@ export async function askAiCopilot(env, userQuery, context) {
         for (const model of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
-                const resp = await fetch(url, {
+                let resp = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: requestBody,
                     signal: AbortSignal.timeout(12000)
                 });
+
+                // Fallback to monolithic prompt if model rejects system_instruction
+                if (!resp.ok && resp.status === 400) {
+                    const fallbackBody = JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            response_mime_type: "application/json",
+                            temperature
+                        }
+                    });
+                    resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: fallbackBody,
+                        signal: AbortSignal.timeout(12000)
+                    });
+                }
 
                 if (!resp.ok) {
                     const errText = await resp.text();
@@ -469,15 +538,21 @@ export async function askAiCopilot(env, userQuery, context) {
 
     if (env.AI) {
         try {
+            const historyMessages = (context?.chatHistory || []).map(m => ({
+                role: m.role === "model" ? "assistant" : "user",
+                content: m.content
+            }));
+
             const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
                 messages: [
                     {
                         role: "system",
-                        content: "You are a personal financial and productivity copilot. Return valid JSON only with 'reply' and 'action'."
+                        content: prompt
                     },
+                    ...historyMessages,
                     {
                         role: "user",
-                        content: prompt
+                        content: userQuery
                     }
                 ],
                 max_tokens: 1024,

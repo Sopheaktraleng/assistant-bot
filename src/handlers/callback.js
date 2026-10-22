@@ -8,7 +8,9 @@ import {
     getTotalExpenses,
     addExpenseRecord,
     clearToday,
-    clearAllExpenses
+    clearAllExpenses,
+    getUserMemories,
+    clearUserMemories
 } from "../db/queries.js";
 import {
     telegram,
@@ -895,6 +897,95 @@ export async function handleCallback(callback, env, origin) {
                 ]
             }
         });
+        return;
+    }
+
+    // --- F.R.I.D.A.Y. Memory Callbacks ---
+    if (data === "view_memories") {
+        const memories = await getUserMemories(env.DB, userId, 25);
+        if (!memories || memories.length === 0) {
+            await safeEditOrSendMessage(
+                env,
+                chatId,
+                messageId,
+                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n────────────────────\nNo personal memories stored yet, Boss.\n\nTeach me with \`/remember <fact>\`!`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                    }
+                }
+            );
+            return;
+        }
+
+        const lines = memories.map(m => {
+            const catEmoji = m.category === "work" ? "💼" :
+                             m.category === "identity" ? "👤" :
+                             m.category === "goal" ? "🎯" :
+                             m.category === "rule" ? "⚠️" : "✨";
+            return `${catEmoji} *#${m.id}* [${(m.category || "pref").toUpperCase()}]: ${m.fact}`;
+        });
+
+        const card = [
+            `🧠 *F.R.I.D.A.Y. • Long-Term Memory Matrix*`,
+            `────────────────────`,
+            `Here are the personal facts and directives I keep on record:`,
+            ``,
+            ...lines,
+            ``,
+            `────────────────────`,
+            `💡 *Controls:* \`/remember <fact>\` • \`/forget <id>\``
+        ].join("\n");
+
+        await safeEditOrSendMessage(env, chatId, messageId, card, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "🗑️ Wipe Memories", callback_data: "clear_memories_warn" },
+                        { text: "🏠 Main Hub", callback_data: "hub" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    if (data === "clear_memories_warn") {
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⚠️ *Wipe Memory Matrix Confirmation*\n────────────────────\nBoss, are you sure you want to erase all personal preferences and facts I've learned about you?\n\n_This cannot be undone._`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "🗑️ Yes, Wipe All Memories", callback_data: "confirm_clear_memories" }],
+                        [{ text: "✕ Cancel", callback_data: "view_memories" }]
+                    ]
+                }
+            }
+        );
+        return;
+    }
+
+    if (data === "confirm_clear_memories") {
+        await clearUserMemories(env.DB, userId);
+        await answerCallback(env, callback.id, { text: "🧠 Memory matrix wiped" });
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `🗑️ *Memory Matrix Erased*\n────────────────────\nAll personal preferences and learned facts have been wiped, Boss. Starting fresh!`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                }
+            }
+        );
         return;
     }
 
