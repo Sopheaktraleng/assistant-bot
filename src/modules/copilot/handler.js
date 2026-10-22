@@ -213,32 +213,16 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             saveChatMessage(env.DB, userId, "model", result.reply).catch(() => {});
         }
 
-        const replyMarkup = {
-            inline_keyboard: [
-                [
-                    { text: shouldVoice ? "🔊 Replay Voice" : "🔊 Read Aloud (Voice)", callback_data: "speak_last" }
-                ],
-                [
-                    { text: "🏠 Main Hub", callback_data: "hub" },
-                    { text: "💰 Finance", callback_data: "finance_hub" },
-                    { text: "💼 Work", callback_data: "work_hub" }
-                ]
-            ]
-        };
-
-        // If input originated from voice note, /speak, or user has auto-voice enabled:
+        // If voice mode is active (or input was voice/speak), send audio transmission.
+        // Telegram's native voice player handles playback cleanly, so no button clutter is needed!
         if (shouldVoice) {
             try {
                 const spokenText = result.voice_summary || result.reply;
                 const audioBuffer = await generateSpeechAudio(spokenText);
                 if (audioBuffer) {
-                    // Send audio note and formatted card concurrently in parallel!
                     await Promise.all([
                         sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission"),
-                        sendMessage(env, chatId, result.reply, {
-                            parse_mode: "Markdown",
-                            reply_markup: replyMarkup
-                        })
+                        sendMessage(env, chatId, result.reply, { parse_mode: "Markdown" })
                     ]);
                     return;
                 }
@@ -247,9 +231,15 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             }
         }
 
+        // Clean conversational response without repetitive navigation buttons.
+        // Provide only a subtle on-demand "🔊 Read Aloud" button for users lazy to read.
         await sendMessage(env, chatId, result.reply, {
             parse_mode: "Markdown",
-            reply_markup: replyMarkup
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔊 Read Aloud", callback_data: "speak_last" }]
+                ]
+            }
         });
     } catch (criticalErr) {
         console.error("Critical handleAiCopilotQuery error:", criticalErr);
