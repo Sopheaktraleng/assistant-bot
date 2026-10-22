@@ -217,13 +217,14 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                 const spokenText = result.voice_summary || result.reply;
                 const audioBuffer = await generateSpeechAudio(spokenText);
                 if (audioBuffer) {
-                    // 1. Send clean audio voice note without cluttered caption
-                    await sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission");
-                    // 2. Send the rich visual card with action buttons
-                    await sendMessage(env, chatId, result.reply, {
-                        parse_mode: "Markdown",
-                        reply_markup: replyMarkup
-                    });
+                    // Send audio note and formatted card concurrently in parallel!
+                    await Promise.all([
+                        sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Transmission"),
+                        sendMessage(env, chatId, result.reply, {
+                            parse_mode: "Markdown",
+                            reply_markup: replyMarkup
+                        })
+                    ]);
                     return;
                 }
             } catch (voiceErr) {

@@ -241,19 +241,19 @@ export async function buildAiUserContext(db, userId) {
         getFinancialSummary(db, userId, "month"),
         getFinancialSummary(db, userId, "all"),
         db.prepare("SELECT monthly_budget FROM user_settings WHERE user_id = ?").bind(userId).first(),
-        getCategoryRows(db, userId, "month", 10),
-        getCategoryRows(db, userId, "today", 6),
+        getCategoryRows(db, userId, "month", 5),
+        getCategoryRows(db, userId, "today", 5),
         db.prepare(
-            "SELECT date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 25"
+            "SELECT date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 5"
         ).bind(userId).all(),
         db.prepare(
             "SELECT time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY time ASC, id ASC"
         ).bind(userId, curDate).all(),
         db.prepare(
-            "SELECT date, time, content, category FROM work_logs WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 20"
+            "SELECT date, time, content, category FROM work_logs WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 5"
         ).bind(userId).all(),
         db.prepare(
-            "SELECT title, reminder_time, frequency, type FROM reminders WHERE user_id = ? AND is_active = 1 ORDER BY reminder_time ASC"
+            "SELECT title, reminder_time, frequency, type FROM reminders WHERE user_id = ? AND is_active = 1 ORDER BY reminder_time ASC LIMIT 5"
         ).bind(userId).all()
     ]);
 

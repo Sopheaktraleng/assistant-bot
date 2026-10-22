@@ -116,7 +116,12 @@ export async function handleMessage(message, env, origin) {
         text === "/say" ||
         text === "/talk"
     ) {
-        const query = text.replace(/^\/(speak|say|talk)(@\w+)?\s*/i, "").trim() || "Brief me on today's status, Boss.";
+        const query = text.replace(/^\/(speak|say|talk)(@\w+)?\s*/i, "").trim();
+        if (!query) {
+            // Fast-path sub-second spoken briefing directly from live ledger
+            await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: true });
+            return;
+        }
         await handleAiCopilotQuery(env, chatId, userId, query, message.from, null, true);
         return;
     }
