@@ -62,6 +62,29 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             const result = await generateSpeechAudio("Systems check, Boss.");
             expect(result).toBeNull();
         });
+
+        it("should chunk long multi-paragraph text and concatenate audio chunks seamlessly", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200, headers: { "Content-Type": "audio/mpeg" } }))
+            );
+
+            const longText = [
+                "Boss, if you're pulling weekend shifts until Sunday, your schedule is a pressure cooker waiting to blow.",
+                "Working straight through without a system leads to diminishing returns and severe cognitive fatigue.",
+                "1. The Time-Boxing Protocol: Work in strict 50-minute blocks of deep focus, then take a mandatory 10-minute hard break.",
+                "2. The Hard Midday Cutoff: Carve out a solid 2-hour window in the afternoon to eat a decent meal and recharge."
+            ].join("\n\n");
+
+            const result = await generateSpeechAudio(longText, "en-gb");
+            expect(result).toBeInstanceOf(ArrayBuffer);
+            // Verify multiple chunks were fetched and each chunk query was strictly <= 200 chars
+            expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
+            for (const call of fetchSpy.mock.calls) {
+                const url = new URL(call[0]);
+                const queryText = url.searchParams.get("q");
+                expect(queryText.length).toBeLessThanOrEqual(200);
+            }
+        });
     });
 
     describe("Telegram Voice Transmission - sendTelegramVoice", () => {

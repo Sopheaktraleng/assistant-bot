@@ -744,8 +744,76 @@ export function parseMovieJson(rawText) {
     }
 }
 
+export function splitTextIntoTtsChunks(text, maxLen = 160) {
+    if (!text || typeof text !== "string") return [];
+
+    const khmerCharMatch = text.match(/[\u1780-\u17FF]/g);
+    const isKhmer = khmerCharMatch && khmerCharMatch.length > 5;
+
+    let clean = text
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/[*_`#~\[\]()><|•●═─━—]/g, " ")
+        .replace(/\p{Extended_Pictographic}/gu, " ")
+        .replace(/\$(\d+(?:\.\d+)?)/g, "$1 dollars")
+        .replace(/(\d+)\s*(?:៛|khr|riel)/gi, "$1 riel")
+        .replace(/\b(\d+)\/(\d+)\b/g, "$1 $2")
+        .replace(/\+/g, " plus ")
+        .replace(/&/g, " and ")
+        .replace(/%/g, " percent ")
+        .replace(/[:;/\\{}"]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!clean || clean.length < 2) return [];
+
+    const splitRegex = isKhmer ? /(?<=[។\n])\s*/ : /(?<=[.!?\n])\s+/;
+    const rawSentences = clean.split(splitRegex);
+    const phrases = [];
+
+    for (const raw of rawSentences) {
+        let s = raw.trim();
+        if (!s) continue;
+
+        if (s.length <= maxLen) {
+            phrases.push(s);
+            continue;
+        }
+
+        while (s.length > maxLen) {
+            let splitIdx = s.lastIndexOf(",", maxLen);
+            if (splitIdx === -1 || splitIdx < 40) {
+                splitIdx = s.lastIndexOf(" ", maxLen);
+            }
+            if (splitIdx === -1) splitIdx = maxLen;
+
+            const part = s.substring(0, splitIdx).trim();
+            if (part) phrases.push(part);
+            s = s.substring(splitIdx).replace(/^[,\s]+/, "").trim();
+        }
+        if (s) phrases.push(s);
+    }
+
+    const chunks = [];
+    let current = "";
+    for (const p of phrases) {
+        if (!current) {
+            current = p;
+        } else if ((current + " " + p).length <= maxLen) {
+            current += " " + p;
+        } else {
+            chunks.push(current);
+            current = p;
+        }
+    }
+    if (current) chunks.push(current);
+
+    return chunks;
+}
+
 /**
  * Synthesizes natural spoken speech from text via high-speed neural TTS.
+ * Supports long text by chunking at sentence boundaries and parallel streaming.
  * 100% Free with zero API keys required.
  */
 export async function generateSpeechAudio(text, preferredLang = "en-gb") {
@@ -754,77 +822,53 @@ export async function generateSpeechAudio(text, preferredLang = "en-gb") {
     // Detect Khmer script to use Khmer TTS voice
     const khmerCharMatch = text.match(/[\u1780-\u17FF]/g);
     const lang = (khmerCharMatch && khmerCharMatch.length > 5) ? "km" : preferredLang;
+    const isKhmer = lang === "km";
 
-    let cleanText = text;
+    const chunks = splitTextIntoTtsChunks(text, 160);
+    if (!chunks.length) return null;
 
-    if (lang !== "km") {
-        // Strip markdown links [label](url) -> label
-        cleanText = cleanText.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-        // Strip URLs
-        cleanText = cleanText.replace(/https?:\/\/\S+/g, "");
-        // Clean markdown syntax, dividers, bullet points, brackets, and quotes
-        cleanText = cleanText.replace(/[*_`#~\[\]()><|•●═─━—\-]/g, " ");
-        // Strip all emojis
-        cleanText = cleanText.replace(/\p{Extended_Pictographic}/gu, " ");
-        // Convert currencies and symbols into spoken words
-        cleanText = cleanText.replace(/\$(\d+(?:\.\d+)?)/g, "$1 dollars");
-        cleanText = cleanText.replace(/(\d+)\s*(?:៛|khr|riel)/gi, "$1 riel");
-        cleanText = cleanText.replace(/\+/g, "plus ");
-        cleanText = cleanText.replace(/&/g, " and ");
-        cleanText = cleanText.replace(/%/g, " percent ");
-        cleanText = cleanText.replace(/[:;/\\{}"]/g, " ");
-        // Normalize whitespace
-        cleanText = cleanText.replace(/\s+/g, " ").trim();
-    } else {
-        cleanText = cleanText
-            .replace(/https?:\/\/\S+/g, "")
-            .replace(/[*_`#~\[\]()><|•●═─━—\-]/g, " ")
-            .replace(/\p{Extended_Pictographic}/gu, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    if (!cleanText || cleanText.length < 2) return null;
-
-    // Take whole sentences rather than breaking off mid-phrase
-    const sentences = cleanText.match(/[^.!?]+[.!?]*/g) || [cleanText];
-    let spokenSnippet = "";
-    for (const s of sentences) {
-        if ((spokenSnippet + " " + s).trim().length <= 220) {
-            spokenSnippet = (spokenSnippet + " " + s).trim();
-        } else {
-            break;
-        }
-    }
-
-    if (!spokenSnippet) {
-        spokenSnippet = cleanText.substring(0, 200);
-        const lastSpace = spokenSnippet.lastIndexOf(" ");
-        if (lastSpace > 50) {
-            spokenSnippet = spokenSnippet.substring(0, lastSpace);
-        }
-    }
-
-    // Ensure sentence ends with punctuation for smooth pitch drop
-    if (!/[.!?]$/.test(spokenSnippet)) {
-        spokenSnippet += ".";
-    }
+    // Stream up to 8 parallel chunks (~1,200 chars / ~2 mins speech)
+    const selectedChunks = chunks.slice(0, 8);
 
     try {
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(spokenSnippet)}`;
-        const response = await fetch(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            },
-            signal: AbortSignal.timeout(6000)
+        const fetchPromises = selectedChunks.map(async (chunk) => {
+            let snippet = chunk.trim();
+            if (!/[.!?។]$/.test(snippet)) {
+                snippet += isKhmer ? "។" : ".";
+            }
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(snippet)}`;
+            const response = await fetch(url, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                signal: AbortSignal.timeout(8000)
+            });
+
+            if (!response.ok) {
+                console.warn(`TTS generation response not ok: ${response.status}`);
+                return null;
+            }
+
+            return await response.arrayBuffer();
         });
 
-        if (!response.ok) {
-            console.warn(`TTS generation response not ok: ${response.status}`);
-            return null;
+        const buffers = (await Promise.all(fetchPromises)).filter(Boolean);
+        if (!buffers.length) return null;
+
+        if (buffers.length === 1) {
+            return buffers[0];
         }
 
-        return await response.arrayBuffer();
+        // Seamlessly concatenate MP3 audio frames into single continuous audio transmission
+        const totalLength = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const b of buffers) {
+            combined.set(new Uint8Array(b), offset);
+            offset += b.byteLength;
+        }
+
+        return combined.buffer;
     } catch (err) {
         console.warn("generateSpeechAudio error:", err.message);
         return null;
