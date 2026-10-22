@@ -5,7 +5,7 @@ import { arrayBufferToBase64 } from "../../utils/crypto.js";
 import { addExpenseRecord } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, answerCallback, safeEditOrSendMessage } from "../../services/telegram.js";
-import { parseReceiptImage } from "../../services/ai.js";
+import { parseReceiptImage, analyzeImageWithAi } from "../../services/ai.js";
 import { sendTransactionReceipt } from "./views.js";
 
 export function formatPendingScanText(scan) {
@@ -343,7 +343,34 @@ export async function handleImageReceipt(message, env, origin) {
 
         const parsed = await parseReceiptImage(env, base64Data, mimeType, caption);
 
-        if (!parsed || !parsed.amount || parsed.amount <= 0) {
+        if (!parsed || !parsed.amount || parsed.amount <= 0 || parsed.is_slip === false) {
+            // Check if this is a general image, code error, or query for Friday
+            try {
+                const analysis = await analyzeImageWithAi(
+                    env,
+                    base64Data,
+                    mimeType,
+                    caption || "Analyze this image, explain what is shown, and provide tactical recommendations."
+                );
+
+                if (analysis && analysis.length > 5) {
+                    await safeEditOrSendMessage(env, chatId, statusMsgId, analysis, {
+                        parse_mode: "Markdown",
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: "🛡️ Tactical Briefing", callback_data: "friday_briefing" },
+                                    { text: "🏠 Main Hub", callback_data: "hub" }
+                                ]
+                            ]
+                        }
+                    });
+                    return;
+                }
+            } catch (visionErr) {
+                console.warn("Friday vision analysis fallback error:", visionErr);
+            }
+
             const notFoundText = [
                 `⚠️ *Amount Not Detected*`,
                 `────────────────────`,

@@ -53,7 +53,7 @@ import {
 
 // Voice & Copilot
 import { sendVoiceHelp, handleVoiceMessage } from "../modules/voice/handler.js";
-import { handleAiCopilotQuery } from "../modules/copilot/handler.js";
+import { handleAiCopilotQuery, sendFridayTacticalBriefing } from "../modules/copilot/handler.js";
 
 export async function handleMessage(message, env, origin) {
     const rawText = (message.text || "").trim();
@@ -88,6 +88,24 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
+    // 0.4 🤖 F.R.I.D.A.Y. Tactical Briefing & Commands
+    if (
+        text === "/friday" || 
+        text === "/briefing" || 
+        text === "/brief" || 
+        text === "/status" || 
+        text.startsWith("/friday ") || 
+        text.startsWith("/briefing ")
+    ) {
+        const sub = text.replace(/^\/(friday|briefing|brief|status)(@\w+)?\s*/i, "").trim();
+        if (sub) {
+            await handleAiCopilotQuery(env, chatId, userId, sub, message.from, null, message.isFromVoice || false);
+        } else {
+            await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: message.isFromVoice || false });
+        }
+        return;
+    }
+
     // 0.5. 🤖 AI Financial & Work Copilot
     if (
         text.startsWith("/ask") || 
@@ -98,7 +116,7 @@ export async function handleMessage(message, env, origin) {
         text === "/copilot"
     ) {
         const query = text.replace(/^\/(ask|ai|copilot)(@\w+)?\s*/i, "").trim();
-        await handleAiCopilotQuery(env, chatId, userId, query, message.from);
+        await handleAiCopilotQuery(env, chatId, userId, query, message.from, null, message.isFromVoice || false);
         return;
     }
 
@@ -441,9 +459,13 @@ export async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 6. Natural Language AI Copilot fallback (or friendly guidance if AI not configured)
+        // 6. Natural Language F.R.I.D.A.Y. AI Copilot fallback (or friendly guidance if AI not configured)
         if (env.GEMINI_API_KEY || env.AI) {
-            await handleAiCopilotQuery(env, chatId, userId, text, message.from);
+            let queryText = text;
+            if (/^(?:hey\s+)?friday[,:]?\s+/i.test(queryText)) {
+                queryText = queryText.replace(/^(?:hey\s+)?friday[,:]?\s+/i, "");
+            }
+            await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, message.isFromVoice || false);
             return;
         }
 

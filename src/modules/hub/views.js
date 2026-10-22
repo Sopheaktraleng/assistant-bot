@@ -55,15 +55,18 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
-                    { text: "💼 Work Journal", callback_data: "work_hub" }
+                    { text: "🛡️ F.R.I.D.A.Y. Briefing", callback_data: "friday_briefing" },
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "⏰ Reminders", callback_data: "reminders" },
-                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
+                    { text: "💼 Work Journal", callback_data: "work_hub" },
+                    { text: "⏰ Reminders", callback_data: "reminders" }
                 ],
                 [
-                    { text: "⚙️ Settings", callback_data: "settings" },
+                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } },
+                    { text: "⚙️ Settings", callback_data: "settings" }
+                ],
+                [
                     { text: "💡 Help & Shortcuts", callback_data: "help" }
                 ]
             ]
@@ -136,8 +139,11 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         `• \`/summary\` — Monthly spending breakdown & analytics`,
         `• \`/settings\` — Currency toggle (USD / KHR) & monthly budget`,
         ``,
-        `🤖 *AI Copilot*`,
-        `• \`/ask <question>\` — e.g. _"How much did I spend on food this week?"_`,
+        `🤖 *F.R.I.D.A.Y. Tactical Assistant*`,
+        `• \`/briefing\` or \`/friday\` — Tactical morning/status briefing`,
+        `• *Two-Way Voice:* Send a voice note, Friday speaks back!`,
+        `• *Vision & Error Debugger:* Send code screenshots or error photos`,
+        `• \`/ask <question>\` — e.g. _"Friday, can I afford a $60 dinner?"_`,
         `────────────────────`,
         `_Tap any button below to jump directly to that workspace:_`
     ].join("\n");

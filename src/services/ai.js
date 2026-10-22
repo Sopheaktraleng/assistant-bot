@@ -320,26 +320,27 @@ export async function buildAiUserContext(db, userId) {
 }
 
 export function buildCopilotPrompt(userQuery, context) {
-    return `You are the intelligent AI Personal Financial & Work Copilot for a Telegram assistant bot in Cambodia.
+    return `You are F.R.I.D.A.Y. (Female Replacement Intelligent Digital Assistant Youth), the tactical, proactive personal AI assistant for Tony Stark (addressed respectfully as 'Boss').
+You are embedded inside Boss's command center on Telegram in Cambodia.
 Exchange rate: 1 USD = 4,000 KHR.
 Today's Date: ${context.currentDate}, Time: ${context.currentTime} (${context.timezone}).
 Preferred Display Currency: ${context.displayCurrency}.
 
-=== USER LIVE FINANCIAL & WORK DATA ===
+=== BOSS LIVE FINANCIAL & WORK DATA ===
 ${JSON.stringify(context, null, 2)}
 =======================================
 
-User message: "${userQuery}"
+Boss message: "${userQuery}"
 
-Instructions:
-1. Provide a direct, helpful, and natural response formatted for Telegram (use markdown: *bold*, \`code\`, bullet points, emojis).
-2. Use the live data above accurately. Mention amounts in both USD ($) and Cambodian Riel (៛) when helpful. Do NOT invent numbers that contradict the data.
-3. If the user asks for their daily standup or to summarize accomplishments, synthesize recent and today's tasks into a crisp 3-part update (Yesterday, Today, Blockers), and recommend /standup or /report polish.
-4. If the user asks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
-5. If the user explicitly asks to record an expense, log work, or set a reminder that is NOT already recorded, return an "action" object. Otherwise, set "action" to null.
-6. You MUST return ONLY valid JSON matching this schema:
+Persona & Operating Instructions:
+1. Persona: Calm, sharp, tactical, intelligent, and fiercely loyal. Address the user naturally as 'Boss'. Avoid corporate fluff or sycophancy.
+2. Financial Defense: Use live financial data accurately. When Boss asks "Can I afford X?", calculate current month balance, remaining budget, and warn if it increases burn rate or cuts into reserve.
+3. Work & Standups: When asked for a standup or work summary, structure into concise Accomplishments, Focus, and Next Actions.
+4. Language: If Boss speaks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
+5. Action Execution: If Boss asks to log an expense, add income, record work done, or set a reminder, specify the "action" object. Otherwise set "action" to null.
+6. Format: You MUST return ONLY valid JSON matching this schema:
 {
-  "reply": "Conversational markdown message to the user.",
+  "reply": "Conversational markdown message to Boss.",
   "action": null | {
     "type": "add_expense" | "add_income" | "add_work" | "add_reminder",
     "amount": number (for expense/income),
@@ -641,4 +642,142 @@ export function parseMovieJson(rawText) {
         }
         return null;
     }
+}
+
+/**
+ * Synthesizes natural spoken speech from text via high-speed neural TTS.
+ * 100% Free with zero API keys required.
+ */
+export async function generateSpeechAudio(text, preferredLang = "en-gb") {
+    if (!text || typeof text !== "string") return null;
+
+    // Clean markdown, symbols, URLs, and formatting for clean voice delivery
+    let cleanText = text
+        .replace(/[*_`#~\[\]()><]/g, " ")
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!cleanText) return null;
+
+    // Detect Khmer script to use Khmer TTS voice
+    const khmerCharMatch = cleanText.match(/[\u1780-\u17FF]/g);
+    const lang = (khmerCharMatch && khmerCharMatch.length > 5) ? "km" : preferredLang;
+
+    // Snappy speech snippet (first 1-2 sentences, max 200 chars) for responsive audio
+    const sentences = cleanText.split(/(?<=[.?!])\s+/);
+    let spokenSnippet = sentences.slice(0, 2).join(" ");
+    if (spokenSnippet.length > 200) {
+        spokenSnippet = spokenSnippet.substring(0, 197) + "...";
+    }
+
+    try {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(spokenSnippet)}`;
+        const response = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            signal: AbortSignal.timeout(5000)
+        });
+
+        if (!response.ok) {
+            console.warn(`TTS generation response not ok: ${response.status}`);
+            return null;
+        }
+
+        return await response.arrayBuffer();
+    } catch (err) {
+        console.warn("generateSpeechAudio error:", err.message);
+        return null;
+    }
+}
+
+/**
+ * Multimodal image analysis for screenshots, code errors, documents, and diagrams.
+ */
+export async function analyzeImageWithAi(env, base64Data, mimeType = "image/jpeg", userPrompt = "Analyze this image and explain what is shown.") {
+    const prompt = `You are F.R.I.D.A.Y. (Female Replacement Intelligent Digital Assistant Youth), the tactical, highly competent personal AI assistant for Tony Stark (addressed as 'Boss').
+Analyze this image/screenshot carefully:
+- If this is code, terminal logs, or a software error: Diagnose the root cause and provide the exact fix or command needed.
+- If this is a document, invoice, or chart: Summarize key facts, numbers, dates, and action items.
+- If this is a UI or design: Provide sharp, constructive feedback.
+- Format with crisp Telegram markdown: *bold*, \`code\`, bullet points.
+- Maintain Friday's sharp, direct, tactical tone. Call the user 'Boss'.
+
+User prompt: "${userPrompt}"`;
+
+    if (env.GEMINI_API_KEY) {
+        const candidateModels = GEMINI_MODELS;
+        const requestBody = JSON.stringify({
+            contents: [
+                {
+                    parts: [
+                        { text: prompt },
+                        {
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Data
+                            }
+                        }
+                    ]
+                }
+            ],
+            generationConfig: {
+                temperature: 0.2
+            }
+        });
+
+        for (const model of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: requestBody,
+                    signal: AbortSignal.timeout(8000)
+                });
+
+                if (!response.ok) {
+                    continue;
+                }
+
+                const resJson = await response.json();
+                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (rawText && rawText.trim().length > 0) {
+                    return rawText.trim();
+                }
+            } catch (e) {
+                console.warn(`Gemini vision analysis error with ${model}:`, e.message);
+            }
+        }
+    }
+
+    if (env.AI) {
+        try {
+            const imageUri = `data:${mimeType};base64,${base64Data}`;
+            const response = await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            { type: "image", image: imageUri }
+                        ]
+                    }
+                ],
+                max_tokens: 768,
+                temperature: 0.2
+            });
+
+            const outputText = response?.response || response?.description || (typeof response === "string" ? response : JSON.stringify(response));
+            if (outputText && outputText.trim().length > 0) {
+                return outputText.trim();
+            }
+        } catch (err) {
+            console.error("Workers AI image analysis error:", err);
+        }
+    }
+
+    return null;
 }

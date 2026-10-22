@@ -1,29 +1,30 @@
 import { today, currentTime } from "../../utils/time.js";
 import { addExpenseRecord } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
-import { telegram, sendMessage, safeEditOrSendMessage } from "../../services/telegram.js";
-import { buildAiUserContext, askAiCopilot } from "../../services/ai.js";
+import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
+import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
+export { sendFridayTacticalBriefing } from "./briefing.js";
 
-export async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId = null) {
+export async function handleAiCopilotQuery(env, chatId, userId, query, from, messageId = null, isVoice = false) {
     await ensureTables(env.DB);
     const cleanQuery = (query || "").trim();
 
     if (!cleanQuery) {
         const text = [
-            `✨ *AI Copilot*`,
+            `🤖 *F.R.I.D.A.Y. Tactical Assistant*`,
             `────────────────────`,
-            `Real-time intelligence for your cashflow ledger, work journal, budget, and reminders.`,
+            `Tactical intelligence for your cashflow ledger, work journal, budget, and reminders.`,
             ``,
-            `💡 *Example questions:*`,
-            `• *"How much did I spend this week?"*`,
-            `• *"What's my biggest expense category this month?"*`,
-            `• *"Can I afford a $50 dinner based on my budget?"*`,
-            `• *"What tasks did I finish today?"*`,
-            `• *"Summarize my work achievements this week"*`,
-            `• *"What active reminders do I have?"*`,
+            `💡 *What you can ask Boss:*`,
+            `• *"Friday, brief me"* or \`/briefing\``,
+            `• *"Can I afford a $100 gadget based on my runway?"*`,
+            `• *"What's my biggest spending category this month?"*`,
+            `• *"What tasks did I log today?"*`,
+            `• *"Friday, generate my standup report"*`,
+            `• *"Remind me at 17:00 to commit code"*`,
             `• *"ថ្ងៃនេះខ្ញុំចាយអស់ប៉ុន្មាន?"* _(Khmer supported!)_`,
             ``,
-            `_Type your question directly, or use \`/ask <question>\`_`
+            `_Type directly, hold the 🎙️ mic button, or use \`/ask <query>\`_`
         ].join("\n");
 
         await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -31,11 +32,11 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "📊 Summary", callback_data: "summary_today" },
-                        { text: "⚡ Work Tasks", callback_data: "work_today" }
+                        { text: "🛡️ Tactical Briefing", callback_data: "friday_briefing" },
+                        { text: "📊 Summary", callback_data: "summary_today" }
                     ],
                     [
-                        { text: "💳 Finance", callback_data: "finance_hub" },
+                        { text: "⚡ Work Tasks", callback_data: "work_today" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -48,7 +49,7 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         await sendMessage(
             env,
             chatId,
-            `⚠️ *AI Copilot is not configured.*\n\n` +
+            `⚠️ *F.R.I.D.A.Y. Intelligence is not configured.*\n\n` +
             `To enable conversational AI features, set your free Google Gemini API key:\n` +
             `\`npx wrangler secret put GEMINI_API_KEY\`\n` +
             `(Get a free key at https://aistudio.google.com)`,
@@ -58,7 +59,7 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
     }
 
     try {
-        await telegram(env, "sendChatAction", { chat_id: chatId, action: "typing" });
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: isVoice ? "record_voice" : "typing" });
     } catch (e) {}
 
     const context = await buildAiUserContext(env.DB, userId);
@@ -68,11 +69,11 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         await sendMessage(
             env,
             chatId,
-            `⚠️ *AI Copilot was unable to answer right now.*\n\n` +
+            `⚠️ *F.R.I.D.A.Y. was unable to process that request right now.*\n\n` +
             `Here are quick shortcuts:\n` +
             `• \`/today\` — View today's transactions\n` +
             `• \`/summary\` — Spending summary\n` +
-            `• \`/week\` — 7-day spending report\n` +
+            `• \`/briefing\` — Tactical status briefing\n` +
             `• \`/work\` — Work journal\n` +
             `• \`/hub\` — Main Hub`,
             { parse_mode: "Markdown" }
@@ -114,16 +115,34 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         }
     }
 
+    const replyMarkup = {
+        inline_keyboard: [
+            [
+                { text: "🏠 Main Hub", callback_data: "hub" },
+                { text: "💰 Finance Hub", callback_data: "finance_hub" },
+                { text: "💼 Work Hub", callback_data: "work_hub" }
+            ]
+        ]
+    };
+
+    // If input originated from a voice note, speak back to user via neural voice!
+    if (isVoice) {
+        try {
+            const audioBuffer = await generateSpeechAudio(result.reply);
+            if (audioBuffer) {
+                await sendTelegramVoice(env, chatId, audioBuffer, result.reply, {
+                    parse_mode: "Markdown",
+                    reply_markup: replyMarkup
+                });
+                return;
+            }
+        } catch (voiceErr) {
+            console.warn("Spoken reply generation failed, falling back to text:", voiceErr.message);
+        }
+    }
+
     await sendMessage(env, chatId, result.reply, {
         parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "🏠 Main Hub", callback_data: "hub" },
-                    { text: "💰 Finance Hub", callback_data: "finance_hub" },
-                    { text: "💼 Work Hub", callback_data: "work_hub" }
-                ]
-            ]
-        }
+        reply_markup: replyMarkup
     });
 }

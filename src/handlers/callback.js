@@ -64,7 +64,7 @@ import {
     sendReminderTimeMenu
 } from "../modules/reminders/views.js";
 import { sendCustomReminderNotification } from "../modules/reminders/cron.js";
-import { handleAiCopilotQuery } from "../modules/copilot/handler.js";
+import { handleAiCopilotQuery, sendFridayTacticalBriefing } from "../modules/copilot/handler.js";
 import { sendVoiceHelp } from "../modules/voice/handler.js";
 
 /**
@@ -241,6 +241,12 @@ export async function handleCallback(callback, env, origin) {
 
     if (data === "copilot_help") {
         await handleAiCopilotQuery(env, chatId, userId, "", callback.from, messageId);
+        return;
+    }
+
+    if (data === "friday_briefing") {
+        await answerCallback(env, callback.id, { text: "Generating tactical briefing..." });
+        await sendFridayTacticalBriefing(env, chatId, userId);
         return;
     }
 

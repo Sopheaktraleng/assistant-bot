@@ -7,6 +7,7 @@ import { handleMessage } from "./handlers/message.js";
 import { handleCallback } from "./handlers/callback.js";
 import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
+import { sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
 
 /**
  * Safely processes Telegram updates with idempotency check against duplicate deliveries.
@@ -94,12 +95,20 @@ export default {
 
         try {
             const now = new Date();
-            // Monday at 01:00 UTC (8:00 AM ICT)
-            if (event.cron === "0 1 * * 1" || (now.getUTCDay() === 1 && now.getUTCHours() === 1 && now.getUTCMinutes() === 0)) {
-                await sendWeeklyScheduledReports(env);
+            // Daily at 01:00 UTC (8:00 AM ICT)
+            const isDailySlot = event.cron === "0 1 * * *" || (now.getUTCHours() === 1 && now.getUTCMinutes() === 0);
+            
+            if (isDailySlot) {
+                // Autonomous Morning Tactical Briefing
+                await sendDailyScheduledBriefings(env);
+
+                // Monday Weekly Spending Report
+                if (now.getUTCDay() === 1) {
+                    await sendWeeklyScheduledReports(env);
+                }
             }
         } catch (error) {
-            console.error("Scheduled weekly report failed:", error);
+            console.error("Scheduled report/briefing failed:", error);
         }
     },
 };
