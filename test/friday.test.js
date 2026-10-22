@@ -3,6 +3,7 @@ import { generateSpeechAudio, analyzeImageWithAi, buildCopilotPrompt } from "../
 import { sendTelegramVoice } from "../src/services/telegram.js";
 import { sendFridayTacticalBriefing } from "../src/modules/copilot/briefing.js";
 import { handleMessage } from "../src/handlers/message.js";
+import { buildSmartLocalFallback } from "../src/modules/copilot/handler.js";
 
 describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
     let fetchSpy;
@@ -181,6 +182,47 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             expect(fetchSpy).toHaveBeenCalled();
             const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
             expect(payload.text).toContain("F.R.I.D.A.Y. Tactical Briefing");
+        });
+    });
+
+    describe("Smart Deterministic Fallback - buildSmartLocalFallback", () => {
+        const mockContext = {
+            displayCurrency: "USD",
+            summary: { totalIncome: 1000, totalExpenses: 200 },
+            todayExpenses: [{ amount: 15 }],
+            todayWorkTasks: [{ time: "09:30", task: "Setup CI/CD pipeline" }],
+            activeReminders: [{ title: "Team sync", reminder_time: "15:00" }]
+        };
+
+        it("should calculate affordability when user asks 'Can I afford $50' with positive balance", () => {
+            const fallback = buildSmartLocalFallback("Can I afford a $50 dinner?", mockContext);
+            expect(fallback.reply).toContain("Affirmative, Boss");
+            expect(fallback.reply).toContain("$50");
+            expect(fallback.voice_summary).toContain("safely afford 50 dollars");
+        });
+
+        it("should warn caution when purchase exceeds net balance", () => {
+            const tightContext = {
+                ...mockContext,
+                summary: { totalIncome: 50, totalExpenses: 40 } // net balance is only $10
+            };
+            const fallback = buildSmartLocalFallback("Can I afford to buy $80 headphones?", tightContext);
+            expect(fallback.reply).toContain("Caution, Boss");
+            expect(fallback.voice_summary).toContain("Caution Boss");
+        });
+
+        it("should provide exact database expense telemetry when asked about spending", () => {
+            const fallback = buildSmartLocalFallback("How much did I spend today?", mockContext);
+            expect(fallback.reply).toContain("Local Expense Telemetry");
+            expect(fallback.reply).toContain("$15");
+            expect(fallback.voice_summary).toContain("spent 15 dollars");
+        });
+
+        it("should list tasks from database when asked about work or tasks", () => {
+            const fallback = buildSmartLocalFallback("What tasks did I log today?", mockContext);
+            expect(fallback.reply).toContain("Local Operations Telemetry");
+            expect(fallback.reply).toContain("Setup CI/CD pipeline");
+            expect(fallback.voice_summary).toContain("1 tasks logged");
         });
     });
 });

@@ -8,6 +8,7 @@ import { handleCallback } from "./handlers/callback.js";
 import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
 import { sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
+import { sendMessage } from "./services/telegram.js";
 
 /**
  * Safely processes Telegram updates with idempotency check against duplicate deliveries.
@@ -29,6 +30,20 @@ async function handleUpdateSafely(update, env, origin) {
         }
     } catch (error) {
         console.error("Failed to handle Telegram update:", error);
+        const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+        if (chatId) {
+            await sendMessage(
+                env,
+                chatId,
+                `🛡️ *F.R.I.D.A.Y. Diagnostic Status*\n\nBoss, an unexpected anomaly occurred while processing your request. All ledgers and settings remain safe.\n\nQuick Recovery:\n• View Ledgers: \`/today\` or \`/summary\`\n• Open Command Center: \`/start\` or \`/hub\``,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                    }
+                }
+            ).catch(() => {});
+        }
     }
 }
 
