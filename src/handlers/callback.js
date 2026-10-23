@@ -148,8 +148,8 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data === "friday_briefing") {
-        await answerCallback(env, callback.id, { text: "Generating tactical briefing..." });
+    if (data === "daily_briefing" || data === "friday_briefing") {
+        await answerCallback(env, callback.id, { text: "Preparing daily briefing..." });
         await sendFridayTacticalBriefing(env, chatId, userId);
         return;
     }

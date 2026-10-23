@@ -109,11 +109,12 @@ Return pure JSON only:
         };
     }
 
-    // Minimal, clean button (zero clutter)
+    // Minimal, clean action buttons
     const keyboard = {
         inline_keyboard: [
             [
-                { text: "📊 View Ledger", callback_data: "summary_today" }
+                { text: "🔊 Read Aloud", callback_data: "speak_status" },
+                { text: "🏠 Main Hub", callback_data: "hub" }
             ]
         ]
     };
@@ -128,7 +129,9 @@ Return pure JSON only:
                     sendTelegramVoice(env, chatId, audioBuffer, "🎙️ Good Morning, Boss! ☀️"),
                     sendMessage(env, chatId, result.reply, {
                         parse_mode: "Markdown",
-                        reply_markup: keyboard
+                        reply_markup: {
+                            inline_keyboard: [[{ text: "🏠 Main Hub", callback_data: "hub" }]]
+                        }
                     })
                 ]);
                 return;

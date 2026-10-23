@@ -1,3 +1,4 @@
+import { TIME_ZONE } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
 import { getDisplayCurrency, getFinancialSummary, getUserVoiceMode } from "../../db/queries.js";
 import { monthPrefix, monthLabel } from "../../utils/time.js";
@@ -41,21 +42,44 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
     const balanceStr = formatAmount(netBalance, displayCurrency);
     const todayStr = formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency);
 
+    const now = new Date();
+    const ppHour = parseInt(
+        new Intl.DateTimeFormat("en-US", {
+            timeZone: TIME_ZONE,
+            hour: "numeric",
+            hour12: false
+        }).format(now),
+        10
+    );
+
+    let quote = "Everything is running smoothly on my end, Boss.";
+    if (ppHour >= 5 && ppHour < 12) {
+        quote = "Good morning, Boss. Fresh start today—everything is lined up.";
+    } else if (ppHour >= 12 && ppHour < 17) {
+        quote = "Good afternoon, Boss. Keeping everything steady and on track.";
+    } else if (ppHour >= 17 && ppHour < 22) {
+        quote = "Good evening, Boss. Winding down for the day—here's where we stand.";
+    } else {
+        quote = "Quiet night, Boss. Standing by whenever you need me.";
+    }
+
+    const sign = netBalance > 0 ? "+" : "";
+    const balanceColorNote = isNegative ? "in the red" : "in the green";
+    const agendaLine = activeRems.length > 0
+        ? `\`${activeRems.length} active\` _(${activeRems[0].reminder_time} ${activeRems[0].title.slice(0, 20)})_`
+        : `_All clear_`;
+
     const text = [
-        `⚡ *F.R.I.D.A.Y. • COMMAND CENTER*`,
+        `⚡ *F.R.I.D.A.Y.*`,
         `━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 *Commander:* \`${cleanUsername}\``,
-        `🟢 *Status:* \`All Systems Nominal\``,
+        `*"${quote}"*`,
         ``,
-        `💳 *FINANCIAL DEFENSE*`,
-        `● *Net Balance:*  \`${balanceStr}\``,
-        `● *Spent Today:*  \`${todayStr}\``,
-        ``,
-        `⚡ *OPERATIONS & AGENDA*`,
-        `● *Work Logged:*  \`${workCount} tasks\` _(${monthLabel()})_`,
-        `● *Active Alerts:* ${remLine}`,
+        `💳 *Ledger:* \`${sign}${balanceStr}\` _(${balanceColorNote})_`,
+        `💸 *Spent Today:* \`${todayStr}\``,
+        `📋 *Work Done:* \`${workCount} tasks\` _(${monthLabel()})_`,
+        `⏰ *Alarms:* ${agendaLine}`,
         `━━━━━━━━━━━━━━━━━━━━━`,
-        `_Hold 🎙️ to talk, use \`/speak\`, or select a module:_`
+        `_Standing by whenever you're ready._`
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -63,8 +87,8 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🛡️ Tactical Briefing", callback_data: "friday_briefing" },
-                    { text: "🗣️ Voice Check", callback_data: "speak_status" }
+                    { text: "⚡ Daily Briefing", callback_data: "daily_briefing" },
+                    { text: "💡 Help & Guide", callback_data: "help" }
                 ],
                 [
                     { text: "💳 Finance Hub", callback_data: "finance_hub" },
@@ -73,9 +97,6 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
                 [
                     { text: "⏰ Reminders", callback_data: "reminders" },
                     { text: "⚙️ Settings", callback_data: "settings" }
-                ],
-                [
-                    { text: "💡 Help & Guide", callback_data: "help" }
                 ]
             ]
         }
