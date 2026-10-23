@@ -4,6 +4,11 @@ import {
     parseCopilotResponse,
     parseMovieJson
 } from "../src/services/ai.js";
+import {
+    isConversationalOrCorrection,
+    parseNaturalIncome,
+    parseNaturalExpense
+} from "../src/utils/natural.js";
 
 describe("AI Parser Utilities", () => {
     describe("parseExtractedJson", () => {
@@ -99,6 +104,23 @@ describe("AI Parser Utilities", () => {
             });
         });
 
+        it("should parse multiple actions in copilot JSON", () => {
+            const raw = JSON.stringify({
+                reply: "Corrected your ledger Boss.",
+                voice_summary: "Corrected ledger Boss.",
+                actions: [
+                    { type: "delete_last_transaction", filter: "expense" },
+                    { type: "add_income", amount: 40, currency: "USD", category: "Income" }
+                ]
+            });
+            const result = parseCopilotResponse(raw);
+            expect(result.reply).toBe("Corrected your ledger Boss.");
+            expect(result.actions).toHaveLength(2);
+            expect(result.actions[0].type).toBe("delete_last_transaction");
+            expect(result.actions[1].type).toBe("add_income");
+            expect(result.action).toEqual(result.actions[0]);
+        });
+
         it("should fallback gracefully for plain markdown response", () => {
             const raw = "You have spent $120 total this month. Consider saving more!";
             const result = parseCopilotResponse(raw);
@@ -132,84 +154,122 @@ describe("AI Parser Utilities", () => {
 });
 
 describe("Natural Language Command Parsers", () => {
+    describe("isConversationalOrCorrection", () => {
+        it("should detect correction and negation phrases", () => {
+            expect(isConversationalOrCorrection("40$ is my income not my expensse")).toBe(true);
+            expect(isConversationalOrCorrection("that was income not expense")).toBe(true);
+            expect(isConversationalOrCorrection("40$ is my income")).toBe(true);
+            expect(isConversationalOrCorrection("why did you add expense")).toBe(true);
+            expect(isConversationalOrCorrection("undo that")).toBe(true);
+            expect(isConversationalOrCorrection("delete last transaction")).toBe(true);
+        });
+
+        it("should detect questions and financial inquiries", () => {
+            expect(isConversationalOrCorrection("Can I afford a $45 mechanical keyboard?")).toBe(true);
+            expect(isConversationalOrCorrection("how much did I spend today?")).toBe(true);
+            expect(isConversationalOrCorrection("what is my budget?")).toBe(true);
+            expect(isConversationalOrCorrection("switch to USD")).toBe(true);
+            expect(isConversationalOrCorrection("set budget to 300$")).toBe(true);
+        });
+
+        it("should return false for pure expense entries", () => {
+            expect(isConversationalOrCorrection("5 coffee")).toBe(false);
+            expect(isConversationalOrCorrection("$12 lunch")).toBe(false);
+            expect(isConversationalOrCorrection("15000 groceries")).toBe(false);
+            expect(isConversationalOrCorrection("coffee 5")).toBe(false);
+            expect(isConversationalOrCorrection("spent $15 on dinner")).toBe(false);
+        });
+    });
+
     describe("Natural Income Regexes", () => {
-        const parseIncome = (text) => {
-            const incMatch = text.match(/^\+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i) ||
-                             text.match(/^income\s+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i);
-            if (!incMatch) return null;
-            return {
-                amount: Number(incMatch[1]),
-                currency: (incMatch[3] || "").toUpperCase(),
-                category: incMatch[4]?.trim() || "Income"
-            };
-        };
-
         it("should match +<amount> syntax", () => {
-            const res1 = parseIncome("+500 salary");
-            expect(res1).toEqual({ amount: 500, currency: "", category: "salary" });
+            const res1 = parseNaturalIncome("+500 salary");
+            expect(res1).toEqual({ amount: 500, currency: null, category: "Salary" });
 
-            const res2 = parseIncome("+250.50 usd freelance");
-            expect(res2).toEqual({ amount: 250.5, currency: "USD", category: "freelance" });
+            const res2 = parseNaturalIncome("+250.50 usd freelance");
+            expect(res2).toEqual({ amount: 250.5, currency: "USD", category: "Freelance" });
 
-            const res3 = parseIncome("+1000000 khr bonus");
-            expect(res3).toEqual({ amount: 1000000, currency: "KHR", category: "bonus" });
+            const res3 = parseNaturalIncome("+1000000 khr bonus");
+            expect(res3).toEqual({ amount: 1000000, currency: "KHR", category: "Bonus" });
         });
 
         it("should match income <amount> syntax", () => {
-            const res = parseIncome("income 1200 usd client project");
+            const res = parseNaturalIncome("income 1200 usd client project");
             expect(res).toEqual({ amount: 1200, currency: "USD", category: "client project" });
+        });
+
+        it("should match '<amount> income' and '<amount> salary' syntax", () => {
+            expect(parseNaturalIncome("40$ income")).toEqual({
+                amount: 40,
+                currency: "USD",
+                category: "Income"
+            });
+            expect(parseNaturalIncome("$40 income")).toEqual({
+                amount: 40,
+                currency: "USD",
+                category: "Income"
+            });
+            expect(parseNaturalIncome("500$ salary")).toEqual({
+                amount: 500,
+                currency: "USD",
+                category: "Salary"
+            });
+            expect(parseNaturalIncome("salary 500$")).toEqual({
+                amount: 500,
+                currency: "USD",
+                category: "Salary"
+            });
+        });
+
+        it("should match earned and received syntax", () => {
+            expect(parseNaturalIncome("earned $50 freelance")).toEqual({
+                amount: 50,
+                currency: "USD",
+                category: "Freelance"
+            });
+            expect(parseNaturalIncome("received 100 bonus")).toEqual({
+                amount: 100,
+                currency: null,
+                category: "Bonus"
+            });
+            expect(parseNaturalIncome("got paid $1200")).toEqual({
+                amount: 1200,
+                currency: "USD",
+                category: "Income"
+            });
+        });
+
+        it("should return null for corrective messages so AI Copilot can undo the mistake", () => {
+            expect(parseNaturalIncome("40$ is my income not my expensse")).toBeNull();
         });
     });
 
     describe("Natural Expense Regexes", () => {
-        const parseExpense = (text) => {
-            const expMatch3 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:on|for)?\s*([a-zA-Z\s]+)$/i);
-            const expMatch4 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+([a-zA-Z\s]+)\s+(?:for|at)?\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?$/i);
-            const expMatch1 = text.match(/^(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
-            const expMatch2 = text.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
-
-            if (expMatch3) {
-                return {
-                    amount: Number(expMatch3[1].replace("$", "")),
-                    category: expMatch3[3].trim()
-                };
-            }
-            if (expMatch4) {
-                return {
-                    amount: Number(expMatch4[2].replace("$", "")),
-                    category: expMatch4[1].trim()
-                };
-            }
-            if (expMatch1) {
-                return {
-                    amount: Number(expMatch1[1].replace("$", "")),
-                    category: expMatch1[4].trim()
-                };
-            }
-            if (expMatch2) {
-                return {
-                    amount: Number(expMatch2[2].replace("$", "")),
-                    category: expMatch2[1].trim()
-                };
-            }
-            return null;
-        };
-
-        it("should parse '<amount> <category>'", () => {
-            expect(parseExpense("5 coffee")).toEqual({ amount: 5, category: "coffee" });
-            expect(parseExpense("$12 lunch")).toEqual({ amount: 12, category: "lunch" });
-            expect(parseExpense("15000 groceries")).toEqual({ amount: 15000, category: "groceries" });
+        it("should parse standard quick expenses", () => {
+            expect(parseNaturalExpense("5 coffee")).toEqual({ amount: 5, currency: null, category: "coffee" });
+            expect(parseNaturalExpense("$12 lunch")).toEqual({ amount: 12, currency: "USD", category: "lunch" });
+            expect(parseNaturalExpense("15000 groceries")).toEqual({ amount: 15000, currency: null, category: "groceries" });
+            expect(parseNaturalExpense("coffee 5")).toEqual({ amount: 5, currency: null, category: "coffee" });
+            expect(parseNaturalExpense("spent $15 on dinner")).toEqual({ amount: 15, currency: "USD", category: "dinner" });
+            expect(parseNaturalExpense("paid 20000 for gas")).toEqual({ amount: 20000, currency: null, category: "gas" });
         });
 
-        it("should parse '<category> <amount>'", () => {
-            expect(parseExpense("coffee 5")).toEqual({ amount: 5, category: "coffee" });
-            expect(parseExpense("taxi 10000")).toEqual({ amount: 10000, category: "taxi" });
+        it("CRITICAL: should NEVER parse '40$ is my income not my expensse' as an expense", () => {
+            expect(parseNaturalExpense("40$ is my income not my expensse")).toBeNull();
         });
 
-        it("should parse conversational spending sentences", () => {
-            expect(parseExpense("spent $15 on dinner")).toEqual({ amount: 15, category: "dinner" });
-            expect(parseExpense("paid 20000 for gas")).toEqual({ amount: 20000, category: "gas" });
-            expect(parseExpense("bought coffee for $4")).toEqual({ amount: 4, category: "coffee" });
+        it("CRITICAL: should NEVER parse income entries as expenses", () => {
+            expect(parseNaturalExpense("40$ income")).toBeNull();
+            expect(parseNaturalExpense("$40 income")).toBeNull();
+            expect(parseNaturalExpense("500$ salary")).toBeNull();
+            expect(parseNaturalExpense("salary 500$")).toBeNull();
+            expect(parseNaturalExpense("earned $50 freelance")).toBeNull();
+            expect(parseNaturalExpense("40$ add my net bonus to")).toBeNull();
+        });
+
+        it("should reject conversational questions and advice queries", () => {
+            expect(parseNaturalExpense("can I afford a 45$ mechanical keyboard?")).toBeNull();
+            expect(parseNaturalExpense("how much did I spend?")).toBeNull();
         });
     });
 

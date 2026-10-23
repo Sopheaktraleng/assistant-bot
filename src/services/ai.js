@@ -246,7 +246,7 @@ export async function buildAiUserContext(db, userId) {
         getCategoryRows(db, userId, "month", 5),
         getCategoryRows(db, userId, "today", 5),
         db.prepare(
-            "SELECT date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 5"
+            "SELECT id, date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 5"
         ).bind(userId).all(),
         db.prepare(
             "SELECT time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY time ASC, id ASC"
@@ -298,6 +298,7 @@ export async function buildAiUserContext(db, userId) {
             count: c.count
         })),
         recentTransactions: (recentExpenses?.results || []).map(r => ({
+            id: r.id,
             date: r.date,
             type: r.type,
             amount: r.amount,
@@ -357,31 +358,47 @@ Core Operating Directives:
    - If Boss asks for casual conversation, jokes, chit-chat, ideas, questions, or says "say anything to me": RESPOND WITH WIT, CREATIVITY, AND CHARM! Do NOT dump an unprompted financial report or status update.
    - If Boss asks to tell a joke, tell a fresh, clever, hilarious joke about real life, office life, tech, software engineering, or everyday human quirks. Never repeat the same joke!
    - ONLY recite financial balances or budget figures if Boss explicitly asks about money, expenses, budget, or asks for a briefing.
-3. Financial Defense & Task Execution:
+3. Financial Defense & System Execution:
    - When asked "Can I afford X?", calculate exact remaining discretionary funds and runway from telemetry. Give direct, realistic, grounded financial advice.
-   - When asked to record an expense, income, work task, or reminder, return the appropriate "action" object.
+   - When asked to record an expense, income, work task, reminder, or configure system settings, return the appropriate "action" or "actions" array.
+   - CORRECTION OF MISTAKES (CRITICAL): If Boss says "X was income not expense", "that was income", "40$ is my income not my expense", or points out an error in the ledger, YOU MUST FIX IT! Return an "actions" array:
+     [
+       { "type": "delete_last_transaction", "filter": "expense" },
+       { "type": "add_income", "amount": 40, "currency": "USD", "category": "Income" }
+     ]
+   - DELETING / UNDOING: When Boss says "undo", "delete last transaction", "delete last expense", "remove the 40$", return:
+     { "type": "delete_last_transaction", "filter": "expense" | "income" | "any" }
+   - SWITCHING CURRENCY: When Boss says "switch to USD", "change currency to KHR", "use dollars", return:
+     { "type": "set_currency", "currency": "USD" | "KHR" }
+   - BUDGET MANAGEMENT: When Boss says "set my monthly budget to 300$", "my budget is $500", return:
+     { "type": "set_budget", "amount": 300, "currency": "USD" | "KHR" }
+   - CLEARING DATA: When Boss says "clear all transactions", "wipe ledger", return { "type": "clear_all_transactions" }. When "clear today", return { "type": "clear_today_expenses" }.
 4. Long-Term Memory & Adaptation:
    - Use what you know about Boss to personalize answers naturally (e.g. coffee preference, work habits, rules) without regurgitating every memory unprompted.
    - When Boss shares personal facts, rules, preferences, or explicitly says "remember that...", "keep in mind that...", return an "add_memory" action so you remember it permanently.
 5. Language:
    - If Boss speaks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
-5. Output Format:
+6. Output Format:
    Return ONLY valid JSON matching this schema:
 {
   "reply": "Visually crisp, beautifully structured markdown message for Boss's screen (use *bold*, clean bullet points, emojis where appropriate).",
   "voice_summary": "Crisp 1-2 sentence spoken update written specifically for human ears. Use natural conversational cadence, NO asterisks, NO emojis, NO markdown syntax, NO bullet points.",
-  "action": null | {
-    "type": "add_expense" | "add_income" | "add_work" | "add_reminder" | "add_memory",
-    "amount": number (for expense/income),
-    "currency": "USD" | "KHR" (for expense/income),
-    "category": string (for expense/income/work/memory: 'preference' | 'work' | 'identity' | 'goal' | 'rule'),
-    "date": "YYYY-MM-DD" (optional, for expense/income),
-    "content": string (for work task),
-    "title": string (for reminder),
-    "time": "HH:mm" (24h format, for reminder),
-    "frequency": "daily" | "weekdays" | "once" (for reminder),
-    "fact": string (for add_memory)
-  }
+  "action": null | { ... },
+  "actions": null | [
+    {
+      "type": "add_expense" | "add_income" | "delete_last_transaction" | "set_currency" | "set_budget" | "clear_today_expenses" | "clear_all_transactions" | "add_work" | "add_reminder" | "add_memory",
+      "amount": number (for expense/income/budget),
+      "currency": "USD" | "KHR" (for expense/income/budget/set_currency),
+      "category": string (for expense/income/work/memory: 'preference' | 'work' | 'identity' | 'goal' | 'rule'),
+      "date": "YYYY-MM-DD" (optional, for expense/income),
+      "filter": "expense" | "income" | "any" (for delete_last_transaction),
+      "content": string (for work task),
+      "title": string (for reminder),
+      "time": "HH:mm" (24h format, for reminder),
+      "frequency": "daily" | "weekdays" | "once" (for reminder),
+      "fact": string (for add_memory)
+    }
+  ]
 }
 Return pure JSON only.`;
 }
@@ -431,30 +448,40 @@ export function parseCopilotResponse(rawText) {
         clean = clean.replace(/^```[a-zA-Z]*\s*/i, "").replace(/\s*```$/, "").trim();
     }
 
+    const extractFromObject = (obj) => {
+        if (!obj || typeof obj !== "object") return null;
+        const replyText = obj.reply || obj.message || obj.response || obj.text || obj.answer || obj.content;
+        if (typeof replyText !== "string") return null;
+
+        let actions = [];
+        if (Array.isArray(obj.actions)) {
+            actions = obj.actions.filter(a => a && typeof a === "object" && a.type);
+        } else if (obj.action && typeof obj.action === "object" && obj.action.type) {
+            actions = [obj.action];
+        }
+
+        const primaryAction = actions.length > 0 ? actions[0] : null;
+
+        return {
+            reply: replyText,
+            voice_summary: obj.voice_summary || null,
+            action: primaryAction,
+            actions
+        };
+    };
+
     try {
         const obj = JSON.parse(clean);
-        const replyText = obj.reply || obj.message || obj.response || obj.text || obj.answer || obj.content;
-        if (obj && typeof replyText === "string") {
-            return {
-                reply: replyText,
-                voice_summary: obj.voice_summary || null,
-                action: obj.action || null
-            };
-        }
+        const res = extractFromObject(obj);
+        if (res) return res;
     } catch (e) {
         const start = clean.indexOf("{");
         const end = clean.lastIndexOf("}");
         if (start !== -1 && end > start) {
             try {
                 const subObj = JSON.parse(clean.substring(start, end + 1));
-                const subReply = subObj.reply || subObj.message || subObj.response || subObj.text || subObj.answer || subObj.content;
-                if (subObj && typeof subReply === "string") {
-                    return {
-                        reply: subReply,
-                        voice_summary: subObj.voice_summary || null,
-                        action: subObj.action || null
-                    };
-                }
+                const res = extractFromObject(subObj);
+                if (res) return res;
             } catch (e2) {}
         }
     }
@@ -463,7 +490,8 @@ export function parseCopilotResponse(rawText) {
         return {
             reply: clean,
             voice_summary: null,
-            action: null
+            action: null,
+            actions: []
         };
     }
 

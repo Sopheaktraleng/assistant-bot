@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateSpeechAudio, analyzeImageWithAi, buildCopilotPrompt, buildGeminiContents } from "../src/services/ai.js";
 import { sendTelegramVoice } from "../src/services/telegram.js";
 import { sendFridayTacticalBriefing } from "../src/modules/copilot/briefing.js";
-import { handleMessage } from "../src/handlers/message.js";
+import { handleMessage, handleUndoLastTransaction } from "../src/handlers/message.js";
 import { buildSmartLocalFallback } from "../src/modules/copilot/handler.js";
 import {
     saveChatMessage,
@@ -11,7 +11,8 @@ import {
     saveUserMemory,
     getUserMemories,
     deleteUserMemory,
-    clearUserMemories
+    clearUserMemories,
+    deleteLastTransaction
 } from "../src/db/queries.js";
 
 describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
@@ -538,6 +539,121 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             expect(fetchSpy).toHaveBeenCalled();
             const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
             expect(payload.text).toContain("Auto-Voice Mode: ENABLED");
+        });
+    });
+
+    describe("Ledger System Control & Mistake Correction", () => {
+        it("deleteLastTransaction should query and delete the latest transaction for the user", async () => {
+            const mockRow = {
+                id: 169,
+                amount: 40,
+                category: "Is my income not my expensse",
+                type: "expense",
+                currency: "USD",
+                date: "2026-10-22"
+            };
+
+            const mockDb = {
+                prepare: vi.fn((sql) => {
+                    if (sql.includes("SELECT")) {
+                        return {
+                            bind: vi.fn().mockReturnValue({
+                                first: vi.fn().mockResolvedValue(mockRow)
+                            })
+                        };
+                    }
+                    if (sql.includes("DELETE")) {
+                        return {
+                            bind: vi.fn().mockReturnValue({
+                                run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                            })
+                        };
+                    }
+                    return { bind: vi.fn().mockReturnThis() };
+                })
+            };
+
+            const deleted = await deleteLastTransaction(mockDb, 849550186);
+            expect(deleted).toEqual(mockRow);
+            expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("SELECT id, amount"));
+            expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM expenses"));
+        });
+
+        it("handleUndoLastTransaction should delete last transaction and send confirmation", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockRow = {
+                id: 169,
+                amount: 40,
+                category: "Is my income not my expensse",
+                type: "expense",
+                currency: "USD",
+                date: "2026-10-22"
+            };
+
+            const mockDb = {
+                prepare: vi.fn((sql) => {
+                    if (sql.includes("SELECT")) {
+                        return {
+                            bind: vi.fn().mockReturnValue({
+                                first: vi.fn().mockResolvedValue(mockRow)
+                            })
+                        };
+                    }
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            await handleUndoLastTransaction(mockEnv, 123456, 849550186);
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Transaction Undone");
+            expect(payload.text).toContain("$40");
+            expect(payload.text).toContain("Is my income not my expensse");
+        });
+
+        it("buildSmartLocalFallback should generate correction actions when Boss says 'income not expense'", () => {
+            const fallback = buildSmartLocalFallback("40$ is my income not my expensse", {
+                displayCurrency: "USD"
+            });
+
+            expect(fallback.reply).toContain("Ledger Correction");
+            expect(fallback.voice_summary).toContain("removed the wrongful expense");
+            expect(fallback.actions).toHaveLength(2);
+            expect(fallback.actions[0]).toEqual({ type: "delete_last_transaction", filter: "expense" });
+            expect(fallback.actions[1]).toEqual({ type: "add_income", amount: 40, currency: "USD", category: "Income" });
+        });
+
+        it("buildSmartLocalFallback should generate undo action when Boss says 'undo'", () => {
+            const fallback = buildSmartLocalFallback("undo", { displayCurrency: "USD" });
+            expect(fallback.reply).toContain("purged from your ledger");
+            expect(fallback.action).toEqual({ type: "delete_last_transaction", filter: "any" });
+        });
+
+        it("buildSmartLocalFallback should generate currency action when Boss says 'switch to USD'", () => {
+            const fallback = buildSmartLocalFallback("switch to USD", { displayCurrency: "KHR" });
+            expect(fallback.reply).toContain("USD");
+            expect(fallback.action).toEqual({ type: "set_currency", currency: "USD" });
+        });
+
+        it("buildSmartLocalFallback should generate budget action when Boss says 'set monthly budget to 300'", () => {
+            const fallback = buildSmartLocalFallback("budget is $300", { displayCurrency: "USD" });
+            expect(fallback.reply).toContain("300");
+            expect(fallback.action).toEqual({ type: "set_budget", amount: 300, currency: "USD" });
+        });
+
+        it("buildSmartLocalFallback should generate clear all action when Boss says 'clear all'", () => {
+            const fallback = buildSmartLocalFallback("clear all transactions", { displayCurrency: "USD" });
+            expect(fallback.reply).toContain("purged");
+            expect(fallback.action).toEqual({ type: "clear_all_transactions" });
         });
     });
 });

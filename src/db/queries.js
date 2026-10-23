@@ -224,6 +224,41 @@ export async function clearAllExpenses(db, userId) {
         .run();
 }
 
+export async function deleteLastTransaction(db, userId, filterType = null) {
+    try {
+        let query = "SELECT id, amount, category, type, currency, date FROM expenses WHERE user_id = ?";
+        const params = [userId];
+        if (filterType && filterType !== "any" && filterType !== "all") {
+            query += " AND type = ?";
+            params.push(filterType.toLowerCase());
+        }
+        query += " ORDER BY id DESC LIMIT 1";
+
+        const lastRow = await db.prepare(query).bind(...params).first();
+        if (!lastRow) {
+            return null;
+        }
+
+        await db.prepare("DELETE FROM expenses WHERE user_id = ? AND id = ?").bind(userId, lastRow.id).run();
+        return lastRow;
+    } catch (e) {
+        console.error("deleteLastTransaction error:", e);
+        return null;
+    }
+}
+
+export async function deleteExpenseById(db, userId, expenseId) {
+    try {
+        const row = await db.prepare("SELECT id, amount, category, type, currency, date FROM expenses WHERE user_id = ? AND id = ?").bind(userId, expenseId).first();
+        if (!row) return null;
+        await db.prepare("DELETE FROM expenses WHERE user_id = ? AND id = ?").bind(userId, expenseId).run();
+        return row;
+    } catch (e) {
+        console.error("deleteExpenseById error:", e);
+        return null;
+    }
+}
+
 export async function setMonthlyBudget(db, userId, budgetInKhr) {
     await db
         .prepare(

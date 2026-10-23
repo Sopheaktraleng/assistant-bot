@@ -6,6 +6,7 @@ import {
     getDisplayCurrency,
     getTotalExpenses,
     addExpenseRecord,
+    deleteLastTransaction,
     getUserMemories,
     saveUserMemory,
     deleteUserMemory,
@@ -15,6 +16,7 @@ import {
     setUserVoiceMode,
     getLastModelChatMessage
 } from "../db/queries.js";
+import { isConversationalOrCorrection, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
 
 // Hub
 import { sendMainHub, sendHelpMessage, sendSettingsMenu } from "../modules/hub/views.js";
@@ -67,6 +69,42 @@ import {
 // Voice & Copilot
 import { sendVoiceHelp, handleVoiceMessage } from "../modules/voice/handler.js";
 import { handleAiCopilotQuery, sendFridayTacticalBriefing } from "../modules/copilot/handler.js";
+
+export async function handleUndoLastTransaction(env, chatId, userId) {
+    const deleted = await deleteLastTransaction(env.DB, userId);
+    if (!deleted) {
+        await sendMessage(
+            env,
+            chatId,
+            `ℹ️ *No Recent Transactions Found*\n\nBoss, there are no recorded transactions in your ledger to undo.`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    const curr = deleted.currency || "USD";
+    const symbol = curr === "USD" ? "$" : "";
+    const suffix = curr === "KHR" ? " ៛" : "";
+    const formattedVal = `${symbol}${deleted.amount}${suffix}`;
+    const typeLabel = deleted.type === "income" ? "Income" : "Expense";
+    const typeEmoji = deleted.type === "income" ? "🟢" : "💸";
+
+    await sendMessage(
+        env,
+        chatId,
+        [
+            `🗑️ *Transaction Undone*`,
+            `────────────────────`,
+            `${typeEmoji} *Type:* ${typeLabel}`,
+            `💵 *Amount:* \`${formattedVal}\``,
+            `🏷️ *Category:* *${deleted.category}*`,
+            `📅 *Date:* \`${deleted.date}\``,
+            `────────────────────`,
+            `_Successfully removed from your ledger._`
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+    );
+}
 
 export async function handleMessage(message, env, origin) {
     const rawText = (message.text || "").trim();
@@ -605,6 +643,11 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
+    if (text === "/undo" || text === "/cancel") {
+        await handleUndoLastTransaction(env, chatId, userId);
+        return;
+    }
+
     if (text === "/clear") {
         await askClearConfirmation(env, chatId);
         return;
@@ -698,63 +741,47 @@ export async function handleMessage(message, env, origin) {
             }
         }
 
-        // 4. Natural Income: e.g. "+500 salary" or "income 500 salary"
-        const incMatch = text.match(/^\+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i) ||
-                         text.match(/^income\s+([0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s*(.*)$/i);
-        if (incMatch) {
-            const amount = Number(incMatch[1]);
-            const currencyStr = (incMatch[3] || "").toUpperCase();
-            const cat = incMatch[4].trim() || "Income";
-            let curr = await getDisplayCurrency(env.DB, userId);
-            if (currencyStr === "$" || currencyStr === "USD") curr = "USD";
-            else if (currencyStr === "KHR") curr = "KHR";
-            else if (amount < 100) curr = "USD";
-            await addExpenseRecord(env.DB, userId, amount, cat, "income", curr);
-            await sendTransactionReceipt(env, chatId, userId, "income", amount, curr, cat);
+        // 4. Natural Undo / Delete Last
+        if (
+            lower === "undo" || 
+            lower === "undo last" || 
+            lower === "undo that" || 
+            lower === "delete last" || 
+            lower === "delete last transaction" || 
+            lower === "delete last expense" ||
+            lower === "delete last income" ||
+            lower === "cancel last"
+        ) {
+            await handleUndoLastTransaction(env, chatId, userId);
             return;
         }
 
-        // 5. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5"
-        // Conversational phrases checked first before greedy category match
-        const expMatch3 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:on|for)?\s*([a-zA-Z\s]+)$/i);
-        const expMatch4 = text.match(/^(?:i\s+)?(?:spent|paid|bought)\s+([a-zA-Z\s]+)\s+(?:for|at)?\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?$/i);
-        const expMatch1 = text.match(/^(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
-        const expMatch2 = text.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
-
-        let amount = null;
-        let category = null;
-        let currencyHint = null;
-
-        if (expMatch3) {
-            amount = Number(expMatch3[1].replace("$", ""));
-            currencyHint = expMatch3[2] || (expMatch3[1].includes("$") ? "USD" : null);
-            category = expMatch3[3].trim();
-        } else if (expMatch4) {
-            amount = Number(expMatch4[2].replace("$", ""));
-            currencyHint = expMatch4[3] || (expMatch4[2].includes("$") ? "USD" : null);
-            category = expMatch4[1].trim();
-        } else if (expMatch1) {
-            amount = Number(expMatch1[1].replace("$", ""));
-            currencyHint = expMatch1[3] || (expMatch1[1].includes("$") ? "USD" : null);
-            category = expMatch1[4].trim();
-        } else if (expMatch2) {
-            amount = Number(expMatch2[2].replace("$", ""));
-            currencyHint = expMatch2[4] || (expMatch2[2].includes("$") ? "USD" : null);
-            category = expMatch2[1].trim();
+        // 5. Natural Income: e.g. "+500 salary", "income 500", "40$ income", "500$ salary", "earned $50 freelance"
+        const incData = parseNaturalIncome(text);
+        if (incData) {
+            let curr = await getDisplayCurrency(env.DB, userId);
+            if (incData.currency) {
+                curr = incData.currency;
+            } else if (incData.amount < 100) {
+                curr = "USD";
+            }
+            await addExpenseRecord(env.DB, userId, incData.amount, incData.category, "income", curr);
+            await sendTransactionReceipt(env, chatId, userId, "income", incData.amount, curr, incData.category);
+            return;
         }
 
-        if (amount && Number.isFinite(amount) && amount > 0 && category && category.length < 30) {
+        // 6. Natural Expense: e.g. "5 coffee", "$5 coffee", "5$ coffee", "10000 lunch", "coffee 5", "spent $15 on dinner"
+        const expData = parseNaturalExpense(text);
+        if (expData) {
             let curr = await getDisplayCurrency(env.DB, userId);
-            if (currencyHint) {
-                const cUpper = currencyHint.toUpperCase();
-                if (cUpper === "$" || cUpper === "USD" || cUpper === "DOLLARS") curr = "USD";
-                else if (cUpper === "KHR" || cUpper === "RIEL") curr = "KHR";
+            if (expData.currency) {
+                curr = expData.currency;
             } else {
-                if (amount >= 500) curr = "KHR";
+                if (expData.amount >= 500) curr = "KHR";
                 else curr = "USD";
             }
-            await addExpenseRecord(env.DB, userId, amount, category, "expense", curr);
-            await sendTransactionReceipt(env, chatId, userId, "expense", amount, curr, category);
+            await addExpenseRecord(env.DB, userId, expData.amount, expData.category, "expense", curr);
+            await sendTransactionReceipt(env, chatId, userId, "expense", expData.amount, curr, expData.category);
             return;
         }
 

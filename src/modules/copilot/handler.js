@@ -1,5 +1,17 @@
 import { today, currentTime } from "../../utils/time.js";
-import { addExpenseRecord, saveChatMessage, saveUserMemory, getUserVoiceMode } from "../../db/queries.js";
+import { 
+    addExpenseRecord, 
+    deleteLastTransaction,
+    deleteExpenseById,
+    setDisplayCurrency,
+    setMonthlyBudget,
+    clearToday,
+    clearAllExpenses,
+    saveChatMessage, 
+    saveUserMemory, 
+    getUserVoiceMode 
+} from "../../db/queries.js";
+import { EXCHANGE_RATE } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
 import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
@@ -7,22 +19,128 @@ export { sendFridayTacticalBriefing } from "./briefing.js";
 
 /**
  * Intelligent deterministic fallback when AI APIs are unreachable or timing out.
- * Computes exact answers from onboard database tables.
+ * Computes exact answers and supports full system actions from onboard database tables.
  */
 export function buildSmartLocalFallback(query, context) {
     const q = (query || "").toLowerCase();
     const curr = context.displayCurrency || "USD";
     const symbol = curr === "USD" ? "$" : "";
     const suffix = curr === "KHR" ? " ៛" : "";
-    const totalInc = context.summary?.totalIncome || 0;
-    const totalExp = context.summary?.totalExpenses || 0;
-    const netBal = totalInc - totalExp;
+    const isUsd = curr === "USD";
+
+    const totalInc = (context.totals ? (isUsd ? context.totals.thisMonthIncomeUsd : context.totals.thisMonthIncomeKhr) : null) ?? (context.summary?.totalIncome || 0);
+    const totalExp = (context.totals ? (isUsd ? context.totals.thisMonthExpenseUsd : context.totals.thisMonthExpenseKhr) : null) ?? (context.summary?.totalExpenses || 0);
+    const netBal = (context.totals ? (isUsd ? context.totals.allTimeNetBalanceUsd : context.totals.allTimeNetBalanceKhr) : null) ?? (totalInc - totalExp);
+
+    let todayBurn = 0;
+    if (context.totals) {
+        todayBurn = isUsd ? (context.totals.todayExpenseUsd || 0) : (context.totals.todayExpenseKhr || 0);
+    }
+    if (todayBurn === 0 && Array.isArray(context.todayExpenses)) {
+        todayBurn = context.todayExpenses.reduce((acc, r) => acc + (r.amount || 0), 0);
+    }
     const netSign = netBal >= 0 ? "+" : "-";
-    const todayBurn = (context.todayExpenses || []).reduce((acc, r) => acc + (r.amount || 0), 0);
+
     const tasks = context.todayWorkTasks || [];
     const rems = context.activeReminders || [];
 
-    // 1. "Can I afford..." check
+    // 1. Correction: "income not expense", "that was income"
+    if (q.includes("income not expense") || q.includes("is my income") || q.includes("was income")) {
+        const numMatch = q.match(/\$?([0-9]+(?:\.[0-9]+)?)/);
+        const amount = numMatch ? parseFloat(numMatch[1]) : 40;
+        const curHint = q.includes("khr") || q.includes("riel") ? "KHR" : (q.includes("$") || q.includes("usd") || amount < 500 ? "USD" : "KHR");
+        return {
+            reply: [
+                `⚡ *F.R.I.D.A.Y. • Ledger Correction*`,
+                `────────────────────`,
+                `Understood, Boss! My apologies for the misclassification.`,
+                `• *Reversed:* Last wrongful expense entry deleted.`,
+                `• *Logged:* \`${curHint === "USD" ? "$" : ""}${amount}${curHint === "KHR" ? " ៛" : ""}\` credited to *Income*.`,
+                `────────────────────`,
+                `_Net cashflow telemetry recalibrated._`
+            ].join("\n"),
+            voice_summary: `Understood Boss. I removed the wrongful expense and credited ${amount} dollars to your income.`,
+            actions: [
+                { type: "delete_last_transaction", filter: "expense" },
+                { type: "add_income", amount, currency: curHint, category: "Income" }
+            ]
+        };
+    }
+
+    // 2. Undo / Delete Last Transaction
+    if (q === "undo" || q.includes("delete last") || q.includes("undo that") || q.includes("cancel last") || q.includes("remove last")) {
+        const filter = q.includes("income") ? "income" : (q.includes("expense") ? "expense" : "any");
+        return {
+            reply: [
+                `🗑️ *F.R.I.D.A.Y. • Ledger Operation*`,
+                `────────────────────`,
+                `The last recorded transaction has been purged from your ledger, Boss.`,
+                `────────────────────`,
+                `_Balances have been updated._`
+            ].join("\n"),
+            voice_summary: `Last transaction removed from your ledger, Boss.`,
+            action: { type: "delete_last_transaction", filter }
+        };
+    }
+
+    // 3. Clear Ledger
+    if (q.includes("clear all") || q.includes("wipe ledger") || q.includes("reset ledger")) {
+        return {
+            reply: [
+                `⚠️ *F.R.I.D.A.Y. • Ledger Reset*`,
+                `────────────────────`,
+                `All transactions have been purged from your database ledger, Boss.`,
+                `────────────────────`,
+                `_Fresh ledger initialized._`
+            ].join("\n"),
+            voice_summary: `All transactions purged from ledger, Boss.`,
+            action: { type: "clear_all_transactions" }
+        };
+    }
+
+    if (q.includes("clear today")) {
+        return {
+            reply: [
+                `🧹 *F.R.I.D.A.Y. • Daily Reset*`,
+                `────────────────────`,
+                `Today's transactions have been cleared from your ledger, Boss.`,
+                `────────────────────`,
+                `_Today's burn reset to zero._`
+            ].join("\n"),
+            voice_summary: `Today's transactions cleared, Boss.`,
+            action: { type: "clear_today_expenses" }
+        };
+    }
+
+    // 4. Switch Currency
+    if (q.includes("currency to usd") || q.includes("switch to usd") || q.includes("use usd") || q.includes("use dollars")) {
+        return {
+            reply: `💱 *Currency Updated*\n\nDisplay currency switched to **USD**, Boss.`,
+            voice_summary: `Display currency switched to U S Dollars, Boss.`,
+            action: { type: "set_currency", currency: "USD" }
+        };
+    }
+    if (q.includes("currency to khr") || q.includes("switch to khr") || q.includes("use khr") || q.includes("use riel")) {
+        return {
+            reply: `💱 *Currency Updated*\n\nDisplay currency switched to **KHR (៛)**, Boss.`,
+            voice_summary: `Display currency switched to Khmer Riel, Boss.`,
+            action: { type: "set_currency", currency: "KHR" }
+        };
+    }
+
+    // 5. Set Monthly Budget
+    const budgetMatch = q.match(/(?:budget\s*(?:is|to)?\s*)\$?([0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$)?/i);
+    if (budgetMatch) {
+        const bAmount = parseFloat(budgetMatch[1]);
+        const bCurr = budgetMatch[2] === "khr" || bAmount >= 500 ? "KHR" : "USD";
+        return {
+            reply: `🎯 *Monthly Budget Configured*\n\nMonthly budget set to **${bCurr === "USD" ? "$" : ""}${bAmount}${bCurr === "KHR" ? " ៛" : ""}**, Boss.`,
+            voice_summary: `Monthly budget configured to ${bAmount} ${bCurr === "USD" ? "dollars" : "riel"}, Boss.`,
+            action: { type: "set_budget", amount: bAmount, currency: bCurr }
+        };
+    }
+
+    // 6. "Can I afford..." check
     const affordMatch = q.match(/(?:afford|buy|purchase|spend)\s*(?:a|an)?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
     if (affordMatch) {
         const itemCost = parseFloat(affordMatch[1]);
@@ -48,7 +166,7 @@ export function buildSmartLocalFallback(query, context) {
         };
     }
 
-    // 2. Spending / Expenses inquiry
+    // 7. Spending / Expenses inquiry
     if (q.includes("spend") || q.includes("expense") || q.includes("cost") || q.includes("how much") || q.includes("ចាយ")) {
         return {
             reply: [
@@ -64,7 +182,7 @@ export function buildSmartLocalFallback(query, context) {
         };
     }
 
-    // 3. Work / Tasks inquiry
+    // 8. Work / Tasks inquiry
     if (q.includes("task") || q.includes("work") || q.includes("standup") || q.includes("did i log")) {
         const taskLines = tasks.length > 0 
             ? tasks.map((t, i) => `${i + 1}. \`${t.time || "--:--"}\` ${t.task}`).join("\n")
@@ -82,7 +200,7 @@ export function buildSmartLocalFallback(query, context) {
         };
     }
 
-    // 4. Default Telemetry Briefing
+    // 9. Default Telemetry Briefing
     return {
         reply: [
             `🛡️ *F.R.I.D.A.Y. • Local Telemetry Mode*`,
@@ -166,14 +284,20 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             result = {
                 reply: localFallback.reply,
                 voice_summary: localFallback.voice_summary,
-                action: null
+                action: localFallback.action || null,
+                actions: localFallback.actions || (localFallback.action ? [localFallback.action] : [])
             };
         }
 
-        // Process action if any
-        if (result.action && typeof result.action === "object") {
+        // Process all actions (supporting single action, array of actions, and corrective actions)
+        const actionsToExecute = Array.isArray(result.actions) && result.actions.length > 0
+            ? result.actions
+            : (result.action && typeof result.action === "object" ? [result.action] : []);
+
+        for (const act of actionsToExecute) {
             try {
-                const act = result.action;
+                if (!act || typeof act !== "object") continue;
+
                 if (act.type === "add_expense" && act.amount && act.amount > 0) {
                     const cat = act.category || "Other";
                     const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
@@ -184,6 +308,20 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                     const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
                     const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
                     await addExpenseRecord(env.DB, userId, act.amount, cat, "income", curr, recordDate);
+                } else if (act.type === "delete_last_transaction") {
+                    await deleteLastTransaction(env.DB, userId, act.filter || null);
+                } else if (act.type === "delete_transaction" && act.id) {
+                    await deleteExpenseById(env.DB, userId, act.id);
+                } else if (act.type === "set_currency" && act.currency) {
+                    await setDisplayCurrency(env.DB, userId, act.currency.toUpperCase());
+                } else if (act.type === "set_budget" && act.amount && act.amount > 0) {
+                    const bCurr = (act.currency || context.displayCurrency || "USD").toUpperCase();
+                    const budgetKhr = bCurr === "USD" ? Math.round(act.amount * EXCHANGE_RATE) : Math.round(act.amount);
+                    await setMonthlyBudget(env.DB, userId, budgetKhr);
+                } else if (act.type === "clear_today_expenses") {
+                    await clearToday(env.DB, userId);
+                } else if (act.type === "clear_all_transactions") {
+                    await clearAllExpenses(env.DB, userId);
                 } else if (act.type === "add_work" && act.content) {
                     const curTime = currentTime();
                     const curDate = today();

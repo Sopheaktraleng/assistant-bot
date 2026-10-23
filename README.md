@@ -18,6 +18,8 @@
 ### 🤖 F.R.I.D.A.Y. Tactical Assistant
 - **Grounded Real-World AI:** Sharp, direct, and supportive personal chief of staff. Grounded strictly in real-world finance, software engineering, and daily productivity (zero fictional movie tropes).
 - **Multi-Turn Conversation Memory:** Remembers conversational context across turns (`chat_history`), enabling natural follow-up queries (*"Can I afford a $45 keyboard?"* ➔ *"What about in Riel?"*).
+- **Full Database System Control:** Friday can directly manage your system: add income/expenses, configure monthly budgets, switch currency, and undo transactions.
+- **Autonomous Ledger Mistake Correction:** If you say *"40$ was income not expense"* or *"40$ is my income not my expensse"*, Friday automatically deletes the wrongful expense and credits your income ledger.
 - **Long-Term Personal Memory Matrix:** Learns and stores your preferences, rules, dietary habits, and goals (`/remember`, `/memory`, `/forget`).
 - **Tactical Briefings:** Instant executive status reports (`/briefing`) analyzing cashflow burn, logged work tasks, and upcoming alarms.
 
@@ -28,7 +30,8 @@
 - **Clean Conversational UX:** Distraction-free chat without repetitive button clutter.
 
 ### 💳 Cashflow & Financial Defense
-- **Natural Expense & Income Entry:** Type `5 coffee`, `12000 lunch`, or `+500 salary` without formal command syntax.
+- **Natural Expense & Income Entry:** Type `5 coffee`, `12000 lunch`, `+500 salary`, `40$ income`, or `earned $50 freelance` without formal command syntax.
+- **Instant `/undo` Command:** Make a mistake or misclassify an entry? Type `/undo` or just `undo` to immediately purge the last entry from your ledger.
 - **Bank Slip & Receipt OCR:** Snap a photo of ABA Bank, Bakong KHQR, Acleda ToanChet, or store receipts — Gemini extracts the exact merchant, currency, amount, and category instantly.
 - **Real-Time Affordability Engine:** Ask *"Friday, can I afford a $100 gadget?"* and she calculates exact discretionary funds and runway from your database ledger.
 - **Dual-Currency:** Automatic conversion and tracking in USD ($) and Cambodian Riel (KHR ៛) at 1 USD = 4,000 KHR.
@@ -82,8 +85,9 @@ flowchart LR
 | `/today` | `/t`, `today` | View today's itemized transaction ledger |
 | `/summary` | `/s` | Monthly spending breakdown, top categories & budget gauge |
 | `/month` | `/m` | Monthly financial telemetry |
+| `/undo` | `undo`, `/cancel` | Immediately remove and undo the most recent transaction |
 | `/add <amt> <cat>` | `5 coffee`, `10000 lunch` | Quick expense recording (zero command friction) |
-| `/income <amt>` | `+500 salary` | Quick income recording |
+| `/income <amt>` | `+500 salary`, `40$ income` | Quick income recording |
 | `/budget <amt>` | `/b 300 usd` | Set monthly spending threshold with auto-warnings |
 | `/export` | `/backup` | Export full transaction ledger as CSV file |
 
