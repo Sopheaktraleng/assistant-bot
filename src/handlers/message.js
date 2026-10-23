@@ -14,6 +14,8 @@ import {
     clearChatHistory,
     getUserVoiceMode,
     setUserVoiceMode,
+    getUserBriefingMode,
+    setUserBriefingMode,
     getLastModelChatMessage
 } from "../db/queries.js";
 import { isConversationalOrCorrection, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
@@ -212,7 +214,28 @@ export async function handleMessage(message, env, origin) {
         text.startsWith("/friday ") || 
         text.startsWith("/briefing ")
     ) {
-        const sub = text.replace(/^\/(friday|briefing|brief|status)(@\w+)?\s*/i, "").trim();
+        const sub = text.replace(/^\/(friday|briefing|brief|status)(@\w+)?\s*/i, "").trim().toLowerCase();
+        if (sub === "on") {
+            await setUserBriefingMode(env.DB, userId, "on");
+            await sendMessage(
+                env,
+                chatId,
+                `🟢 *Morning Briefing: ENABLED*\n\nFriday will broadcast your daily tactical briefing at 08:00 AM ICT with audio transmission.`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+        if (sub === "off") {
+            await setUserBriefingMode(env.DB, userId, "off");
+            await sendMessage(
+                env,
+                chatId,
+                `🔕 *Morning Briefing: DISABLED*\n\nAutomated 08:00 AM broadcasts are paused. You can still ask for a briefing anytime with \`/briefing\`.`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
         const wantsVoice = message.isFromVoice || /\b(voice|audio|speak|talk)\b/i.test(sub);
         if (sub && !/^(voice|audio)$/i.test(sub)) {
             await handleAiCopilotQuery(env, chatId, userId, sub, message.from, null, wantsVoice);

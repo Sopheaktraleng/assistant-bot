@@ -70,7 +70,7 @@ flowchart LR
 ### F.R.I.D.A.Y. Intelligence & Memory
 | Command | Shortcut | Description |
 | :--- | :--- | :--- |
-| `/briefing` | `/friday`, `/status` | Tactical executive status briefing |
+| `/briefing` | `/friday`, `/status` | Tactical executive status briefing (use `/briefing on` or `/briefing off` to toggle 8 AM broadcast) |
 | `/remember <fact>` | `/memorize` | Store personal preference, rule, or habit in memory matrix |
 | `/memory` | `/memories` | View all long-term memories categorized by `#ID` |
 | `/forget <id>` | `/forget all` | Delete a single memory item or wipe memory matrix |

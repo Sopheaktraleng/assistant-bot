@@ -181,8 +181,44 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
             expect(fetchSpy).toHaveBeenCalled();
             const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
             expect(payload.text).toContain("F.R.I.D.A.Y. Tactical Briefing");
-            expect(payload.text).toContain("All systems green, Boss");
-            expect(payload.text).toContain("Financial Defense");
+            expect(payload.text).toContain("Good morning, Boss");
+            expect(payload.text).toContain("Cashflow Telemetry");
+        });
+
+        it("should handle /briefing on and /briefing off to configure daily broadcasts", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            
+            // Test /briefing off
+            await handleMessage({
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/briefing off"
+            }, mockEnv, "https://example.com");
+
+            let payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Morning Briefing: DISABLED");
+
+            // Test /briefing on
+            await handleMessage({
+                chat: { id: 123456, type: "private" },
+                from: { id: 123456 },
+                text: "/briefing on"
+            }, mockEnv, "https://example.com");
+
+            payload = JSON.parse(fetchSpy.mock.calls[1][1].body);
+            expect(payload.text).toContain("Morning Briefing: ENABLED");
         });
     });
 

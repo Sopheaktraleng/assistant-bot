@@ -66,6 +66,34 @@ export async function setUserVoiceMode(db, userId, mode = "off") {
     }
 }
 
+export async function getUserBriefingMode(db, userId) {
+    try {
+        const row = await db
+            .prepare("SELECT briefing_mode FROM user_settings WHERE user_id = ?")
+            .bind(userId)
+            .first();
+        return row?.briefing_mode || "on";
+    } catch (e) {
+        return "on";
+    }
+}
+
+export async function setUserBriefingMode(db, userId, mode = "on") {
+    try {
+        await db
+            .prepare(
+                "INSERT INTO user_settings (user_id, briefing_mode) VALUES (?, ?) " +
+                "ON CONFLICT(user_id) DO UPDATE SET briefing_mode = excluded.briefing_mode"
+            )
+            .bind(userId, mode)
+            .run();
+        return true;
+    } catch (e) {
+        console.error("setUserBriefingMode error:", e);
+        return false;
+    }
+}
+
 export async function getLastModelChatMessage(db, userId) {
     try {
         const row = await db

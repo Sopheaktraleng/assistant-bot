@@ -38,6 +38,7 @@ const TABLE_SCHEMAS = [
         display_currency TEXT NOT NULL DEFAULT 'KHR',
         monthly_budget REAL DEFAULT 0,
         voice_mode TEXT DEFAULT 'off',
+        briefing_mode TEXT DEFAULT 'on',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`,
     `CREATE TABLE IF NOT EXISTS processed_updates (
@@ -105,6 +106,9 @@ export async function ensureTables(db) {
                 }
             }
         }
+        try {
+            await db.prepare("ALTER TABLE user_settings ADD COLUMN briefing_mode TEXT DEFAULT 'on'").run();
+        } catch (e) {}
         tablesEnsured = true;
     } catch (e) {
         console.error("ensureTables batch error:", e);
