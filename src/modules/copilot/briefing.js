@@ -38,20 +38,20 @@ export async function sendFridayTacticalBriefing(env, chatId, userId, options = 
             const dayName = new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: TIME_ZONE });
             const prompt = `You are F.R.I.D.A.Y., Boss's warm, witty, and loyal personal assistant.
 It is morning (8:00 AM) on ${context.currentDate} (${dayName}) in Cambodia.
-Your task is to give Boss a friendly morning wake-up call and quick check-in.
+Your task is to give Boss a friendly morning check-in and coffee greeting.
 
 STRICT TONE DIRECTIVES:
 - DO NOT sound like a cold server monitoring bot or spit out raw system telemetry dashboards!
-- Sound like a genuine, caring personal assistant waking Boss up with warmth, energy, and charm.
+- Sound like a genuine, caring personal assistant wishing Boss a great morning with warmth, energy, and charm.
 - Acknowledge whether it's a weekday or weekend (${dayName}).
 - Weave in a brief, reassuring note about their status: finances are steady at ${netSign}${symbol}${formatMoney(Math.abs(netBalance))}${suffix}, and mention any alarms (${reminders.length > 0 ? reminders.map(r => `${r.time} ${r.title}`).join(", ") : "calendar is clear"}).
-- Wish Boss a great morning and remind them to grab coffee/breakfast.
-- Spoken voice_summary MUST sound like an assistant talking to Boss to wake them up (NO asterisks, NO emojis, natural spoken flow).
+- Wish Boss a great morning and remind them to enjoy their coffee/breakfast.
+- Spoken voice_summary MUST sound like an assistant talking to Boss (NO asterisks, NO emojis, natural spoken flow).
 
 Return pure JSON only:
 {
   "reply": "Warm, beautifully formatted Telegram markdown message from a caring assistant with gentle emojis and clean bullet points",
-  "voice_summary": "Conversational spoken morning wake-up greeting for human ears"
+  "voice_summary": "Conversational spoken morning check-in greeting for human ears"
 }`;
 
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
@@ -101,7 +101,7 @@ Return pure JSON only:
             `Grab some morning coffee, and let me know whenever you need anything. Have a great day, Boss! ☕`
         ];
 
-        const voiceSummary = `Good morning Boss! Rise and shine. Hope you had a great sleep. It's 8:00 AM on a wonderful ${dayName}. Your finances are in good shape, and your assistant is standing by whenever you need me. Enjoy your morning coffee!`;
+        const voiceSummary = `Good morning Boss! Hope you had a great sleep and are enjoying your morning coffee. It's 8:00 AM on a wonderful ${dayName}. Your finances are looking solid, and I'm ready whenever you need me. Have a great day!`;
 
         result = {
             reply: lines.join("\n"),
@@ -121,7 +121,7 @@ Return pure JSON only:
     // If audio requested, generate speech audio
     if (options.withVoice) {
         try {
-            const spokenSummary = result.voice_summary || `Good morning Boss! Rise and shine. Hope you had a wonderful sleep. Have a great day!`;
+            const spokenSummary = result.voice_summary || `Good morning Boss! Hope you had a wonderful sleep. Have a great day!`;
             const audioBuffer = await generateSpeechAudio(spokenSummary, "en-gb");
             if (audioBuffer) {
                 await Promise.all([
@@ -142,6 +142,69 @@ Return pure JSON only:
         parse_mode: "Markdown",
         reply_markup: keyboard
     });
+}
+
+/**
+ * Quick, energetic personal assistant wake-up call at 07:50 AM ICT.
+ */
+export async function sendFridayWakeupCall(env, chatId, userId) {
+    const text = [
+        `⏰ *Wake Up, Boss!*`,
+        `────────────────────`,
+        `It's \`07:50 AM\`! Rise and shine, time to get out of bed. ☀️`,
+        ``,
+        `_I'll check back in with your morning status at 08:00 AM!_`
+    ].join("\n");
+
+    const voiceText = "Boss, time to wake up! It is 7:50 AM. Rise and shine, time to start your day!";
+
+    try {
+        const audioBuffer = await generateSpeechAudio(voiceText, "en-gb");
+        if (audioBuffer) {
+            await Promise.all([
+                sendTelegramVoice(env, chatId, audioBuffer, "🎙️ ⏰ Wake Up Call! (07:50 AM)"),
+                sendMessage(env, chatId, text, { parse_mode: "Markdown" })
+            ]);
+            return;
+        }
+    } catch (e) {
+        console.warn("sendFridayWakeupCall voice error:", e.message);
+    }
+
+    await sendMessage(env, chatId, text, { parse_mode: "Markdown" });
+}
+
+/**
+ * Autonomous daily morning wake-up broadcast to active users at 07:50 AM ICT.
+ */
+export async function sendDailyScheduledWakeup(env) {
+    try {
+        const sevenDaysAgo = dateDaysAgo(7);
+        const { results } = await env.DB.prepare(
+            `SELECT DISTINCT user_id FROM (
+                SELECT user_id FROM user_settings
+                UNION
+                SELECT user_id FROM expenses WHERE date >= ?
+                UNION
+                SELECT user_id FROM work_logs WHERE date >= ?
+            )`
+        ).bind(sevenDaysAgo, sevenDaysAgo).all();
+
+        if (results && results.length > 0) {
+            for (const row of results) {
+                try {
+                    const isEnabled = await getUserBriefingMode(env.DB, row.user_id);
+                    if (isEnabled !== "off") {
+                        await sendFridayWakeupCall(env, row.user_id, row.user_id);
+                    }
+                } catch (err) {
+                    console.error(`Failed to send 7:50 AM wake up call to ${row.user_id}:`, err);
+                }
+            }
+        }
+    } catch (e) {
+        console.error("sendDailyScheduledWakeup error:", e);
+    }
 }
 
 /**

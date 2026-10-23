@@ -7,7 +7,7 @@ import { handleMessage } from "./handlers/message.js";
 import { handleCallback } from "./handlers/callback.js";
 import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
-import { sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
+import { sendDailyScheduledWakeup, sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
 import { sendMessage } from "./services/telegram.js";
 
 /**
@@ -115,11 +115,15 @@ export default {
 
         try {
             const now = new Date();
-            // Daily at 01:00 UTC (8:00 AM ICT)
-            const isDailySlot = event.cron === "0 1 * * *" || (now.getUTCHours() === 1 && now.getUTCMinutes() === 0);
-            
-            if (isDailySlot) {
-                // Autonomous Morning Tactical Briefing
+            // 1. Daily at 00:50 UTC (7:50 AM ICT) - Morning Wake-Up Call
+            const isWakeupSlot = event.cron === "50 0 * * *" || (now.getUTCHours() === 0 && now.getUTCMinutes() === 50);
+            if (isWakeupSlot) {
+                await sendDailyScheduledWakeup(env);
+            }
+
+            // 2. Daily at 01:00 UTC (8:00 AM ICT) - Good Morning Check-In & Coffee
+            const isBriefingSlot = event.cron === "0 1 * * *" || (now.getUTCHours() === 1 && now.getUTCMinutes() === 0);
+            if (isBriefingSlot) {
                 await sendDailyScheduledBriefings(env);
 
                 // Monday Weekly Spending Report

@@ -15,7 +15,7 @@ import { EXCHANGE_RATE } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
 import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
-export { sendFridayTacticalBriefing } from "./briefing.js";
+export { sendFridayTacticalBriefing, sendFridayWakeupCall, sendDailyScheduledWakeup } from "./briefing.js";
 
 /**
  * Intelligent deterministic fallback when AI APIs are unreachable or timing out.

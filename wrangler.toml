@@ -8,7 +8,7 @@ database_name = "cashflow_bot"
 database_id = "7419dbb1-5978-4d6d-b471-4546ea9bd0d6"
 
 [triggers]
-crons = ["* * * * *", "0 1 * * *"] # Every minute (for reminders) and daily at 01:00 UTC (8:00 AM ICT) for F.R.I.D.A.Y. Briefings & Weekly Reports
+crons = ["* * * * *", "50 0 * * *", "0 1 * * *"] # 1-min reminders, 7:50 AM ICT Wake-Up Call, and 8:00 AM ICT Good Morning Check-in
 
 [ai]
 binding = "AI"

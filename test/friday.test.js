@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateSpeechAudio, analyzeImageWithAi, buildCopilotPrompt, buildGeminiContents } from "../src/services/ai.js";
 import { sendTelegramVoice } from "../src/services/telegram.js";
-import { sendFridayTacticalBriefing } from "../src/modules/copilot/briefing.js";
+import { sendFridayTacticalBriefing, sendFridayWakeupCall, sendDailyScheduledWakeup } from "../src/modules/copilot/briefing.js";
 import { handleMessage, handleUndoLastTransaction } from "../src/handlers/message.js";
 import { buildSmartLocalFallback } from "../src/modules/copilot/handler.js";
 import {
@@ -218,6 +218,26 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
 
             payload = JSON.parse(fetchSpy.mock.calls[1][1].body);
             expect(payload.text).toContain("Morning Briefing: ENABLED");
+        });
+
+        it("sendFridayWakeupCall should send energetic 07:50 AM wake up call with voice note", async () => {
+            fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockEnv = { TELEGRAM_BOT_TOKEN: "mock_token" };
+            await sendFridayWakeupCall(mockEnv, 123456, "user_boss");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const textCall = fetchSpy.mock.calls.find(c => {
+                try {
+                    const body = JSON.parse(c[1]?.body);
+                    return body.text && body.text.includes("Wake Up, Boss");
+                } catch (e) {
+                    return false;
+                }
+            });
+            expect(textCall).toBeDefined();
         });
     });
 
