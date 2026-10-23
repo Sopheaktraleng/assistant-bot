@@ -46,17 +46,10 @@ import {
     sendScanHelp
 } from "../modules/finance/scanner.js";
 
-// Work
-import {
-    sendWorkHub,
-    sendStandupReport,
-    sendStandupCopyBlock,
-    handleAiPolishStandup,
-    handleAiPolishWorkReport
-} from "../modules/work/views.js";
+// Work & Tasks
 import {
     handleAddWorkLogCommand,
-    handleReportCommand
+    handleListTodayTasksCommand
 } from "../modules/work/commands.js";
 
 // Reminders
@@ -64,7 +57,6 @@ import {
     sendRemindersMenu
 } from "../modules/reminders/views.js";
 import {
-    handleLunchboxCommand,
     handleRemindCommand
 } from "../modules/reminders/commands.js";
 
@@ -491,46 +483,23 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
-    // 2. Work Log & Manager Reports Workspace
-    if (text === "/work" || text === "/worklog" || text === "/tasks" || text === "/task" || text === "/w") {
-        await sendWorkHub(env, chatId, userId, message.from);
-        return;
-    }
-
-    if (text === "/standup" || text.startsWith("/standup ") || text === "/su" || text.startsWith("/su ")) {
-        const parts = text.split(/\s+/);
-        const sub = (parts[1] || "").toLowerCase();
-        if (sub === "polish" || sub === "ai") {
-            await handleAiPolishStandup(env, chatId, userId, message.from);
-        } else if (sub === "copy") {
-            await sendStandupCopyBlock(env, chatId, userId, message.from);
-        } else {
-            await sendStandupReport(env, chatId, userId, message.from);
-        }
-        return;
-    }
-
-    if (text === "/polish") {
-        await handleAiPolishWorkReport(env, chatId, userId, "this_month", message.from);
+    // 2. Work & Tasks Workspace
+    if (text === "/tasks" || text === "/task" || text === "/work" || text === "/worklog" || text === "/w") {
+        await handleListTodayTasksCommand(env, chatId, userId);
         return;
     }
 
     if (text.startsWith("/done") || text.startsWith("/did") || text.startsWith("/log")) {
         const parts = text.split(/\s+/);
         if (parts.length === 1) {
-            await sendWorkHub(env, chatId, userId, message.from);
+            await handleListTodayTasksCommand(env, chatId, userId);
             return;
         }
         await handleAddWorkLogCommand(env, chatId, userId, text, message.from);
         return;
     }
 
-    if (text.startsWith("/report")) {
-        await handleReportCommand(env, chatId, userId, text, message.from);
-        return;
-    }
-
-    // 2. Reminders & Alarms Commands
+    // 3. Reminders & Alarms Commands
     if (text.startsWith("/remind") || text.startsWith("/alarm")) {
         await handleRemindCommand(env, chatId, userId, text);
         return;
@@ -538,11 +507,6 @@ export async function handleMessage(message, env, origin) {
 
     if (text === "/reminders" || text === "/reminder" || text === "/r") {
         await sendRemindersMenu(env, chatId, userId);
-        return;
-    }
-
-    if (text.startsWith("/lunchbox") || text === "/lb") {
-        await handleLunchboxCommand(env, chatId, userId, text);
         return;
     }
 
@@ -699,22 +663,7 @@ export async function handleMessage(message, env, origin) {
         }
 
         if (lower === "work" || lower === "tasks" || lower === "task") {
-            await sendWorkHub(env, chatId, userId, message.from);
-            return;
-        }
-
-        if (lower === "standup" || lower === "scrum" || lower === "daily sync" || lower === "sync") {
-            await sendStandupReport(env, chatId, userId, message.from);
-            return;
-        }
-
-        if (lower === "report") {
-            await handleReportCommand(env, chatId, userId, "/report", message.from);
-            return;
-        }
-
-        if (lower === "polish" || lower === "polish report") {
-            await handleAiPolishWorkReport(env, chatId, userId, "this_month", message.from);
+            await handleListTodayTasksCommand(env, chatId, userId);
             return;
         }
 
@@ -728,7 +677,7 @@ export async function handleMessage(message, env, origin) {
             return;
         }
 
-        if (lower === "reminder" || lower === "reminders" || lower === "alarm" || lower === "alarms" || lower === "lunchbox" || lower === "lunch") {
+        if (lower === "reminder" || lower === "reminders" || lower === "alarm" || lower === "alarms") {
             await sendRemindersMenu(env, chatId, userId);
             return;
         }
@@ -828,8 +777,8 @@ export async function handleMessage(message, env, origin) {
             `• Scan slip: Send any ABA/Bakong/KHQR payment screenshot!\n` +
             `• Remind anything: \`remind 17:30 Bring lunch box\` or \`remind in 30m Check oven\`\n` +
             `• Log work: \`done <task>\`\n` +
+            `• View tasks: \`/tasks\`\n` +
             `• Log spend: \`5 coffee\` or \`10000 lunch\`\n` +
-            `• Manager report: \`report\`\n` +
             `• Menu: /menu`,
             { parse_mode: "Markdown" }
         );

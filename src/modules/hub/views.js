@@ -58,8 +58,6 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         `_Hold 🎙️ to talk, use \`/speak\`, or select a module:_`
     ].join("\n");
 
-    const webAppUrl = `${origin}/dashboard?user_id=${userId}&username=${encodeURIComponent(cleanUsername)}`;
-
     await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
@@ -70,14 +68,13 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
                 ],
                 [
                     { text: "💳 Finance Hub", callback_data: "finance_hub" },
-                    { text: "💼 Work Journal", callback_data: "work_hub" }
+                    { text: "📋 Today's Tasks", callback_data: "tasks_today" }
                 ],
                 [
                     { text: "⏰ Reminders", callback_data: "reminders" },
-                    { text: "📱 Web Dashboard", web_app: { url: webAppUrl } }
+                    { text: "⚙️ Settings", callback_data: "settings" }
                 ],
                 [
-                    { text: "⚙️ Settings", callback_data: "settings" },
                     { text: "💡 Help & Guide", callback_data: "help" }
                 ]
             ]
@@ -144,11 +141,9 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         `• *Voice Note:* Hold 🎙️ and speak in English or Khmer (*អក្សរខ្មែរ*)`,
         `• *Receipt OCR:* Send ABA Bank, Bakong, KHQR, or receipt photos`,
         ``,
-        `💼 *Work Journal & Daily Standup*`,
-        `• \`/standup\` — Yesterday, Today & Blockers sync`,
-        `• \`/standup polish\` — AI-polished update for Slack / Teams`,
-        `• \`/report\` — Monthly manager accomplishment report`,
-        `• \`/work\` — Open Work Journal dashboard`,
+        `💼 *Work & Task Logging*`,
+        `• \`done <task>\` — Log completed task (e.g. \`done Fixed login issue\`)`,
+        `• \`/tasks\` — View today's completed accomplishments`,
         ``,
         `💳 *Finance & Cashflow*`,
         `• \`/today\` — Today's transactions & balance`,
@@ -172,14 +167,11 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
-                    { text: "⚡ Work Journal", callback_data: "work_hub" }
-                ],
-                [
                     { text: "💳 Finance Hub", callback_data: "finance_hub" },
-                    { text: "⏰ Reminders", callback_data: "reminders" }
+                    { text: "📋 Today's Tasks", callback_data: "tasks_today" }
                 ],
                 [
+                    { text: "⏰ Reminders", callback_data: "reminders" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]

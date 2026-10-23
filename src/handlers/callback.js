@@ -53,17 +53,8 @@ import {
     handleScanDiscard
 } from "../modules/finance/scanner.js";
 import {
-    sendWorkHub,
-    sendTodayWork,
-    sendWorkReport,
-    sendWorkReportFile,
-    sendWorkDeletePicker,
-    sendStandupReport,
-    sendStandupCopyBlock,
-    handleAiPolishStandup,
-    handleAiPolishWorkReport,
-    handleAiPolishWorkReportExport
-} from "../modules/work/views.js";
+    handleListTodayTasksCommand
+} from "../modules/work/commands.js";
 import {
     sendPromptAddReminder,
     sendRemindersMenu,
@@ -85,11 +76,6 @@ export async function handleCallback(callback, env, origin) {
 
     // Callbacks that show their own specific toast notification will invoke answerCallback with text
     const hasCustomToast = [
-        "work_standup_copy",
-        "work_standup_polish",
-        "work_report_polish_this",
-        "work_report_polish_last",
-        "work_report_polish_export_this",
         "remind_add_standup",
         "remind_add_lunchbox",
         "toggle_expense_reminder",
@@ -130,86 +116,9 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    // --- Work Log & Reports Callbacks ---
-    if (data === "work_hub") {
-        await sendWorkHub(env, chatId, userId, callback.from, messageId);
-        return;
-    }
-
-    // --- Retired Movie Recommender & Watchlist Callbacks ---
-    if (data === "movie_hub" || data === "watchlist" || data.startsWith("wl_")) {
-        await answerCallback(env, callback.id, { text: "Watchlist feature has been retired." });
-        await sendMainHub(env, chatId, userId, callback.from, origin, messageId);
-        return;
-    }
-
-    if (data === "work_today") {
-        await sendTodayWork(env, chatId, userId, callback.from, messageId);
-        return;
-    }
-
-    if (data === "work_week") {
-        await sendWorkReport(env, chatId, userId, "this_week", callback.from, messageId);
-        return;
-    }
-
-    if (data === "work_report_this") {
-        await sendWorkReport(env, chatId, userId, "this_month", callback.from, messageId);
-        return;
-    }
-
-    if (data === "work_report_last") {
-        await sendWorkReport(env, chatId, userId, "last_month", callback.from, messageId);
-        return;
-    }
-
-    if (data === "work_export_this") {
-        await sendWorkReportFile(env, chatId, userId, "this_month", callback.from);
-        return;
-    }
-
-    if (data === "work_export_last") {
-        await sendWorkReportFile(env, chatId, userId, "last_month", callback.from);
-        return;
-    }
-
-    if (data === "work_delete_menu") {
-        await sendWorkDeletePicker(env, chatId, userId, messageId);
-        return;
-    }
-
-    if (data === "work_standup") {
-        await sendStandupReport(env, chatId, userId, callback.from, messageId);
-        return;
-    }
-
-    if (data === "work_standup_copy") {
-        await sendStandupCopyBlock(env, chatId, userId, callback.from, callback.id);
-        return;
-    }
-
-    if (data === "work_standup_polish") {
-        await handleAiPolishStandup(env, chatId, userId, callback.from, messageId, callback.id);
-        return;
-    }
-
-    if (data === "work_report_polish_this") {
-        await handleAiPolishWorkReport(env, chatId, userId, "this_month", callback.from, messageId, callback.id);
-        return;
-    }
-
-    if (data === "work_report_polish_last") {
-        await handleAiPolishWorkReport(env, chatId, userId, "last_month", callback.from, messageId, callback.id);
-        return;
-    }
-
-    if (data === "work_report_polish_export_this") {
-        await handleAiPolishWorkReportExport(env, chatId, userId, "this_month", callback.from, callback.id);
-        return;
-    }
-
-    if (data === "work_report_polish_export_last") {
-        await handleAiPolishWorkReportExport(env, chatId, userId, "last_month", callback.from, callback.id);
+    // --- Work & Tasks Callbacks ---
+    if (data === "tasks_today" || data === "work_hub" || data === "work_today") {
+        await handleListTodayTasksCommand(env, chatId, userId, messageId);
         return;
     }
 
@@ -217,32 +126,20 @@ export async function handleCallback(callback, env, origin) {
         const id = parseInt(data.slice(9), 10);
         await env.DB.prepare("DELETE FROM work_logs WHERE id = ? AND user_id = ?").bind(id, userId).run();
         await answerCallback(env, callback.id, { text: "🗑️ Task deleted." });
-        await sendWorkHub(env, chatId, userId, callback.from, messageId);
+        await handleListTodayTasksCommand(env, chatId, userId, messageId);
         return;
     }
 
-    if (data === "work_log_prompt") {
-        await safeEditOrSendMessage(
-            env,
-            chatId,
-            messageId,
-            `⚡ *How to Log Work Tasks*\n` +
-            `────────────────────\n` +
-            `Whenever you finish a task, meeting, or bugfix, type:\n` +
-            `• \`/done Fixed customer checkout payment failure\`\n` +
-            `• \`/done Prepared Q3 API migration roadmap\`\n` +
-            `• \`/done Weekly team sprint planning meeting\`\n` +
-            `• \`/done [Bugfix] Fixed mobile crash on iOS 18\`\n\n` +
-            `_At month's end, type \`/report\` or tap **This Month's Report** to generate your manager accomplishment report!_`,
-            {
-                parse_mode: "Markdown",
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: "‹ Back to Work Log", callback_data: "work_hub" }]
-                    ]
-                }
-            }
-        );
+    if (data === "work_standup" || data === "work_standup_copy" || data === "work_standup_polish" || data.startsWith("work_report")) {
+        await answerCallback(env, callback.id, { text: "Scrum standups and reports removed." });
+        await handleListTodayTasksCommand(env, chatId, userId, messageId);
+        return;
+    }
+
+    // --- Retired Movie Recommender & Watchlist Callbacks ---
+    if (data === "movie_hub" || data === "watchlist" || data.startsWith("wl_")) {
+        await answerCallback(env, callback.id, { text: "Watchlist feature has been retired." });
+        await sendMainHub(env, chatId, userId, callback.from, origin, messageId);
         return;
     }
 

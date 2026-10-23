@@ -4,6 +4,7 @@ import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
 import { handleMessage } from "../src/handlers/message.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
+import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
 
 describe("Bot Improvements & Stability", () => {
     describe("AI Configuration", () => {
@@ -152,6 +153,79 @@ describe("Bot Improvements & Stability", () => {
 
             await handleMessage(helpMsg, mockEnv, "https://example.com");
             expect(fetchSpy).toHaveBeenCalled();
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Streamlined Task Logging (Zero Clutter)", () => {
+        it("should log task and respond with clean zero-button confirmation", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        run: vi.fn().mockResolvedValue({}),
+                        first: vi.fn().mockResolvedValue({ count: 5 }),
+                        all: vi.fn().mockResolvedValue({ results: [] })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            await handleAddWorkLogCommand(mockEnv, 123456, "user_1", "/done Fixed checkout timeout", { first_name: "Boss" });
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("✅ *Task Logged:* Fixed checkout timeout");
+            expect(payload.text).toContain("5 tasks");
+            // Zero button clutter!
+            expect(payload.reply_markup).toBeUndefined();
+
+            fetchSpy.mockRestore();
+        });
+
+        it("should render clean today's tasks list with handleListTodayTasksCommand", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockImplementation((query) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            run: vi.fn().mockResolvedValue({}),
+                            first: vi.fn().mockResolvedValue({ count: 12 }),
+                            all: vi.fn().mockResolvedValue({
+                                results: [
+                                    { id: 101, time: "09:30", content: "Fixed auth token expiration", category: "Bugfix" },
+                                    { id: 102, time: "14:00", content: "Architecture review sync", category: "Meeting" }
+                                ]
+                            })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            await handleListTodayTasksCommand(mockEnv, 123456, "user_1");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Today's Completed Tasks");
+            expect(payload.text).toContain("Fixed auth token expiration");
+            expect(payload.text).toContain("Architecture review sync");
+            expect(payload.text).toContain("12 tasks");
+
+            // Check buttons: Only Delete Last and Main Hub
+            const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
+            expect(buttonTexts).toContain("🗑️ Delete Last Task");
+            expect(buttonTexts).toContain("🏠 Main Hub");
+            expect(buttonTexts).not.toContain("Daily Standup");
+
             fetchSpy.mockRestore();
         });
     });

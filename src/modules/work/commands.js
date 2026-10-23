@@ -1,9 +1,12 @@
-import { today, currentTime, monthPrefix } from "../../utils/time.js";
+import { today, currentTime, monthPrefix, monthLabel } from "../../utils/time.js";
 import { capitalize, getWorkCategoryIcon } from "../../utils/format.js";
 import { ensureTables } from "../../db/schema.js";
-import { sendMessage } from "../../services/telegram.js";
-import { sendWorkReport, sendWorkReportFile, handleAiPolishWorkReport } from "./views.js";
+import { sendMessage, safeEditOrSendMessage } from "../../services/telegram.js";
 
+/**
+ * Clean, frictionless task logger.
+ * Responds with a minimal, zero-button confirmation.
+ */
 export async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
     await ensureTables(env.DB);
     const content = text.replace(/^\/\w+\s*/, "").trim();
@@ -63,60 +66,70 @@ export async function handleAddWorkLogCommand(env, chatId, userId, text, from) {
 
     const icon = getWorkCategoryIcon(category);
     const message = [
-        `✅ *Logged:* ${finalContent}`,
+        `✅ *Task Logged:* ${finalContent}`,
         `🏆 *${monthCount} tasks* this month (${icon} ${category})`
     ].join("\n");
 
+    // Clean, zero-button confirmation to eliminate chat clutter
     await sendMessage(env, chatId, message, {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "🗣️ Daily Standup", callback_data: "work_standup" },
-                    { text: "✨ AI Polish", callback_data: "work_report_polish_this" }
-                ],
-                [
-                    { text: "📋 Today's Work", callback_data: "work_today" },
-                    { text: "📊 Monthly Report", callback_data: "work_report_this" }
-                ],
-                [
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
-        }
+        parse_mode: "Markdown"
     });
 }
 
-export async function handleReportCommand(env, chatId, userId, text, from) {
-    const parts = text.split(/\s+/);
-    const arg = (parts[1] || "").toLowerCase();
+/**
+ * Clean viewer for today's completed tasks.
+ */
+export async function handleListTodayTasksCommand(env, chatId, userId, messageId = null) {
+    await ensureTables(env.DB);
+    const todayDate = today();
+    const monthStr = monthPrefix();
 
-    if (arg === "polish" || arg === "ai") {
-        const subArg = (parts[2] || "").toLowerCase();
-        const targetPeriod = (subArg === "last" || subArg === "prev" || subArg === "previous") ? "last_month" : (subArg === "week" || subArg === "7d") ? "this_week" : "this_month";
-        await handleAiPolishWorkReport(env, chatId, userId, targetPeriod, from);
-        return;
+    const [todayRows, monthRow] = await Promise.all([
+        env.DB.prepare(
+            "SELECT id, time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, todayDate).all(),
+        env.DB.prepare(
+            "SELECT COUNT(*) as count FROM work_logs WHERE user_id = ? AND date LIKE ?"
+        ).bind(userId, `${monthStr}%`).first()
+    ]);
+
+    const tasks = todayRows.results || [];
+    const monthCount = monthRow?.count || 0;
+
+    let taskList = "";
+    if (tasks.length === 0) {
+        taskList = "_No tasks logged today yet._\n\n_💡 Log anytime:_ `done <task description>`";
+    } else {
+        taskList = tasks.map((t, idx) => {
+            const icon = getWorkCategoryIcon(t.category);
+            return `${idx + 1}. \`${t.time}\` ${icon} ${t.content}`;
+        }).join("\n");
     }
 
-    if (arg === "last" || arg === "prev" || arg === "previous") {
-        await sendWorkReport(env, chatId, userId, "last_month", from);
-        return;
-    }
+    const text = [
+        `📋 *Today's Completed Tasks*`,
+        `🗓️ \`${todayDate}\``,
+        `────────────────────`,
+        taskList,
+        `────────────────────`,
+        `🏆 *${monthCount} tasks* logged this month (${monthLabel()})`
+    ].join("\n");
 
-    if (arg === "week" || arg === "7d") {
-        await sendWorkReport(env, chatId, userId, "this_week", from);
-        return;
+    const inline_keyboard = [];
+    if (tasks.length > 0) {
+        const lastTask = tasks[tasks.length - 1];
+        inline_keyboard.push([
+            { text: "🗑️ Delete Last Task", callback_data: `work_del:${lastTask.id}` }
+        ]);
     }
+    inline_keyboard.push([
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
 
-    if (arg === "export" || arg === "file" || arg === "txt") {
-        await sendWorkReportFile(env, chatId, userId, "this_month", from);
-        return;
-    }
-
-    if (arg.match(/^\d{4}-\d{2}$/)) {
-        await sendWorkReport(env, chatId, userId, arg, from);
-        return;
-    }
-
-    await sendWorkReport(env, chatId, userId, "this_month", from);
+    await safeEditOrSendMessage(env, chatId, messageId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard
+        }
+    });
 }
