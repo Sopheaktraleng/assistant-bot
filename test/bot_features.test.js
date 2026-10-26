@@ -6,6 +6,7 @@ import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/co
 import { parseCopilotResponse, buildCopilotPrompt, extractGroundingSources, getLiveRealtimeFallback, askGeminiWithGoogleSearch } from "../src/services/ai.js";
 import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
 import { handleMessage, handleRealTimeSearchCommand } from "../src/handlers/message.js";
+import worker from "../src/worker.js";
 import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
@@ -579,6 +580,83 @@ describe("Bot Improvements & Stability", () => {
             const payload = JSON.parse(sendMessageCall[1].body);
             expect(payload.text).toContain("Bitcoin is currently trading at");
             expect(payload.text).toContain("Binance Feed");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Webhook Security & Secret Verification", () => {
+        it("should reject webhook request if WEBHOOK_SECRET is set but header is missing", async () => {
+            const req = new Request("https://cashflow.workers.dev/webhook", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ update_id: 1 })
+            });
+
+            const env = {
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                WEBHOOK_SECRET: "super_secret_token"
+            };
+
+            const res = await worker.fetch(req, env, {});
+            expect(res.status).toBe(401);
+            const data = await res.json();
+            expect(data.error).toBe("Unauthorized");
+        });
+
+        it("should reject webhook request if header does not match WEBHOOK_SECRET", async () => {
+            const req = new Request("https://cashflow.workers.dev/webhook", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Telegram-Bot-Api-Secret-Token": "wrong_secret"
+                },
+                body: JSON.stringify({ update_id: 1 })
+            });
+
+            const env = {
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                WEBHOOK_SECRET: "super_secret_token"
+            };
+
+            const res = await worker.fetch(req, env, {});
+            expect(res.status).toBe(401);
+        });
+
+        it("should allow webhook request if header matches WEBHOOK_SECRET", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue(null),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const req = new Request("https://cashflow.workers.dev/webhook", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Telegram-Bot-Api-Secret-Token": "super_secret_token"
+                },
+                body: JSON.stringify({ update_id: 999999, message: { chat: { id: 123456 }, from: { id: 849550186 }, text: "/unknown" } })
+            });
+
+            const env = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                WEBHOOK_SECRET: "super_secret_token",
+                ALLOWED_USER_IDS: "849550186"
+            };
+
+            const res = await worker.fetch(req, env, {});
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.ok).toBe(true);
 
             fetchSpy.mockRestore();
         });

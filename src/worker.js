@@ -103,7 +103,7 @@ export default {
             if (env.WEBHOOK_SECRET) {
                 const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
                 const expectedSecret = env.WEBHOOK_SECRET.trim();
-                if (secret && !timingSafeEqual(secret, expectedSecret)) {
+                if (!secret || !timingSafeEqual(secret, expectedSecret)) {
                     console.warn("Unauthorized webhook request: secret token mismatch.");
                     return json({ ok: false, error: "Unauthorized" }, 401);
                 }
