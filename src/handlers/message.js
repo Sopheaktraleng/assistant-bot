@@ -1,5 +1,6 @@
 import { today, dateDaysAgo } from "../utils/time.js";
 import { formatAmount } from "../utils/format.js";
+import { isUserAuthorized } from "../config/constants.js";
 import { sendMessage, sendTelegramVoice } from "../services/telegram.js";
 import { generateSpeechAudio } from "../services/ai.js";
 import {
@@ -110,6 +111,19 @@ export async function handleMessage(message, env, origin) {
     const userId = String(message.from?.id || chatId);
     const chatType = message.chat?.type || "private";
     const isGroup = chatType === "group" || chatType === "supergroup";
+
+    // Enforce strict personal assistant access control
+    if (userId && !isUserAuthorized(userId, env)) {
+        if (!isGroup) {
+            await sendMessage(
+                env,
+                chatId,
+                `⛔ *Access Restricted*\n────────────────────\nThis assistant is private and configured for authorized personal use only.`,
+                { parse_mode: "Markdown" }
+            ).catch(() => {});
+        }
+        return;
+    }
 
     // 0. Smart Bank Slip & Receipt Scanner (Photo or Image Document)
     if (message.photo || (message.document && message.document.mime_type && message.document.mime_type.startsWith("image/"))) {

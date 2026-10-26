@@ -8,7 +8,8 @@ import { handleCallback } from "./handlers/callback.js";
 import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
 import { sendDailyScheduledWakeup, sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
-import { sendMessage } from "./services/telegram.js";
+import { sendMessage, answerCallback } from "./services/telegram.js";
+import { isUserAuthorized } from "./config/constants.js";
 
 /**
  * Safely processes Telegram updates with idempotency check against duplicate deliveries.
@@ -17,6 +18,34 @@ async function handleUpdateSafely(update, env, origin) {
     try {
         const isDuplicate = await wasUpdateProcessed(env.DB, update.update_id);
         if (isDuplicate) {
+            return;
+        }
+
+        // Authorization check: ensure only the owner/authorized users can use this assistant
+        const userId = String(
+            update.message?.from?.id ||
+            update.message?.chat?.id ||
+            update.callback_query?.from?.id ||
+            update.callback_query?.message?.chat?.id ||
+            ""
+        );
+
+        if (userId && !isUserAuthorized(userId, env)) {
+            console.warn(`Unauthorized access attempt by user ${userId}`);
+            const chatType = update.message?.chat?.type || "private";
+            if (update.message?.chat?.id && chatType === "private") {
+                await sendMessage(
+                    env,
+                    update.message.chat.id,
+                    `⛔ *Access Restricted*\n────────────────────\nThis assistant is private and configured for authorized personal use only.`,
+                    { parse_mode: "Markdown" }
+                ).catch(() => {});
+            } else if (update.callback_query?.id) {
+                await answerCallback(env, update.callback_query.id, {
+                    text: "⛔ Access denied: This assistant is private.",
+                    show_alert: true
+                }).catch(() => {});
+            }
             return;
         }
 

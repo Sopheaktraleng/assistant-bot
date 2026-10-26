@@ -1,5 +1,5 @@
 import { today, currentTime, dateDaysAgo } from "../../utils/time.js";
-import { TIME_ZONE, GEMINI_MODELS } from "../../config/constants.js";
+import { TIME_ZONE, GEMINI_MODELS, getAllowedUserIds, isUserAuthorized } from "../../config/constants.js";
 import { formatMoney } from "../../utils/format.js";
 import { buildAiUserContext, parseCopilotResponse, generateSpeechAudio, extractGeminiCandidateText } from "../../services/ai.js";
 import { sendMessage, sendTelegramVoice } from "../../services/telegram.js";
@@ -392,23 +392,38 @@ export async function sendDailyScheduledWakeup(env) {
             )`
         ).bind(sevenDaysAgo, sevenDaysAgo).all();
 
+        const candidateUserIds = new Set();
         if (results && results.length > 0) {
             for (const row of results) {
-                try {
-                    const isEnabled = await getUserBriefingMode(env.DB, row.user_id);
-                    if (isEnabled === "off") continue;
+                if (row.user_id) candidateUserIds.add(String(row.user_id));
+            }
+        }
+        const allowedIds = getAllowedUserIds(env);
+        if (allowedIds && allowedIds.length > 0) {
+            for (const id of allowedIds) {
+                candidateUserIds.add(String(id));
+            }
+        }
 
-                    // Atomic daily broadcast lock - ensures 100% idempotency (never sends twice)
-                    const canSend = await claimDailyBroadcast(env.DB, row.user_id, "wakeup", todayStr);
-                    if (!canSend) {
-                        console.log(`Wake-up call already sent today for user ${row.user_id}, skipping duplicate.`);
-                        continue;
-                    }
-
-                    await sendFridayWakeupCall(env, row.user_id, row.user_id);
-                } catch (err) {
-                    console.error(`Failed to send 7:50 AM wake up call to ${row.user_id}:`, err);
+        for (const userId of candidateUserIds) {
+            try {
+                if (!isUserAuthorized(userId, env)) {
+                    continue;
                 }
+
+                const isEnabled = await getUserBriefingMode(env.DB, userId);
+                if (isEnabled === "off") continue;
+
+                // Atomic daily broadcast lock - ensures 100% idempotency (never sends twice)
+                const canSend = await claimDailyBroadcast(env.DB, userId, "wakeup", todayStr);
+                if (!canSend) {
+                    console.log(`Wake-up call already sent today for user ${userId}, skipping duplicate.`);
+                    continue;
+                }
+
+                await sendFridayWakeupCall(env, userId, userId);
+            } catch (err) {
+                console.error(`Failed to send 7:50 AM wake up call to ${userId}:`, err);
             }
         }
     } catch (e) {
@@ -435,23 +450,38 @@ export async function sendDailyScheduledBriefings(env) {
             )`
         ).bind(sevenDaysAgo, sevenDaysAgo).all();
 
+        const candidateUserIds = new Set();
         if (results && results.length > 0) {
             for (const row of results) {
-                try {
-                    const isEnabled = await getUserBriefingMode(env.DB, row.user_id);
-                    if (isEnabled === "off") continue;
+                if (row.user_id) candidateUserIds.add(String(row.user_id));
+            }
+        }
+        const allowedIds = getAllowedUserIds(env);
+        if (allowedIds && allowedIds.length > 0) {
+            for (const id of allowedIds) {
+                candidateUserIds.add(String(id));
+            }
+        }
 
-                    // Atomic daily broadcast lock - ensures 100% idempotency (never sends twice)
-                    const canSend = await claimDailyBroadcast(env.DB, row.user_id, "briefing", todayStr);
-                    if (!canSend) {
-                        console.log(`Daily briefing already sent today for user ${row.user_id}, skipping duplicate.`);
-                        continue;
-                    }
-
-                    await sendFridayTacticalBriefing(env, row.user_id, row.user_id, { withVoice: true });
-                } catch (err) {
-                    console.error(`Failed to send daily briefing to ${row.user_id}:`, err);
+        for (const userId of candidateUserIds) {
+            try {
+                if (!isUserAuthorized(userId, env)) {
+                    continue;
                 }
+
+                const isEnabled = await getUserBriefingMode(env.DB, userId);
+                if (isEnabled === "off") continue;
+
+                // Atomic daily broadcast lock - ensures 100% idempotency (never sends twice)
+                const canSend = await claimDailyBroadcast(env.DB, userId, "briefing", todayStr);
+                if (!canSend) {
+                    console.log(`Daily briefing already sent today for user ${userId}, skipping duplicate.`);
+                    continue;
+                }
+
+                await sendFridayTacticalBriefing(env, userId, userId, { withVoice: true });
+            } catch (err) {
+                console.error(`Failed to send daily briefing to ${userId}:`, err);
             }
         }
     } catch (e) {

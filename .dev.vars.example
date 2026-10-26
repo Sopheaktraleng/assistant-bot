@@ -1,3 +1,5 @@
 TELEGRAM_BOT_TOKEN=123456789:replace-with-your-token
 WEBHOOK_SECRET=replace-with-a-random-secret
 GEMINI_API_KEY=replace-with-your-google-ai-studio-gemini-key
+ALLOWED_USER_IDS=your_telegram_user_id_here
+

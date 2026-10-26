@@ -2,6 +2,9 @@ name = "cashflow-bot"
 main = "src/worker.js"
 compatibility_date = "2026-06-17"
 
+[vars]
+ALLOWED_USER_IDS = "849550186"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cashflow_bot"

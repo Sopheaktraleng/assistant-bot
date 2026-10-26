@@ -30,3 +30,36 @@ export const QUICK_INCOME_CATS = [
     { name: "Bonus", icon: "💰" },
     { name: "Other", icon: "✨" }
 ];
+
+// Authorized Telegram User IDs (Personal assistant mode: owner only)
+export const DEFAULT_ALLOWED_USERS = ["849550186"];
+
+/**
+ * Resolves the list of authorized Telegram user IDs.
+ * Checks env.ALLOWED_USER_IDS or env.OWNER_TELEGRAM_ID / env.OWNER_ID,
+ * and falls back to DEFAULT_ALLOWED_USERS in production.
+ */
+export function getAllowedUserIds(env = {}) {
+    const raw = env?.ALLOWED_USER_IDS || env?.OWNER_TELEGRAM_ID || env?.OWNER_ID;
+    if (typeof raw === "string" && raw.trim()) {
+        return raw.split(",").map(id => id.trim()).filter(Boolean);
+    }
+    if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map(String).map(s => s.trim()).filter(Boolean);
+    }
+    // In automated test environments without explicit ALLOWED_USER_IDS, permit mock users unless specified
+    if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
+        return null;
+    }
+    return DEFAULT_ALLOWED_USERS;
+}
+
+/**
+ * Checks whether a given Telegram user ID is authorized to interact with the bot.
+ */
+export function isUserAuthorized(userId, env = {}) {
+    if (!userId) return false;
+    const allowed = getAllowedUserIds(env);
+    if (!allowed) return true; // unrestricted test mode
+    return allowed.includes(String(userId).trim());
+}

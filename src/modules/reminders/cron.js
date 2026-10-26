@@ -1,4 +1,4 @@
-import { TIME_ZONE } from "../../config/constants.js";
+import { TIME_ZONE, isUserAuthorized } from "../../config/constants.js";
 import { today, getPreviousWorkdayDate } from "../../utils/time.js";
 import { getWorkCategoryIcon } from "../../utils/format.js";
 import { ensureTables } from "../../db/schema.js";
@@ -34,6 +34,10 @@ export async function processDueReminders(env) {
     if (!results || results.length === 0) return;
 
     for (const r of results) {
+        if (!isUserAuthorized(r.user_id, env)) {
+            continue;
+        }
+
         if (r.frequency === "weekdays" && !isWeekday) {
             continue;
         }

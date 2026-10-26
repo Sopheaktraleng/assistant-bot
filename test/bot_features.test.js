@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { GEMINI_MODELS } from "../src/config/constants.js";
+import { GEMINI_MODELS, isUserAuthorized, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
 import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
 import { handleMessage } from "../src/handlers/message.js";
+import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
@@ -225,6 +226,117 @@ describe("Bot Improvements & Stability", () => {
             expect(buttonTexts).toContain("🗑️ Delete Last Task");
             expect(buttonTexts).toContain("🏠 Main Hub");
             expect(buttonTexts).not.toContain("Daily Standup");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Personal Assistant Security & Access Control", () => {
+        it("should correctly resolve allowed user IDs from environment or default", () => {
+            expect(getAllowedUserIds({ ALLOWED_USER_IDS: "12345, 67890" })).toEqual(["12345", "67890"]);
+            expect(getAllowedUserIds({ OWNER_TELEGRAM_ID: "849550186" })).toEqual(["849550186"]);
+            expect(DEFAULT_ALLOWED_USERS).toContain("849550186");
+        });
+
+        it("isUserAuthorized should allow whitelisted users and reject others", () => {
+            const env = { ALLOWED_USER_IDS: "849550186, 111222" };
+            expect(isUserAuthorized("849550186", env)).toBe(true);
+            expect(isUserAuthorized(849550186, env)).toBe(true);
+            expect(isUserAuthorized("111222", env)).toBe(true);
+            expect(isUserAuthorized("8250070483", env)).toBe(false);
+            expect(isUserAuthorized("unknown_stranger", env)).toBe(false);
+            expect(isUserAuthorized(null, env)).toBe(false);
+        });
+
+        it("handleMessage should reject unauthorized messages with Access Restricted notice", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockEnv = {
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186"
+            };
+
+            const unauthorizedMsg = {
+                chat: { id: 8250070483, type: "private" },
+                from: { id: 8250070483 },
+                text: "Hello, good morning!"
+            };
+
+            await handleMessage(unauthorizedMsg, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Access Restricted");
+            expect(payload.text).toContain("private");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("handleCallback should reject unauthorized button interactions with alert toast", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockEnv = {
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186"
+            };
+
+            const unauthorizedCallback = {
+                id: "cb_unauth_123",
+                from: { id: 999999999 },
+                message: { chat: { id: 999999999 }, message_id: 42 },
+                data: "hub"
+            };
+
+            await handleCallback(unauthorizedCallback, mockEnv, "https://example.com");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const calledUrl = fetchSpy.mock.calls[0][0];
+            expect(calledUrl).toContain("answerCallbackQuery");
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Access denied");
+            expect(payload.show_alert).toBe(true);
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendDailyScheduledWakeup should never dispatch to unauthorized users", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            // DB contains an unauthorized user
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        all: vi.fn().mockResolvedValue({
+                            results: [{ user_id: "unauthorized_user_8250070483" }]
+                        }),
+                        first: vi.fn().mockResolvedValue({ briefing_mode: "on" }),
+                        run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                    })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186" // Only owner allowed
+            };
+
+            const { sendDailyScheduledWakeup } = await import("../src/modules/copilot/briefing.js");
+            await sendDailyScheduledWakeup(mockEnv);
+
+            // The unauthorized user must have been skipped
+            const telegramCalls = fetchSpy.mock.calls.filter(call => {
+                const url = typeof call[0] === "string" ? call[0] : "";
+                return url.includes("sendMessage") || url.includes("sendVoice");
+            });
+            expect(telegramCalls.length).toBe(0);
 
             fetchSpy.mockRestore();
         });

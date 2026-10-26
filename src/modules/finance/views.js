@@ -1,4 +1,4 @@
-import { EXCHANGE_RATE, QUICK_EXPENSE_CATS, QUICK_INCOME_CATS } from "../../config/constants.js";
+import { EXCHANGE_RATE, QUICK_EXPENSE_CATS, QUICK_INCOME_CATS, isUserAuthorized } from "../../config/constants.js";
 import { today, monthLabel, dateDaysAgo } from "../../utils/time.js";
 import { formatAmount, formatMoney, capitalize, getCategoryIcon, generateTextProgressBar } from "../../utils/format.js";
 import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, claimDailyBroadcast } from "../../db/queries.js";
@@ -651,6 +651,8 @@ export async function sendWeeklyScheduledReports(env) {
     if (results && results.length > 0) {
         for (const row of results) {
             try {
+                if (!isUserAuthorized(row.user_id, env)) continue;
+
                 const canSend = await claimDailyBroadcast(env.DB, row.user_id, "weekly_report", todayStr);
                 if (!canSend) continue;
 

@@ -1,4 +1,4 @@
-import { EXCHANGE_RATE } from "../config/constants.js";
+import { EXCHANGE_RATE, isUserAuthorized } from "../config/constants.js";
 import { today, currentTime, monthPrefix, monthLabel, dateDaysAgo, getPreviousWorkdayDate } from "../utils/time.js";
 import { capitalize, json } from "../utils/format.js";
 import { validateTelegramInitData } from "../utils/crypto.js";
@@ -18,6 +18,9 @@ export async function authenticateApiRequest(request, env) {
         if (requestedUserId && requestedUserId !== validated.userId) {
             return { error: "Forbidden: user_id does not match Telegram session", status: 403 };
         }
+        if (!isUserAuthorized(validated.userId, env)) {
+            return { error: "Forbidden: User not authorized", status: 403 };
+        }
         return { userId: validated.userId, user: validated.user };
     }
 
@@ -27,6 +30,9 @@ export async function authenticateApiRequest(request, env) {
     if (isLocalhost || !env.TELEGRAM_BOT_TOKEN) {
         if (!requestedUserId) {
             return { error: "Missing user_id parameter", status: 400 };
+        }
+        if (!isUserAuthorized(requestedUserId, env)) {
+            return { error: "Forbidden: User not authorized", status: 403 };
         }
         return { userId: requestedUserId, user: { id: requestedUserId } };
     }

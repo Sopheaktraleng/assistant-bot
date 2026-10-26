@@ -1,4 +1,4 @@
-import { TIME_ZONE, EXCHANGE_RATE } from "../config/constants.js";
+import { TIME_ZONE, EXCHANGE_RATE, isUserAuthorized } from "../config/constants.js";
 import { today, currentTime } from "../utils/time.js";
 import { formatMoney } from "../utils/format.js";
 import { ensureTables } from "../db/schema.js";
@@ -73,6 +73,15 @@ export async function handleCallback(callback, env, origin) {
     const chatId = callback.message?.chat?.id;
     const userId = String(callback.from?.id || chatId);
     const messageId = callback.message?.message_id;
+
+    // Enforce strict personal assistant access control on interactive callbacks
+    if (userId && !isUserAuthorized(userId, env)) {
+        await answerCallback(env, callback.id, {
+            text: "⛔ Access denied: This assistant is private.",
+            show_alert: true
+        }).catch(() => {});
+        return;
+    }
 
     // Callbacks that show their own specific toast notification will invoke answerCallback with text
     const hasCustomToast = [
