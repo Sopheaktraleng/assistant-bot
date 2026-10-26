@@ -88,6 +88,14 @@ const TABLE_SCHEMAS = [
         category TEXT NOT NULL DEFAULT 'preference',
         fact TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS daily_broadcast_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        date TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, type, date)
     );`
 ];
 
@@ -108,6 +116,16 @@ export async function ensureTables(db) {
         }
         try {
             await db.prepare("ALTER TABLE user_settings ADD COLUMN briefing_mode TEXT DEFAULT 'on'").run();
+        } catch (e) {}
+        try {
+            await db.prepare(`CREATE TABLE IF NOT EXISTS daily_broadcast_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, type, date)
+            )`).run();
         } catch (e) {}
         tablesEnsured = true;
     } catch (e) {

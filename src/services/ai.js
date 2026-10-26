@@ -4,6 +4,13 @@ import { cleanMd, normalizeCategory } from "../utils/format.js";
 import { arrayBufferToBase64 } from "../utils/crypto.js";
 import { getDisplayCurrency, getFinancialSummary, getCategoryRows, getRecentChatHistory, getUserMemories } from "../db/queries.js";
 
+export function extractGeminiCandidateText(data) {
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts) || parts.length === 0) return null;
+    const textPart = parts.find(p => p.text && !p.thought) || parts.find(p => p.text) || parts[parts.length - 1];
+    return textPart?.text || null;
+}
+
 export function parseExtractedJson(text) {
     if (!text) return null;
     try {
@@ -66,7 +73,7 @@ export async function parseReceiptWithGemini(env, base64Data, mimeType = "image/
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey) return null;
 
-    const candidateModels = GEMINI_MODELS;
+    const candidateModels = [env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
 
     const prompt = `You are an expert OCR financial receipt and bank slip analyzer for Cambodia and international transactions.
 Examine this image carefully. Common types include:
@@ -128,7 +135,7 @@ Return ONLY pure JSON.`;
             }
 
             const resJson = await response.json();
-            const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            const rawText = extractGeminiCandidateText(resJson);
             if (rawText) {
                 const parsed = parseExtractedJson(rawText);
                 if (parsed) return parsed;
@@ -336,31 +343,38 @@ export function buildCopilotPrompt(userQuery, context) {
         memoryBlock = `\n=== WHAT FRIDAY KNOWS ABOUT BOSS (Long-term Personal Memory) ===\n${memLines}\n=================================================================\n`;
     }
 
-    return `You are F.R.I.D.A.Y., the sharp, witty, highly competent, and grounded real-world personal AI assistant (addressing the user respectfully as 'Boss').
+    return `You are F.R.I.D.A.Y., Boss's exceptionally smart, loyal, high-EQ personal AI executive assistant.
 You operate in the real world on Telegram in Cambodia.
 Exchange rate: 1 USD = 4,000 KHR.
 Today's Date: ${context?.currentDate || today()}, Time: ${context?.currentTime || currentTime()} (${context?.timezone || TIME_ZONE}).
 Preferred Display Currency: ${context?.displayCurrency || "USD"}.
 Session Entropy Seed: ${entropySeed}.
 ${memoryBlock}
-=== ONBOARD LIVE TELEMETRY (Reference ONLY when Boss asks about money, work, or schedule) ===
+=== ONBOARD LIVE TELEMETRY (Reference ONLY when Boss explicitly asks about money, expenses, work, or schedule) ===
 ${JSON.stringify(context, null, 2)}
-============================================================================================
+===================================================================================================================
 
 Boss message: "${userQuery}"
 
-Core Operating Directives:
-1. Real-World Grounding & No Fictional Tropes (CRITICAL):
-   - Ground all advice, tone, and humor strictly in the REAL WORLD (everyday living expenses, realistic personal finance, programming, work habits, and practical life).
-   - STRICTLY AVOID referencing Marvel, Iron Man, Tony Stark, Ultron, arc reactors, superhero suits, or comic/movie lore. Speak as an elite real-world executive chief of staff.
-2. Intent Awareness & Conversational Intelligence:
-   - Listen carefully to what Boss is actually asking.
-   - If Boss asks for casual conversation, jokes, chit-chat, ideas, questions, or says "say anything to me": RESPOND WITH WIT, CREATIVITY, AND CHARM! Do NOT dump an unprompted financial report or status update.
-   - If Boss asks to tell a joke, tell a fresh, clever, hilarious joke about real life, office life, tech, software engineering, or everyday human quirks. Never repeat the same joke!
-   - ONLY recite financial balances or budget figures if Boss explicitly asks about money, expenses, budget, or asks for a briefing.
-3. Financial Defense & System Execution:
-   - When asked "Can I afford X?", calculate exact remaining discretionary funds and runway from telemetry. Give direct, realistic, grounded financial advice.
-   - When asked to record an expense, income, work task, reminder, or configure system settings, return the appropriate "action" or "actions" array.
+Core Operating Directives (CRITICAL):
+1. Human Communication Style (TOP PRIORITY):
+   - Answer directly and naturally like a smart, high-EQ human assistant talking to Boss.
+   - ANSWER ONLY WHAT BOSS ASKS — GET STRAIGHT TO THE POINT:
+     * Never over-explain, lecture, or dump unprompted information.
+     * Do NOT recite balances, budgets, expenses, tasks, or system status unless Boss explicitly asked for them.
+     * When asked a direct question, answer right on point with no fluff or filler.
+   - LENGTH & FORMATTING:
+     * Keep answers SHORT, CLEAN, PROFESSIONAL, and EASY TO UNDERSTAND (1 to 3 natural sentences for standard questions).
+     * Avoid walls of text. Do NOT use bullet points unless Boss explicitly asks for a list, breakdown, or multi-step plan.
+     * Use light, clean markdown (*bold* for key terms). No decorative ascii dividers or robotic status headers.
+   - Real-World Grounding & Personality:
+     * Ground all advice and conversation strictly in the REAL WORLD. Speak with natural warmth, intelligence, and professional loyalty, addressing the user as 'Boss'.
+     * STRICTLY AVOID referencing Marvel, Iron Man, Tony Stark, Ultron, arc reactors, superhero suits, or comic/movie lore. Speak as an elite real-world executive chief of staff.
+   - Casual Chit-Chat:
+     * If Boss says "hi", "how are you", "say anything", tells a joke, or makes small talk: respond with wit, warmth, and charm in 1-2 friendly human sentences. Never dump an unprompted status report.
+2. Financial Defense & System Execution:
+   - When asked "Can I afford X?", calculate exact remaining discretionary funds and runway from telemetry. Give direct, realistic, grounded financial advice in 1-2 concise sentences.
+   - When asked to record an expense, income, work task, reminder, or configure system settings, return the appropriate "action" or "actions" array, and confirm in ONE short sentence.
    - CORRECTION OF MISTAKES (CRITICAL): If Boss says "X was income not expense", "that was income", "40$ is my income not my expense", or points out an error in the ledger, YOU MUST FIX IT! Return an "actions" array:
      [
        { "type": "delete_last_transaction", "filter": "expense" },
@@ -373,16 +387,16 @@ Core Operating Directives:
    - BUDGET MANAGEMENT: When Boss says "set my monthly budget to 300$", "my budget is $500", return:
      { "type": "set_budget", "amount": 300, "currency": "USD" | "KHR" }
    - CLEARING DATA: When Boss says "clear all transactions", "wipe ledger", return { "type": "clear_all_transactions" }. When "clear today", return { "type": "clear_today_expenses" }.
-4. Long-Term Memory & Adaptation:
-   - Use what you know about Boss to personalize answers naturally (e.g. coffee preference, work habits, rules) without regurgitating every memory unprompted.
+3. Long-Term Memory & Adaptation:
+   - Use what you know about Boss to personalize answers naturally without regurgitating memories unprompted.
    - When Boss shares personal facts, rules, preferences, or explicitly says "remember that...", "keep in mind that...", return an "add_memory" action so you remember it permanently.
-5. Language:
-   - If Boss speaks in Khmer (អក្សរខ្មែរ), reply fluently in Khmer. If in English, reply in English.
-6. Output Format:
+4. Language:
+   - If Boss speaks in Khmer (អក្សរខ្មែរ / ភាសាខ្មែរ), reply fluently, concisely, and naturally in Khmer. If in English, reply in English.
+5. Output Format:
    Return ONLY valid JSON matching this schema:
 {
-  "reply": "Visually crisp, beautifully structured markdown message for Boss's screen (use *bold*, clean bullet points, emojis where appropriate).",
-  "voice_summary": "Crisp 1-2 sentence spoken update written specifically for human ears. Use natural conversational cadence, NO asterisks, NO emojis, NO markdown syntax, NO bullet points.",
+  "reply": "Short, clean, professional, straight-to-the-point response answering only what Boss asked (1-3 sentences).",
+  "voice_summary": "1 crisp, conversational spoken sentence for human ears. Natural cadence, NO asterisks, NO emojis, NO markdown syntax, NO bullet points.",
   "action": null | { ... },
   "actions": null | [
     {
@@ -502,8 +516,11 @@ export async function askAiCopilot(env, userQuery, context) {
     const prompt = buildCopilotPrompt(userQuery, context);
 
     if (env.GEMINI_API_KEY) {
-        // Prioritize healthy models that return 200 (excluding 503 preview)
-        const candidateModels = GEMINI_MODELS.filter(m => m !== "gemini-3-flash-preview");
+        // Prioritize custom or top-tier models (excluding unstable preview)
+        const candidateModels = [
+            env?.GEMINI_MODEL,
+            ...GEMINI_MODELS
+        ].filter(Boolean).filter(m => m !== "gemini-3-flash-preview");
 
         // Dynamic temperature: higher for creative/casual queries, balanced for general copilot questions
         const isCreativeQuery = /\b(joke|funny|laugh|story|say anything|chat|talk to me|how are you|who are you|bored|poem|quote|opinion)\b/i.test(userQuery);
@@ -556,7 +573,7 @@ export async function askAiCopilot(env, userQuery, context) {
                 }
 
                 const resJson = await resp.json();
-                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                const rawText = extractGeminiCandidateText(resJson);
                 if (rawText) {
                     const parsed = parseCopilotResponse(rawText);
                     if (parsed) return parsed;
@@ -602,7 +619,7 @@ export async function askAiCopilot(env, userQuery, context) {
 }
 
 export async function callAiTextModel(env, systemPrompt, userPrompt, temperature = 0.3) {
-    const candidateModels = GEMINI_MODELS;
+    const candidateModels = [env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
 
     if (env.GEMINI_API_KEY) {
         const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
@@ -634,7 +651,7 @@ export async function callAiTextModel(env, systemPrompt, userPrompt, temperature
                 }
 
                 const resJson = await resp.json();
-                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                const rawText = extractGeminiCandidateText(resJson);
                 if (rawText && rawText.trim()) {
                     return rawText.trim();
                 }
@@ -918,7 +935,7 @@ Analyze this image/screenshot carefully:
 User prompt: "${userPrompt}"`;
 
     if (env.GEMINI_API_KEY) {
-        const candidateModels = GEMINI_MODELS;
+        const candidateModels = [env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
         const requestBody = JSON.stringify({
             contents: [
                 {
@@ -953,7 +970,7 @@ User prompt: "${userPrompt}"`;
                 }
 
                 const resJson = await response.json();
-                const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                const rawText = extractGeminiCandidateText(resJson);
                 if (rawText && rawText.trim().length > 0) {
                     return rawText.trim();
                 }

@@ -115,14 +115,22 @@ export default {
 
         try {
             const now = new Date();
+            const utcHours = now.getUTCHours();
+            const utcMinutes = now.getUTCMinutes();
+
+            // Cloudflare cron dispatch checks
+            const isDedicatedWakeup = event.cron === "50 0 * * *";
+            const isDedicatedBriefing = event.cron === "0 1 * * *";
+            const isGeneralMinuteCron = event.cron === "* * * * *" || !event.cron;
+
             // 1. Daily at 00:50 UTC (7:50 AM ICT) - Morning Wake-Up Call
-            const isWakeupSlot = event.cron === "50 0 * * *" || (now.getUTCHours() === 0 && now.getUTCMinutes() === 50);
+            const isWakeupSlot = isDedicatedWakeup || (isGeneralMinuteCron && utcHours === 0 && utcMinutes === 50);
             if (isWakeupSlot) {
                 await sendDailyScheduledWakeup(env);
             }
 
             // 2. Daily at 01:00 UTC (8:00 AM ICT) - Good Morning Check-In & Coffee
-            const isBriefingSlot = event.cron === "0 1 * * *" || (now.getUTCHours() === 1 && now.getUTCMinutes() === 0);
+            const isBriefingSlot = isDedicatedBriefing || (isGeneralMinuteCron && utcHours === 1 && utcMinutes === 0);
             if (isBriefingSlot) {
                 await sendDailyScheduledBriefings(env);
 

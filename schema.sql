@@ -123,3 +123,15 @@ CREATE TABLE IF NOT EXISTS user_memories (
 CREATE INDEX IF NOT EXISTS idx_user_memories_user
 ON user_memories (user_id);
 
+CREATE TABLE IF NOT EXISTS daily_broadcast_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL, -- 'wakeup', 'briefing', 'weekly_report'
+    date TEXT NOT NULL, -- YYYY-MM-DD
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, type, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_logs_user_date
+ON daily_broadcast_logs (user_id, type, date);
+

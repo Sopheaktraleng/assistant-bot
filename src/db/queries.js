@@ -435,3 +435,44 @@ export async function clearUserMemories(db, userId) {
         return false;
     }
 }
+
+/**
+ * Atomic deduplication lock for daily scheduled broadcasts (wake-up call, briefing, reports).
+ * Guarantees that even if Cloudflare or concurrent cron executions fire simultaneously,
+ * only one execution claims the slot and sends the alert to the user.
+ * Returns true if claimed successfully, false if already sent today.
+ */
+export async function claimDailyBroadcast(db, userId, type, date) {
+    if (!db) return true;
+    try {
+        const uId = String(userId);
+        const t = String(type);
+        const d = String(date);
+
+        // 1. Quick check if already dispatched today
+        const existing = await db
+            .prepare("SELECT 1 FROM daily_broadcast_logs WHERE user_id = ? AND type = ? AND date = ?")
+            .bind(uId, t, d)
+            .first();
+
+        if (existing) {
+            return false;
+        }
+
+        // 2. Atomic insert to block concurrent worker race conditions
+        const result = await db
+            .prepare("INSERT OR IGNORE INTO daily_broadcast_logs (user_id, type, date) VALUES (?, ?, ?)")
+            .bind(uId, t, d)
+            .run();
+
+        const changes = result?.meta?.changes ?? result?.changes;
+        if (typeof changes === "number" && changes === 0) {
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.warn("claimDailyBroadcast warning:", error.message);
+        return true;
+    }
+}

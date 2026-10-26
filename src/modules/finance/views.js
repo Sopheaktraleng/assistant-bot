@@ -1,7 +1,7 @@
 import { EXCHANGE_RATE, QUICK_EXPENSE_CATS, QUICK_INCOME_CATS } from "../../config/constants.js";
 import { today, monthLabel, dateDaysAgo } from "../../utils/time.js";
 import { formatAmount, formatMoney, capitalize, getCategoryIcon, generateTextProgressBar } from "../../utils/format.js";
-import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText } from "../../db/queries.js";
+import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, claimDailyBroadcast } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage } from "../../services/telegram.js";
 
@@ -637,6 +637,8 @@ export async function sendWeeklyReportForUser(env, chatId, userId, startDate, en
 }
 
 export async function sendWeeklyScheduledReports(env) {
+    if (env.DB) await ensureTables(env.DB);
+    const todayStr = today();
     const sevenDaysAgo = dateDaysAgo(7);
     const oneDayAgo = dateDaysAgo(1);
 
@@ -649,6 +651,9 @@ export async function sendWeeklyScheduledReports(env) {
     if (results && results.length > 0) {
         for (const row of results) {
             try {
+                const canSend = await claimDailyBroadcast(env.DB, row.user_id, "weekly_report", todayStr);
+                if (!canSend) continue;
+
                 await sendWeeklyReportForUser(
                     env,
                     row.user_id,

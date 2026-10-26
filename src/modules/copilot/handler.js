@@ -200,21 +200,30 @@ export function buildSmartLocalFallback(query, context) {
         };
     }
 
-    // 9. Default Telemetry Briefing
+    // 9. Greetings & Casual chit-chat
+    if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening)\b/i.test(q)) {
+        return {
+            reply: `Hello Boss! I'm here and ready to help. What do you need?`,
+            voice_summary: `Hello Boss, I am here and ready to help.`
+        };
+    }
+    if (q.includes("how are you") || q.includes("how's it going") || q.includes("how you doing")) {
+        return {
+            reply: `Running smoothly and ready for action, Boss! How can I assist you today?`,
+            voice_summary: `Running smoothly and ready for action, Boss. How can I help you today?`
+        };
+    }
+    if (q.includes("who are you") || q.includes("what are you") || q.includes("introduce yourself")) {
+        return {
+            reply: `I'm F.R.I.D.A.Y., your personal assistant for managing cashflow, work logs, and daily reminders, Boss.`,
+            voice_summary: `I am Friday, your personal assistant, Boss.`
+        };
+    }
+
+    // 10. Clean Default Response
     return {
-        reply: [
-            `🛡️ *F.R.I.D.A.Y. • Local Telemetry Mode*`,
-            `────────────────────`,
-            `AI satellite link is temporarily unavailable, Boss. Displaying onboard telemetry:`,
-            ``,
-            `● *Net Balance:*  \`${netSign}${symbol}${Math.abs(netBal)}${suffix}\``,
-            `● *Today's Burn:* \`${symbol}${todayBurn}${suffix}\``,
-            `● *Logged Tasks:* \`${tasks.length} tasks today\``,
-            `● *Active Alerts:* \`${rems.length} scheduled\``,
-            `────────────────────`,
-            `_All ledgers and settings are 100% intact._`
-        ].join("\n"),
-        voice_summary: `AI satellite link delayed, Boss. Local telemetry shows net balance is ${netSign} ${Math.abs(netBal)} dollars. All local systems operational.`
+        reply: `I'm running in offline mode right now, Boss, but your ledger is safe. You can ask about your spending, log tasks, or check your balance anytime.`,
+        voice_summary: `I am currently in offline mode, Boss, but standing by for your ledger and task updates.`
     };
 }
 

@@ -8,11 +8,11 @@ import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/mod
 
 describe("Bot Improvements & Stability", () => {
     describe("AI Configuration", () => {
-        it("should have valid, active Gemini production models ordered by speed", () => {
-            expect(GEMINI_MODELS).toContain("gemini-3.5-flash-lite");
-            expect(GEMINI_MODELS).toContain("gemini-3-flash-preview");
+        it("should have higher intelligence Gemini production models ordered by capability and reliability", () => {
             expect(GEMINI_MODELS).toContain("gemini-3.5-flash");
-            expect(GEMINI_MODELS[0]).toBe("gemini-3.5-flash-lite");
+            expect(GEMINI_MODELS).toContain("gemini-3.6-flash");
+            expect(GEMINI_MODELS).toContain("gemini-3.5-flash-lite");
+            expect(GEMINI_MODELS[0]).toBe("gemini-3.5-flash");
         });
     });
 
