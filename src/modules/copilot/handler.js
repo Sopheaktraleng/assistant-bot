@@ -285,10 +285,16 @@ export function buildSmartLocalFallback(query, context) {
     }
 
     // 9. Greetings & Casual chit-chat
-    if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening)\b/i.test(q)) {
+    if (/^(hi|hello|hey|yo|sup|hiya|howdy|hell|good morning|good afternoon|good evening|សួស្តី|ជំរាបសួរ)\b/i.test(q)) {
+        const hour = (new Date().getUTCHours() + 7) % 24; // ICT (UTC+7)
+        let greeting = "Good day";
+        if (hour >= 5 && hour < 12) greeting = "Good morning";
+        else if (hour >= 12 && hour < 18) greeting = "Good afternoon";
+        else greeting = "Good evening";
+
         return {
-            reply: `Hello Boss! I'm here and ready to help. What do you need?`,
-            voice_summary: `Hello Boss, I am here and ready to help.`
+            reply: `${greeting}, Boss! I'm right here and everything is running smoothly. How are things with you today?`,
+            voice_summary: `${greeting} Boss! I'm right here. How can I help you today?`
         };
     }
     if (q.includes("how are you") || q.includes("how's it going") || q.includes("how you doing")) {

@@ -780,8 +780,22 @@ export async function handleMessage(message, env, origin) {
             return;
         }
 
-        // 1. Natural Navigation Keywords
-        if (lower === "menu" || lower === "hub" || lower === "start" || lower === "hi" || lower === "hello" || lower === "hey") {
+        // 0.2 Conversational Greetings, Questions & Small Talk (Direct to AI Copilot)
+        // e.g. "hi", "hello", "hey", "how are you", "can I afford $50", "40$ is income not expense"
+        if (isConversationalOrCorrection(text)) {
+            if (env.GEMINI_API_KEY || env.AI) {
+                let queryText = text;
+                if (/^(?:hey\s+)?friday[,:]?\s+/i.test(queryText)) {
+                    queryText = queryText.replace(/^(?:hey\s+)?friday[,:]?\s+/i, "");
+                }
+                const wantsVoice = message.isFromVoice || /\b(speak to me|talk to me|in voice|by voice|voice note|say it)\b/i.test(text);
+                await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, wantsVoice);
+                return;
+            }
+        }
+
+        // 1. Natural Navigation Keywords (Explicit menu/dashboard requests only)
+        if (lower === "menu" || lower === "hub" || lower === "start" || lower === "dashboard") {
             await sendMainHub(env, chatId, userId, message.from, origin);
             return;
         }

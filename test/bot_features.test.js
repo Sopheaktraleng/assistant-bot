@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS, isUserAuthorized, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
 import { normalizeReminderTime } from "../src/utils/time.js";
-import { isCompoundOrMultiAction, isRealTimeSearchQuery } from "../src/utils/natural.js";
+import { isCompoundOrMultiAction, isRealTimeSearchQuery, isConversationalOrCorrection } from "../src/utils/natural.js";
 import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/copilot/handler.js";
 import { parseCopilotResponse, buildCopilotPrompt, extractGroundingSources, getLiveRealtimeFallback, askGeminiWithGoogleSearch } from "../src/services/ai.js";
 import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
@@ -657,6 +657,79 @@ describe("Bot Improvements & Stability", () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(data.ok).toBe(true);
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("AI Conversational Personality vs System Dashboard", () => {
+        it("isConversationalOrCorrection should identify greetings and small talk", () => {
+            expect(isConversationalOrCorrection("hi")).toBe(true);
+            expect(isConversationalOrCorrection("hello")).toBe(true);
+            expect(isConversationalOrCorrection("hey")).toBe(true);
+            expect(isConversationalOrCorrection("good morning")).toBe(true);
+            expect(isConversationalOrCorrection("good afternoon")).toBe(true);
+            expect(isConversationalOrCorrection("how are you today?")).toBe(true);
+            expect(isConversationalOrCorrection("yo")).toBe(true);
+
+            // System menu / ledger commands must not be identified as greetings
+            expect(isConversationalOrCorrection("menu")).toBe(false);
+            expect(isConversationalOrCorrection("hub")).toBe(false);
+            expect(isConversationalOrCorrection("5 coffee")).toBe(false);
+            expect(isConversationalOrCorrection("+500 salary")).toBe(false);
+        });
+
+        it("handleMessage should answer 'hi' with conversational AI instead of system dashboard buttons", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+                const urlStr = typeof url === "string" ? url : "";
+                if (urlStr.includes("generativelanguage.googleapis.com")) {
+                    return Promise.resolve(new Response(JSON.stringify({
+                        candidates: [{
+                            content: {
+                                parts: [{ text: JSON.stringify({ reply: "Good afternoon, Boss! How are things going with you today?", voice_summary: "Good afternoon Boss!" }) }]
+                            }
+                        }]
+                    }), { status: 200 }));
+                }
+                return Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }));
+            });
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ voice_mode: "off" }),
+                        all: vi.fn().mockResolvedValue({ results: [] }),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                GEMINI_API_KEY: "mock_gemini_key",
+                ALLOWED_USER_IDS: "849550186"
+            };
+
+            await handleMessage(
+                { chat: { id: 123456, type: "private" }, from: { id: 849550186, first_name: "Tra" }, text: "hi" },
+                mockEnv,
+                "https://cashflow.workers.dev"
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const sendMessageCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text !== undefined;
+            });
+            expect(sendMessageCall).toBeDefined();
+            const payload = JSON.parse(sendMessageCall[1].body);
+
+            // Must NOT contain system dashboard text or buttons
+            expect(payload.text).toContain("Good afternoon, Boss!");
+            expect(payload.text).not.toContain("Ledger: +");
+            expect(payload.text).not.toContain("Work Done:");
+            expect(payload.reply_markup?.inline_keyboard?.[0]?.[0]?.text).not.toBe("⚡ Daily Briefing");
 
             fetchSpy.mockRestore();
         });

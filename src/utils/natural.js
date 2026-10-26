@@ -74,6 +74,11 @@ export function isConversationalOrCorrection(text) {
     // Explicitly addressed to Friday
     if (/^(?:hey\s+)?friday[,:\s]/i.test(clean)) return true;
 
+    // Greetings & casual conversational openers
+    if (/^(hi|hello|hey|yo|sup|hiya|howdy|hell|greetings|good\s+(?:morning|afternoon|evening)|what's\s+up|wassup|សួស្តី|ជំរាបសួរ)\b/i.test(clean)) {
+        return true;
+    }
+
     // Contains question mark
     if (clean.includes("?")) return true;
 
