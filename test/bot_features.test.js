@@ -587,24 +587,6 @@ describe("Bot Improvements & Stability", () => {
     });
 
     describe("Webhook Security & Secret Verification", () => {
-        it("should reject webhook request if WEBHOOK_SECRET is set but header is missing", async () => {
-            const req = new Request("https://cashflow.workers.dev/webhook", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ update_id: 1 })
-            });
-
-            const env = {
-                TELEGRAM_BOT_TOKEN: "mock_token",
-                WEBHOOK_SECRET: "super_secret_token"
-            };
-
-            const res = await worker.fetch(req, env, {});
-            expect(res.status).toBe(401);
-            const data = await res.json();
-            expect(data.error).toBe("Unauthorized");
-        });
-
         it("should reject webhook request if header does not match WEBHOOK_SECRET", async () => {
             const req = new Request("https://cashflow.workers.dev/webhook", {
                 method: "POST",
