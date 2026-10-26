@@ -375,6 +375,18 @@ Core Operating Directives (CRITICAL):
 2. Financial Defense & System Execution:
    - When asked "Can I afford X?", calculate exact remaining discretionary funds and runway from telemetry. Give direct, realistic, grounded financial advice in 1-2 concise sentences.
    - When asked to record an expense, income, work task, reminder, or configure system settings, return the appropriate "action" or "actions" array, and confirm in ONE short sentence.
+   - AUTONOMOUS MULTI-ACTION EXECUTION (TOP PRIORITY):
+     Boss frequently issues complex multi-intent commands combining multiple requests in one breath (via voice notes or text).
+     Whenever Boss asks to do several things at once (e.g. log an expense AND set a reminder AND remember something AND/OR log work), YOU MUST EXECUTE ALL ACTIONS SIMULTANEOUSLY by populating the "actions" array with every action.
+     Example Query: "Hey Friday, I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes."
+     Required "actions" array:
+     [
+       { "type": "add_expense", "amount": 8.5, "currency": "USD", "category": "Food" },
+       { "type": "add_reminder", "time": "15:30", "title": "Review the design file", "frequency": "once" },
+       { "type": "add_memory", "fact": "Jinie loves matcha lattes", "category": "preference" }
+     ]
+     Response "reply": "All three taken care of, Boss. Logged $8.50 for lunch, scheduled your reminder for 3:30 PM, and saved the note about Jinie."
+     Response "voice_summary": "All three taken care of Boss. Logged the lunch expense, scheduled your reminder for 3:30 PM, and saved the note about Jinie."
    - CORRECTION OF MISTAKES (CRITICAL): If Boss says "X was income not expense", "that was income", "40$ is my income not my expense", or points out an error in the ledger, YOU MUST FIX IT! Return an "actions" array:
      [
        { "type": "delete_last_transaction", "filter": "expense" },
@@ -400,14 +412,14 @@ Core Operating Directives (CRITICAL):
   "action": null | { ... },
   "actions": null | [
     {
-      "type": "add_expense" | "add_income" | "delete_last_transaction" | "set_currency" | "set_budget" | "clear_today_expenses" | "clear_all_transactions" | "add_work" | "add_reminder" | "add_memory",
+      "type": "add_expense" | "add_income" | "delete_last_transaction" | "set_currency" | "set_budget" | "clear_today_expenses" | "clear_all_transactions" | "add_work" | "add_reminder" | "add_memory" | "add_watchlist",
       "amount": number (for expense/income/budget),
       "currency": "USD" | "KHR" (for expense/income/budget/set_currency),
       "category": string (for expense/income/work/memory: 'preference' | 'work' | 'identity' | 'goal' | 'rule'),
       "date": "YYYY-MM-DD" (optional, for expense/income),
       "filter": "expense" | "income" | "any" (for delete_last_transaction),
       "content": string (for work task),
-      "title": string (for reminder),
+      "title": string (for reminder or watchlist),
       "time": "HH:mm" (24h format, for reminder),
       "frequency": "daily" | "weekdays" | "once" (for reminder),
       "fact": string (for add_memory)
@@ -470,8 +482,12 @@ export function parseCopilotResponse(rawText) {
         let actions = [];
         if (Array.isArray(obj.actions)) {
             actions = obj.actions.filter(a => a && typeof a === "object" && a.type);
-        } else if (obj.action && typeof obj.action === "object" && obj.action.type) {
-            actions = [obj.action];
+        }
+        if (obj.action && typeof obj.action === "object" && obj.action.type) {
+            const alreadyExists = actions.some(a => a.type === obj.action.type && a.amount === obj.action.amount && a.title === obj.action.title);
+            if (!alreadyExists) {
+                actions.unshift(obj.action);
+            }
         }
 
         const primaryAction = actions.length > 0 ? actions[0] : null;

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS, isUserAuthorized, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
+import { normalizeReminderTime } from "../src/utils/time.js";
+import { isCompoundOrMultiAction } from "../src/utils/natural.js";
+import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/copilot/handler.js";
+import { parseCopilotResponse, buildCopilotPrompt } from "../src/services/ai.js";
 import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
 import { handleMessage } from "../src/handlers/message.js";
 import { handleCallback } from "../src/handlers/callback.js";
@@ -337,6 +341,116 @@ describe("Bot Improvements & Stability", () => {
                 return url.includes("sendMessage") || url.includes("sendVoice");
             });
             expect(telegramCalls.length).toBe(0);
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Gemini AI Autonomous Multi-Action & Tool Calling", () => {
+        it("normalizeReminderTime should convert 12-hour AM/PM and 24-hour formats accurately", () => {
+            expect(normalizeReminderTime("15:30")).toBe("15:30");
+            expect(normalizeReminderTime("3:30 PM")).toBe("15:30");
+            expect(normalizeReminderTime("3:30pm")).toBe("15:30");
+            expect(normalizeReminderTime("9am")).toBe("09:00");
+            expect(normalizeReminderTime("09:00 AM")).toBe("09:00");
+            expect(normalizeReminderTime("12pm")).toBe("12:00");
+            expect(normalizeReminderTime("12:00 PM")).toBe("12:00");
+            expect(normalizeReminderTime("12am")).toBe("00:00");
+            expect(normalizeReminderTime("invalid_time")).toBeNull();
+        });
+
+        it("isCompoundOrMultiAction should detect complex multi-intent requests and bypass single regexes", () => {
+            const prompt1 = "Hey Friday, I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes.";
+            expect(isCompoundOrMultiAction(prompt1)).toBe(true);
+
+            const prompt2 = "I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes.";
+            expect(isCompoundOrMultiAction(prompt2)).toBe(true);
+
+            const prompt3 = "Done fixed checkout bug, and remind me at 5pm to deploy to staging";
+            expect(isCompoundOrMultiAction(prompt3)).toBe(true);
+
+            // Single intents should NOT trigger compound routing
+            expect(isCompoundOrMultiAction("5 coffee")).toBe(false);
+            expect(isCompoundOrMultiAction("remind 17:30 Bring lunch box")).toBe(false);
+            expect(isCompoundOrMultiAction("done wrote documentation")).toBe(false);
+        });
+
+        it("buildSmartLocalFallback should parse compound queries into multiple discrete system actions", () => {
+            const query = "I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes.";
+            const fallback = buildSmartLocalFallback(query, { displayCurrency: "USD" });
+
+            expect(fallback.actions.length).toBe(3);
+            expect(fallback.actions[0]).toEqual({
+                type: "add_expense",
+                amount: 8.5,
+                currency: "USD",
+                category: "Food"
+            });
+            expect(fallback.actions[1]).toEqual({
+                type: "add_reminder",
+                time: "15:30",
+                title: "review the design file",
+                frequency: "once"
+            });
+            expect(fallback.actions[2]).toEqual({
+                type: "add_memory",
+                fact: "she loves matcha lattes",
+                category: "preference"
+            });
+
+            expect(fallback.reply).toContain("All three taken care of, Boss");
+            expect(fallback.voice_summary).toContain("All three taken care of Boss");
+        });
+
+        it("handleAiCopilotQuery should execute all multi-action tools and reply cleanly", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const executedSql = [];
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockImplementation((sql) => {
+                    executedSql.push(sql);
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+                            first: vi.fn().mockResolvedValue(null),
+                            all: vi.fn().mockResolvedValue({ results: [] })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token"
+            };
+
+            const query = "Hey Friday, I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes.";
+            await handleAiCopilotQuery(mockEnv, 123456, "849550186", query, { id: 849550186, first_name: "Boss" });
+
+            // 1. Should insert into expenses
+            const hasExpenseInsert = executedSql.some(sql => sql.includes("INSERT INTO expenses"));
+            expect(hasExpenseInsert).toBe(true);
+
+            // 2. Should insert into reminders
+            const hasReminderInsert = executedSql.some(sql => sql.includes("INSERT INTO reminders"));
+            expect(hasReminderInsert).toBe(true);
+
+            // 3. Should save to user_memories
+            const hasMemoryInsert = executedSql.some(sql => sql.includes("user_memories"));
+            expect(hasMemoryInsert).toBe(true);
+
+            // 4. Should confirm via Telegram sendMessage
+            expect(fetchSpy).toHaveBeenCalled();
+            const sendMessageCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text !== undefined;
+            });
+            expect(sendMessageCall).toBeDefined();
+            const payload = JSON.parse(sendMessageCall[1].body);
+            expect(payload.text).toContain("All three taken care of, Boss");
 
             fetchSpy.mockRestore();
         });

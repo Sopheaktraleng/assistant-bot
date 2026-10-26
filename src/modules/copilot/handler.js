@@ -1,4 +1,4 @@
-import { today, currentTime } from "../../utils/time.js";
+import { today, currentTime, normalizeReminderTime } from "../../utils/time.js";
 import { 
     addExpenseRecord, 
     deleteLastTransaction,
@@ -43,6 +43,90 @@ export function buildSmartLocalFallback(query, context) {
 
     const tasks = context.todayWorkTasks || [];
     const rems = context.activeReminders || [];
+
+    // 0. Compound Multi-Action Parser (e.g. "I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review design, and note down that she loves matcha")
+    const localActions = [];
+    const confirmedSummaries = [];
+
+    // 0a. Expense: "paid $8.50 for lunch", "spent $12 on dinner", "bought coffee for 4$"
+    const expMatch = query.match(/(?:paid|spent|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:for|on)?\s*([^,\.]+?)(?=\s*,\s*|\s+and\s+|\s+remind|\s+note|\s+remember|\s*$)/i);
+    if (expMatch) {
+        const amt = parseFloat(expMatch[1].replace("$", ""));
+        if (!isNaN(amt) && amt > 0) {
+            let cur = expMatch[2] || (expMatch[1].includes("$") ? "USD" : (context?.displayCurrency || "USD"));
+            if (cur === "$" || cur.toLowerCase() === "dollars") cur = "USD";
+            else if (cur.toLowerCase() === "riel") cur = "KHR";
+            const rawCat = (expMatch[3] || "").trim();
+            let cat = "Other";
+            if (/lunch|dinner|breakfast|food|meal|eat/i.test(rawCat)) cat = "Food";
+            else if (/coffee|tea|cafe/i.test(rawCat)) cat = "Coffee";
+            else if (/grab|taxi|passapp|ride|transport/i.test(rawCat)) cat = "Transport";
+            else if (rawCat) cat = rawCat;
+
+            localActions.push({
+                type: "add_expense",
+                amount: amt,
+                currency: cur.toUpperCase(),
+                category: cat
+            });
+            confirmedSummaries.push(`logged ${cur.toUpperCase() === "USD" ? "$" : ""}${amt}${cur.toUpperCase() === "KHR" ? " ៛" : ""} for ${cat.toLowerCase()}`);
+        }
+    }
+
+    // 0b. Reminder: "remind me at 3:30 PM to review the design file", "remind in 30 mins to check server"
+    const remMatch = query.match(/\bremind(?:\s+me)?\s+(?:at\s+|in\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d+\s*(?:m|min|mins|minutes|h|hr|hrs|hours))\s*(?:to\s+|for\s+)?([^,\.]+?)(?=\s*,\s*|\s+and\s+|\s+note|\s+remember|\s*$)/i);
+    if (remMatch) {
+        const rawTime = remMatch[1].trim();
+        const normTime = normalizeReminderTime(rawTime);
+        const remTitle = (remMatch[2] || "Reminder").trim();
+        if (normTime) {
+            localActions.push({
+                type: "add_reminder",
+                time: normTime,
+                title: remTitle,
+                frequency: "once"
+            });
+            confirmedSummaries.push(`scheduled reminder for ${normTime} (${remTitle})`);
+        }
+    }
+
+    // 0c. Memory: "note down that she loves matcha lattes", "remember that ..."
+    const memMatch = query.match(/\b(?:note\s+down|remember(?:\s+that)?|keep\s+in\s+mind)\s+(?:that\s+)?([^,\.]+)/i);
+    if (memMatch) {
+        const fact = memMatch[1].trim();
+        if (fact) {
+            localActions.push({
+                type: "add_memory",
+                fact,
+                category: "preference"
+            });
+            confirmedSummaries.push(`saved personal memory: "${fact}"`);
+        }
+    }
+
+    // 0d. Work task: "done fixed checkout bug"
+    const workMatch = query.match(/\b(?:done|completed|finished)\s+([^,\.]+?)(?=\s*,\s*|\s+and\s+|\s+remind|\s+note|\s+remember|\s*$)/i);
+    if (workMatch) {
+        const taskText = workMatch[1].trim();
+        if (taskText && !/lunch|dinner|review the design/i.test(taskText)) {
+            localActions.push({
+                type: "add_work",
+                content: taskText,
+                category: "General"
+            });
+            confirmedSummaries.push(`logged work task: "${taskText}"`);
+        }
+    }
+
+    if (localActions.length >= 2) {
+        const countWord = localActions.length === 2 ? "Both" : (localActions.length === 3 ? "All three" : `All ${localActions.length}`);
+        const replyText = `${countWord} taken care of, Boss! ${confirmedSummaries.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(", ")}.`;
+        return {
+            reply: replyText,
+            voice_summary: `${countWord} taken care of Boss.`,
+            actions: localActions
+        };
+    }
 
     // 1. Correction: "income not expense", "that was income"
     if (q.includes("income not expense") || q.includes("is my income") || q.includes("was income")) {
@@ -338,16 +422,20 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                     await env.DB.prepare(
                         "INSERT INTO work_logs (user_id, date, time, content, category) VALUES (?, ?, ?, ?, ?)"
                     ).bind(userId, curDate, curTime, act.content.trim(), cat).run();
-                } else if (act.type === "add_reminder" && act.time && act.title) {
-                    const cleanTime = act.time.trim();
+                } else if (act.type === "add_reminder" && act.title) {
                     const cleanTitle = act.title.trim();
-                    const freq = act.frequency || "weekdays";
+                    const cleanTime = (act.time ? normalizeReminderTime(act.time) : null) || (act.time ? act.time.trim() : "12:00");
+                    const freq = act.frequency || "once";
                     await env.DB.prepare(
                         "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
                     ).bind(userId, String(chatId), cleanTitle, cleanTime, freq).run();
                 } else if (act.type === "add_memory" && act.fact) {
                     const memCat = act.category || "preference";
                     await saveUserMemory(env.DB, userId, act.fact.trim(), memCat);
+                } else if (act.type === "add_watchlist" && act.title) {
+                    await env.DB.prepare(
+                        "INSERT INTO watchlist (user_id, title, status) VALUES (?, ?, 'plan_to_watch')"
+                    ).bind(userId, act.title.trim()).run();
                 }
             } catch (actErr) {
                 console.error("Failed to execute AI Copilot action:", actErr);

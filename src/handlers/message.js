@@ -19,7 +19,7 @@ import {
     setUserBriefingMode,
     getLastModelChatMessage
 } from "../db/queries.js";
-import { isConversationalOrCorrection, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
+import { isConversationalOrCorrection, isCompoundOrMultiAction, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
 
 // Hub
 import { sendMainHub, sendHelpMessage, sendSettingsMenu } from "../modules/hub/views.js";
@@ -669,6 +669,20 @@ export async function handleMessage(message, env, origin) {
         }
 
         const lower = text.toLowerCase();
+
+        // 0. Compound Multi-Action Voice & Text Commands (Direct to AI Copilot)
+        // e.g. "Hey Friday, I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review design, and note down that she loves matcha"
+        if (isCompoundOrMultiAction(text)) {
+            if (env.GEMINI_API_KEY || env.AI) {
+                let queryText = text;
+                if (/^(?:hey\s+)?friday[,:]?\s+/i.test(queryText)) {
+                    queryText = queryText.replace(/^(?:hey\s+)?friday[,:]?\s+/i, "");
+                }
+                const wantsVoice = message.isFromVoice || /\b(speak to me|talk to me|in voice|by voice|voice note|say it)\b/i.test(text);
+                await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, wantsVoice);
+                return;
+            }
+        }
 
         // 1. Natural Navigation Keywords
         if (lower === "menu" || lower === "hub" || lower === "start" || lower === "hi" || lower === "hello" || lower === "hey") {

@@ -12,6 +12,51 @@ const INCOME_KEYWORDS = /\b(income|salary|deposit|earned|earning|received|revenu
 const STOP_WORDS_IN_CATEGORY = /\b(is|was|are|were|not|my|the|this|that|why|how|what|can|could|should|undo|delete|remove|clear|cancel|wrong|budget|dollar|dollars|riel|khr|usd)\b/i;
 
 /**
+ * Detects whether a message contains multiple simultaneous action intents.
+ * e.g. "Hey Friday, I just paid $8.50 for lunch with Jinie, remind me at 3:30 PM to review the design file, and note down that she loves matcha lattes."
+ * These compound requests must bypass single-intent regexes and be routed to F.R.I.D.A.Y. AI Copilot.
+ */
+export function isCompoundOrMultiAction(text) {
+    if (!text || typeof text !== "string") return false;
+    const clean = text.trim();
+    if (clean.startsWith("/")) return false;
+
+    // Explicitly addressed to Friday
+    if (/^(?:hey\s+)?friday[,:\s]/i.test(clean)) return true;
+
+    const lower = clean.toLowerCase();
+
+    // Check for action conjunctions (e.g. "... and remind me ...", "... and note down ...", "... also log ...")
+    const hasActionConjunction = /\b(?:and\s+(?:also\s+)?|also\s+|plus\s+|then\s+)(?:remind|alarm|note(?:\s+down)?|remember|log|track|record|save|add|put|buy|bought|paid|spent|spend)\b/i.test(lower);
+    if (hasActionConjunction) return true;
+
+    // Count distinct action signals present in the message
+    let signals = 0;
+    // 1. Financial spend or income
+    if (/\b(?:paid|spent|bought|cost|expense|income|earned|salary|\$\s*\d+|\d+\s*\$|\d+\s*(?:usd|khr|riel|dollars))\b/i.test(lower)) {
+        signals++;
+    }
+    // 2. Reminder or alarm
+    if (/\b(?:remind(?:\s+me)?|alarm|alert\s+me)\b/i.test(lower)) {
+        signals++;
+    }
+    // 3. Memory or personal preference note
+    if (/\b(?:note\s+down|remember(?:\s+that)?|keep\s+in\s+mind|don't\s+forget\s+that|she\s+likes|she\s+loves|he\s+likes|he\s+loves|i\s+like|i\s+love|my\s+favorite)\b/i.test(lower)) {
+        signals++;
+    }
+    // 4. Work task logging
+    if (/\b(?:done|completed|finished)\s+(?:with\s+|the\s+|all\s+|my\s+)?\b/i.test(lower)) {
+        signals++;
+    }
+    // 5. Watchlist
+    if (/\b(?:watchlist|watch\s+later|movie\s+to\s+watch|series\s+to\s+watch)\b/i.test(lower)) {
+        signals++;
+    }
+
+    return signals >= 2;
+}
+
+/**
  * Determines whether a message is conversational, questioning, or corrective.
  * Messages matching this must NEVER be greedily captured by simple expense regexes.
  */
@@ -19,6 +64,9 @@ export function isConversationalOrCorrection(text) {
     if (!text || typeof text !== "string") return false;
     const clean = text.trim();
     if (clean.startsWith("/")) return false;
+
+    // Compound multi-action commands must go to AI Copilot
+    if (isCompoundOrMultiAction(clean)) return true;
 
     // Explicitly addressed to Friday
     if (/^(?:hey\s+)?friday[,:\s]/i.test(clean)) return true;
