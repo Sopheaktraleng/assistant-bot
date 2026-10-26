@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS, isUserAuthorized, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
 import { normalizeReminderTime } from "../src/utils/time.js";
-import { isCompoundOrMultiAction } from "../src/utils/natural.js";
+import { isCompoundOrMultiAction, isRealTimeSearchQuery } from "../src/utils/natural.js";
 import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/copilot/handler.js";
-import { parseCopilotResponse, buildCopilotPrompt } from "../src/services/ai.js";
+import { parseCopilotResponse, buildCopilotPrompt, extractGroundingSources, getLiveRealtimeFallback, askGeminiWithGoogleSearch } from "../src/services/ai.js";
 import { ensureTables, resetTablesEnsuredForTest } from "../src/db/schema.js";
-import { handleMessage } from "../src/handlers/message.js";
+import { handleMessage, handleRealTimeSearchCommand } from "../src/handlers/message.js";
 import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
@@ -451,6 +451,134 @@ describe("Bot Improvements & Stability", () => {
             expect(sendMessageCall).toBeDefined();
             const payload = JSON.parse(sendMessageCall[1].body);
             expect(payload.text).toContain("All three taken care of, Boss");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Real-Time Live Google Search Grounding", () => {
+        it("isRealTimeSearchQuery should detect weather, sports, crypto, news, and search commands", () => {
+            expect(isRealTimeSearchQuery("/search what is the weather today")).toBe(true);
+            expect(isRealTimeSearchQuery("/weather")).toBe(true);
+            expect(isRealTimeSearchQuery("/google bitcoin price")).toBe(true);
+            expect(isRealTimeSearchQuery("/web who won premier league")).toBe(true);
+
+            expect(isRealTimeSearchQuery("Is it going to rain this afternoon?")).toBe(true);
+            expect(isRealTimeSearchQuery("What is the weather in Phnom Penh right now?")).toBe(true);
+            expect(isRealTimeSearchQuery("What is the Bitcoin price today?")).toBe(true);
+            expect(isRealTimeSearchQuery("Who won the Arsenal match last night?")).toBe(true);
+            expect(isRealTimeSearchQuery("Latest tech news in Cambodia")).toBe(true);
+            expect(isRealTimeSearchQuery("What movies are playing at Legend Cinema?")).toBe(true);
+
+            // Internal ledger / task queries must NOT be classified as web searches
+            expect(isRealTimeSearchQuery("5 coffee")).toBe(false);
+            expect(isRealTimeSearchQuery("remind 17:30 Bring lunch box")).toBe(false);
+            expect(isRealTimeSearchQuery("done fixed checkout bug")).toBe(false);
+            expect(isRealTimeSearchQuery("how much did I spend today")).toBe(false);
+            expect(isRealTimeSearchQuery("can I afford a 50$ dinner")).toBe(false);
+        });
+
+        it("extractGroundingSources should deduplicate and truncate source URLs into clean citations", () => {
+            const mockMetadata = {
+                groundingChunks: [
+                    { web: { uri: "https://weather.com/phnom-penh", title: "Weather.com: Phnom Penh Forecast" } },
+                    { web: { uri: "https://weather.com/phnom-penh", title: "Duplicate URL should be skipped" } },
+                    { web: { uri: "https://accuweather.com/en/kh", title: "AccuWeather Live Real-Time Weather in Cambodia" } }
+                ]
+            };
+
+            const sources = extractGroundingSources(mockMetadata);
+            expect(sources.length).toBe(2);
+            expect(sources[0].url).toBe("https://weather.com/phnom-penh");
+            expect(sources[0].title).toBe("Weather.com: Phnom Penh For...");
+            expect(sources[1].url).toBe("https://accuweather.com/en/kh");
+        });
+
+        it("askGeminiWithGoogleSearch should format answer with live search citations", async () => {
+            const mockGeminiResponse = {
+                candidates: [
+                    {
+                        content: {
+                            parts: [
+                                { text: "Phnom Penh is currently **31°C** with sunny skies and a light breeze, Boss." }
+                            ]
+                        },
+                        groundingMetadata: {
+                            webSearchQueries: ["phnom penh weather right now"],
+                            groundingChunks: [
+                                { web: { uri: "https://weather.com/kh", title: "Weather.com" } }
+                            ]
+                        }
+                    }
+                ]
+            };
+
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify(mockGeminiResponse), { status: 200 }))
+            );
+
+            const result = await askGeminiWithGoogleSearch(
+                { GEMINI_API_KEY: "fake_key", GEMINI_MODEL: "gemini-3.8-flash" },
+                "What is the weather in Phnom Penh right now?"
+            );
+
+            expect(result).toBeDefined();
+            expect(result.reply).toContain("31°C");
+            expect(result.reply).toContain("🌐 *Live Sources:* [Weather.com](https://weather.com/kh)");
+            expect(result.voice_summary).toContain("31°C");
+            expect(result.sources.length).toBe(1);
+
+            fetchSpy.mockRestore();
+        });
+
+        it("handleRealTimeSearchCommand should deliver live search telemetry and support voice output", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+                const urlStr = typeof url === "string" ? url : "";
+                if (urlStr.includes("generativelanguage.googleapis.com")) {
+                    return Promise.resolve(new Response(JSON.stringify({
+                        candidates: [{
+                            content: { parts: [{ text: "Bitcoin is currently trading at **$80,250**, Boss." }] },
+                            groundingMetadata: {
+                                groundingChunks: [{ web: { uri: "https://binance.com", title: "Binance Feed" } }]
+                            }
+                        }]
+                    }), { status: 200 }));
+                }
+                return Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }));
+            });
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ voice_mode: "off" }),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                GEMINI_API_KEY: "mock_key"
+            };
+
+            await handleRealTimeSearchCommand(
+                mockEnv,
+                123456,
+                "849550186",
+                "What is the Bitcoin price right now?",
+                { chat: { id: 123456 } }
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const sendMessageCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text !== undefined;
+            });
+            expect(sendMessageCall).toBeDefined();
+            const payload = JSON.parse(sendMessageCall[1].body);
+            expect(payload.text).toContain("Bitcoin is currently trading at");
+            expect(payload.text).toContain("Binance Feed");
 
             fetchSpy.mockRestore();
         });

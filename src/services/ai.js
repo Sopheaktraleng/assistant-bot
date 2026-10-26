@@ -634,6 +634,248 @@ export async function askAiCopilot(env, userQuery, context) {
     return null;
 }
 
+/**
+ * Extracts and deduplicates web search sources from Gemini grounding metadata.
+ */
+export function extractGroundingSources(groundingMetadata) {
+    if (!groundingMetadata) return [];
+    const chunks = groundingMetadata.groundingChunks || [];
+    const sources = [];
+    const seenUrls = new Set();
+
+    for (const chunk of chunks) {
+        const web = chunk.web;
+        if (web && web.uri) {
+            if (!seenUrls.has(web.uri)) {
+                seenUrls.add(web.uri);
+                let title = (web.title || "Source").trim();
+                if (title.length > 30) {
+                    title = title.slice(0, 27) + "...";
+                }
+                sources.push({ title, url: web.uri });
+            }
+        }
+        if (sources.length >= 4) break;
+    }
+
+    return sources;
+}
+
+/**
+ * Intelligent deterministic real-time fallback for common live external queries
+ * when Gemini Search APIs are rate-limited or temporarily unreachable.
+ */
+export async function getLiveRealtimeFallback(query, context = {}) {
+    const q = (query || "").toLowerCase();
+
+    // 1. Live Weather (Phnom Penh / Cambodia via Open-Meteo)
+    if (/weather|temperature|forecast|rain|sunny|អាកាសធាតុ|ភ្លៀង/i.test(q)) {
+        try {
+            const url = "https://api.open-meteo.com/v1/forecast?latitude=11.5564&longitude=104.9282&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code&timezone=Asia%2FBangkok";
+            const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            if (res.ok) {
+                const data = await res.json();
+                const cur = data.current;
+                const temp = cur.temperature_2m;
+                const feelsLike = cur.apparent_temperature;
+                const humidity = cur.relative_humidity_2m;
+                const precip = cur.precipitation;
+                const wCode = cur.weather_code;
+
+                let condition = "Sunny & Clear";
+                if (wCode >= 1 && wCode <= 3) condition = "Partly Cloudy";
+                else if (wCode >= 51 && wCode <= 67) condition = "Light Rain / Drizzle";
+                else if (wCode >= 80 && wCode <= 82) condition = "Rain Showers";
+                else if (wCode >= 95) condition = "Thunderstorm Alert";
+
+                const rainNote = precip > 0 ? `🌧️ Rain detected: *${precip} mm*` : "☀️ No rain detected currently.";
+
+                const reply = [
+                    `🌤️ *Phnom Penh Live Weather Telemetry*`,
+                    `────────────────────`,
+                    `● *Conditions:*   *${condition}*`,
+                    `● *Temperature:*  *${temp}°C* (Feels like *${feelsLike}°C*)`,
+                    `● *Humidity:*     *${humidity}%*`,
+                    `● *Precipitation:* ${rainNote}`,
+                    `────────────────────`,
+                    `_Live satellite & meteorological telemetry via Open-Meteo._`
+                ].join("\n");
+
+                return {
+                    reply,
+                    voice_summary: `Current weather in Phnom Penh is ${condition} with ${temp} degrees Celsius, feeling like ${feelsLike} degrees.`,
+                    sources: [{ title: "Open-Meteo Live API", url: "https://open-meteo.com" }]
+                };
+            }
+        } catch (e) {
+            console.warn("Live weather fallback fetch error:", e.message);
+        }
+    }
+
+    // 2. Live Crypto Market Prices (BTC, ETH, SOL via Binance Spot API)
+    if (/bitcoin|btc|crypto|ethereum|eth|solana|sol/i.test(q)) {
+        try {
+            const url = "https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D";
+            const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            if (res.ok) {
+                const tickers = await res.json();
+                const btc = parseFloat(tickers.find(t => t.symbol === "BTCUSDT")?.price || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+                const eth = parseFloat(tickers.find(t => t.symbol === "ETHUSDT")?.price || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+                const sol = parseFloat(tickers.find(t => t.symbol === "SOLUSDT")?.price || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
+                const reply = [
+                    `📈 *Live Crypto Market Telemetry*`,
+                    `────────────────────`,
+                    `● *Bitcoin (BTC):*   *$${btc}*`,
+                    `● *Ethereum (ETH):*  *$${eth}*`,
+                    `● *Solana (SOL):*    *$${sol}*`,
+                    `────────────────────`,
+                    `_Real-time spot telemetry via Binance._`
+                ].join("\n");
+
+                return {
+                    reply,
+                    voice_summary: `Bitcoin is currently trading at ${btc} dollars, and Ethereum is at ${eth} dollars.`,
+                    sources: [{ title: "Binance Spot Feed", url: "https://binance.com" }]
+                };
+            }
+        } catch (e) {
+            console.warn("Live crypto fallback fetch error:", e.message);
+        }
+    }
+
+    // 3. Currency Exchange Rate
+    if (/exchange\s+rate|usd\s+to\s+khr|khr\s+to\s+usd|riel|dollar/i.test(q)) {
+        return {
+            reply: [
+                `💱 *Cambodia Currency Exchange Telemetry*`,
+                `────────────────────`,
+                `● *Operational Rate:*  *1 USD = 4,000 KHR (៛)*`,
+                `● *Market Band:*        *4,000 – 4,050 ៛* per $1.00 USD`,
+                `────────────────────`,
+                `_F.R.I.D.A.Y. ledger conversion standard._`
+            ].join("\n"),
+            voice_summary: "The standard exchange rate is 4,000 Khmer Riel per 1 US Dollar.",
+            sources: []
+        };
+    }
+
+    // 4. Clean Standby Notice for arbitrary searches
+    return {
+        reply: [
+            `🌐 *F.R.I.D.A.Y. • Real-Time Web Grounding*`,
+            `────────────────────`,
+            `Boss, I attempted to retrieve live search intelligence for *"${cleanMd(query)}"*, but the live search telemetry channel is temporarily rate-limited.`,
+            ``,
+            `💡 _Please re-try in a moment with:_ \`/search ${cleanMd(query)}\``
+        ].join("\n"),
+        voice_summary: `Boss, live web search for ${query} is currently standing by. Please try again in a moment.`,
+        sources: []
+    };
+}
+
+/**
+ * Queries Gemini with real-time Google Search grounding.
+ * Returns { reply, voice_summary, sources: [{ title, url }] }
+ */
+export async function askGeminiWithGoogleSearch(env, query, context = {}) {
+    const cleanQuery = (query || "").trim();
+    if (!cleanQuery) return null;
+
+    const dateStr = context?.currentDate || today();
+    const timeStr = context?.currentTime || currentTime();
+    const tz = context?.timezone || TIME_ZONE;
+
+    const candidateModels = [
+        env?.GEMINI_MODEL,
+        ...GEMINI_MODELS
+    ].filter(Boolean).filter(m => m !== "gemini-3-flash-preview");
+
+    const systemPrompt = `You are F.R.I.D.A.Y., Boss's exceptionally smart, warm, loyal, and witty personal AI executive assistant in Cambodia.
+Today's Date: ${dateStr}, Current Time: ${timeStr} in Cambodia (${tz}).
+Boss Query: "${cleanQuery}"
+
+CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
+1. Accuracy & Grounding:
+   - Use Google Search to retrieve accurate, live, up-to-the-minute real-world information.
+   - Ground your answer strictly in fresh live search results.
+2. Tone & Persona:
+   - Speak with executive warmth, loyalty, and polish, addressing the user as "Boss".
+   - Keep answers clear, direct, and concise (2 to 4 crisp sentences, or structured bullet points if comparing items, scores, or news).
+   - Bold key numbers, names, scores, temperatures, or currency rates.
+   - AVOID fluff, robotic clichés, or lengthy corporate disclaimers.
+3. Language:
+   - If Boss asks in Khmer (ភាសាខ្មែរ / អក្សរខ្មែរ), reply fluently and naturally in Khmer. Otherwise reply in natural English.`;
+
+    const requestBody = JSON.stringify({
+        contents: [
+            {
+                parts: [{ text: `${systemPrompt}\n\nBoss says: "${cleanQuery}"` }]
+            }
+        ],
+        tools: [
+            {
+                google_search: {}
+            }
+        ],
+        generationConfig: {
+            temperature: 0.4
+        }
+    });
+
+    if (env?.GEMINI_API_KEY) {
+        for (const model of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+                const resp = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: requestBody,
+                    signal: AbortSignal.timeout(12000)
+                });
+
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    console.warn(`Gemini Search Grounding error for ${model} (${resp.status}):`, errText);
+                    continue;
+                }
+
+                const resJson = await resp.json();
+                const candidate = resJson?.candidates?.[0];
+                const rawText = candidate?.content?.parts?.[0]?.text;
+                if (!rawText || !rawText.trim()) continue;
+
+                // Extract grounding sources
+                const metadata = candidate?.groundingMetadata;
+                const sources = extractGroundingSources(metadata);
+
+                let formattedReply = rawText.trim();
+                if (sources && sources.length > 0) {
+                    const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                    formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+                }
+
+                // Spoken voice summary: strip markdown formatting
+                const spoken = rawText
+                    .replace(/[*_#`~\[\]\(\)]/g, "")
+                    .replace(/https?:\/\/\S+/g, "")
+                    .trim();
+
+                return {
+                    reply: formattedReply,
+                    voice_summary: spoken,
+                    sources: sources || []
+                };
+            } catch (e) {
+                console.warn(`Gemini Search fetch error for ${model}:`, e.message);
+            }
+        }
+    }
+
+    // Smart real-time deterministic fallback if Gemini Search is rate-limited or unavailable
+    return await getLiveRealtimeFallback(cleanQuery, context);
+}
+
 export async function callAiTextModel(env, systemPrompt, userPrompt, temperature = 0.3) {
     const candidateModels = [env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
 

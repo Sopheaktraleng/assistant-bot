@@ -172,6 +172,7 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         `• \`/settings\` — Currency toggle (USD / KHR) & monthly budget`,
         ``,
         `🤖 *F.R.I.D.A.Y. Tactical Assistant*`,
+        `• \`/search <query>\` — Live Google Search grounding (weather, crypto, news, scores)`,
         `• \`/briefing\` or \`/friday\` — Tactical morning/status briefing`,
         `• \`/remember <fact>\` — Teach Friday personal preferences & habits`,
         `• \`/memory\` — Inspect Friday's long-term memory matrix`,

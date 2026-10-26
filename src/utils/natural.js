@@ -68,6 +68,9 @@ export function isConversationalOrCorrection(text) {
     // Compound multi-action commands must go to AI Copilot
     if (isCompoundOrMultiAction(clean)) return true;
 
+    // Real-time search and web queries must go to Google Search Grounding
+    if (isRealTimeSearchQuery(clean)) return true;
+
     // Explicitly addressed to Friday
     if (/^(?:hey\s+)?friday[,:\s]/i.test(clean)) return true;
 
@@ -258,4 +261,52 @@ export function parseNaturalExpense(text) {
     }
 
     return { amount, currency, category };
+}
+
+/**
+ * Detects whether a message is asking for real-time external information (weather, news, sports, crypto, web search).
+ */
+export function isRealTimeSearchQuery(text) {
+    if (!text || typeof text !== "string") return false;
+    const clean = text.trim();
+    if (clean.startsWith("/")) {
+        return /^\/(search|web|google|weather)\b/i.test(clean);
+    }
+
+    const lower = clean.toLowerCase();
+
+    // Explicit search requests
+    if (/^(?:search(?:\s+for)?|google|look\s+up|browse|find\s+online)\b/i.test(lower)) {
+        return true;
+    }
+
+    // Weather & climate queries
+    if (/\b(?:weather|temperature|forecast|rain|raining|rainy|degrees|humidity|sunny|storm|monsoon|អាកាសធាតុ|ភ្លៀង)\b/i.test(lower)) {
+        return true;
+    }
+
+    // Live news & world events
+    if (/\b(?:news|headline|headlines|what\s+happened)\b/i.test(lower)) {
+        return true;
+    }
+
+    // Sports scores & matches
+    if (/\b(?:who\s+won|football\s+score|match\s+score|premier\s+league|champions\s+league|world\s+cup|arsenal|man\s+united|barcelona|real\s+madrid)\b/i.test(lower)) {
+        return true;
+    }
+
+    // Crypto & financial markets live spot prices
+    if (/\b(?:bitcoin|btc|crypto|ethereum|eth\s+price|solana|gold\s+price\s+today|stock\s+price)\b/i.test(lower)) {
+        // Exclude internal budget questions like "my budget" or "can i afford"
+        if (!/\b(budget|my\s+expense|my\s+spend|can\s+i\s+afford)\b/i.test(lower)) {
+            return true;
+        }
+    }
+
+    // Showtimes & local entertainment
+    if (/\b(?:cinema|movie\s+showtimes?|movies\s+playing|legend\s+cinema|major\s+cineplex|prime\s+cineplex)\b/i.test(lower)) {
+        return true;
+    }
+
+    return false;
 }

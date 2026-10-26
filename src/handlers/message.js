@@ -1,8 +1,8 @@
 import { today, dateDaysAgo } from "../utils/time.js";
 import { formatAmount } from "../utils/format.js";
 import { isUserAuthorized } from "../config/constants.js";
-import { sendMessage, sendTelegramVoice } from "../services/telegram.js";
-import { generateSpeechAudio } from "../services/ai.js";
+import { telegram, sendMessage, sendTelegramVoice } from "../services/telegram.js";
+import { generateSpeechAudio, askGeminiWithGoogleSearch } from "../services/ai.js";
 import {
     getDisplayCurrency,
     getTotalExpenses,
@@ -10,6 +10,7 @@ import {
     deleteLastTransaction,
     getUserMemories,
     saveUserMemory,
+    saveChatMessage,
     deleteUserMemory,
     clearUserMemories,
     clearChatHistory,
@@ -19,7 +20,7 @@ import {
     setUserBriefingMode,
     getLastModelChatMessage
 } from "../db/queries.js";
-import { isConversationalOrCorrection, isCompoundOrMultiAction, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
+import { isConversationalOrCorrection, isCompoundOrMultiAction, isRealTimeSearchQuery, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
 
 // Hub
 import { sendMainHub, sendHelpMessage, sendSettingsMenu } from "../modules/hub/views.js";
@@ -99,6 +100,65 @@ export async function handleUndoLastTransaction(env, chatId, userId) {
         ].join("\n"),
         { parse_mode: "Markdown" }
     );
+}
+
+export async function handleRealTimeSearchCommand(env, chatId, userId, query, message) {
+    const cleanQuery = (query || "").trim();
+    if (!cleanQuery) return;
+
+    const userVoicePref = await getUserVoiceMode(env.DB, userId);
+    const wantsVoice = message?.isFromVoice || userVoicePref === "on" || /\b(speak to me|talk to me|in voice|by voice|voice note|say it)\b/i.test(cleanQuery);
+
+    try {
+        await telegram(env, "sendChatAction", { chat_id: chatId, action: wantsVoice ? "record_voice" : "typing" });
+    } catch (_) {}
+
+    const result = await askGeminiWithGoogleSearch(env, cleanQuery, { currentDate: today() });
+    if (!result || !result.reply) {
+        await sendMessage(
+            env,
+            chatId,
+            `⚠️ *Search Error*\n\nBoss, I couldn't reach the search service right now. Please try again in a moment.`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    // Persist into chat_history
+    if (env.DB) {
+        saveChatMessage(env.DB, userId, "user", cleanQuery).catch(() => {});
+        saveChatMessage(env.DB, userId, "model", result.reply).catch(() => {});
+    }
+
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: "🔊 Read Aloud", callback_data: "speak_last" },
+                { text: "🏠 Main Hub", callback_data: "hub" }
+            ]
+        ]
+    };
+
+    if (wantsVoice) {
+        try {
+            const spokenText = result.voice_summary || result.reply;
+            const audioBuffer = await generateSpeechAudio(spokenText);
+            if (audioBuffer) {
+                await Promise.all([
+                    sendTelegramVoice(env, chatId, audioBuffer, "🎙️ F.R.I.D.A.Y. Live Web Transmission"),
+                    sendMessage(env, chatId, result.reply, { parse_mode: "Markdown", reply_markup: keyboard })
+                ]);
+                return;
+            }
+        } catch (vErr) {
+            console.warn("Real-time search voice error:", vErr.message);
+        }
+    }
+
+    await sendMessage(env, chatId, result.reply, {
+        parse_mode: "Markdown",
+        reply_markup: keyboard
+    });
 }
 
 export async function handleMessage(message, env, origin) {
@@ -248,6 +308,36 @@ export async function handleMessage(message, env, origin) {
         } else {
             await sendFridayTacticalBriefing(env, chatId, userId, { withVoice: wantsVoice });
         }
+        return;
+    }
+
+    // 0.43 🌐 Real-Time Live Google Search Grounding (/search, /web, /google, /weather)
+    if (
+        text.startsWith("/search") || 
+        text.startsWith("/web") || 
+        text.startsWith("/google") ||
+        text.startsWith("/weather") ||
+        text === "/search" ||
+        text === "/web" ||
+        text === "/google" ||
+        text === "/weather"
+    ) {
+        let q = text.replace(/^\/(search|web|google|weather)(@\w+)?\s*/i, "").trim();
+        if (text.startsWith("/weather") && !q) {
+            q = "weather in Phnom Penh today";
+        }
+
+        if (!q) {
+            await sendMessage(
+                env,
+                chatId,
+                `🌐 *F.R.I.D.A.Y. • Real-Time Web Grounding*\n────────────────────\nAsk me anything in real-time across the live web:\n\n• ☀️ *Weather:* \`/weather\` or \`/search weather in Phnom Penh\`\n• 📈 *Markets:* \`/search Bitcoin and gold price today\`\n• ⚽ *Sports:* \`/search Premier League match results\`\n• 🎬 *Cinema:* \`/search Legend Cinema showtimes Phnom Penh\`\n\n_You can also just ask directly in normal conversation or voice notes!_`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        await handleRealTimeSearchCommand(env, chatId, userId, q, message);
         return;
     }
 
@@ -682,6 +772,12 @@ export async function handleMessage(message, env, origin) {
                 await handleAiCopilotQuery(env, chatId, userId, queryText, message.from, null, wantsVoice);
                 return;
             }
+        }
+
+        // 0.1 🌐 Real-Time Search & Web Queries (Live Weather, Markets, Sports, News)
+        if (isRealTimeSearchQuery(text)) {
+            await handleRealTimeSearchCommand(env, chatId, userId, text, message);
+            return;
         }
 
         // 1. Natural Navigation Keywords
