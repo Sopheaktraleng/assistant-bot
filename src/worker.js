@@ -9,7 +9,7 @@ import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
 import { sendDailyScheduledWakeup, sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
 import { sendMessage, answerCallback } from "./services/telegram.js";
-import { isUserAuthorized } from "./config/constants.js";
+import { isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "./config/constants.js";
 
 /**
  * Safely processes Telegram updates with idempotency check against duplicate deliveries.
@@ -30,15 +30,30 @@ async function handleUpdateSafely(update, env, origin) {
             ""
         );
 
-        if (userId && !isUserAuthorized(userId, env)) {
+        const isAuth = await isUserAuthorizedAsync(env.DB, userId, env);
+        if (userId && !isAuth) {
+            // Allow unauthenticated users to trigger the request_access callback
+            if (update.callback_query?.data?.startsWith("request_access")) {
+                await handleCallback(update.callback_query, env, origin);
+                return;
+            }
+
             console.warn(`Unauthorized access attempt by user ${userId}`);
             const chatType = update.message?.chat?.type || "private";
             if (update.message?.chat?.id && chatType === "private") {
+                const requesterName = update.message?.from?.first_name || "Friend";
                 await sendMessage(
                     env,
                     update.message.chat.id,
-                    `⛔ *Access Restricted*\n────────────────────\nThis assistant is private and configured for authorized personal use only.`,
-                    { parse_mode: "Markdown" }
+                    `🔒 *F.R.I.D.A.Y. • Access Restricted*\n────────────────────\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
+                    {
+                        parse_mode: "Markdown",
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: "📩 Request Access from Boss", callback_data: `request_access:${userId}` }]
+                            ]
+                        }
+                    }
                 ).catch(() => {});
             } else if (update.callback_query?.id) {
                 await answerCallback(env, update.callback_query.id, {

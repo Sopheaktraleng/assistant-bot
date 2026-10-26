@@ -1,8 +1,8 @@
-import { TIME_ZONE } from "../../config/constants.js";
+import { TIME_ZONE, isOwner, OWNER_USER_ID } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
-import { getDisplayCurrency, getFinancialSummary, getUserVoiceMode } from "../../db/queries.js";
+import { getDisplayCurrency, getFinancialSummary, getUserVoiceMode, listAuthorizedUsers } from "../../db/queries.js";
 import { monthPrefix, monthLabel } from "../../utils/time.js";
-import { formatAmount } from "../../utils/format.js";
+import { formatAmount, cleanMd } from "../../utils/format.js";
 import { safeEditOrSendMessage } from "../../services/telegram.js";
 
 export async function sendMainHub(env, chatId, userId, from, origin, messageId = null) {
@@ -52,15 +52,18 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         10
     );
 
-    let quote = "Everything is running smoothly on my end, Boss.";
+    const isUserOwner = isOwner(userId, env);
+    const userTitle = isUserOwner ? "Boss" : cleanUsername;
+
+    let quote = `Everything is running smoothly on my end, ${userTitle}.`;
     if (ppHour >= 5 && ppHour < 12) {
-        quote = "Good morning, Boss. Fresh start today—everything is lined up.";
+        quote = isUserOwner ? "Good morning, Boss. Fresh start today—everything is lined up." : `Good morning, ${userTitle}. Ready whenever you are.`;
     } else if (ppHour >= 12 && ppHour < 17) {
-        quote = "Good afternoon, Boss. Keeping everything steady and on track.";
+        quote = isUserOwner ? "Good afternoon, Boss. Keeping everything steady and on track." : `Good afternoon, ${userTitle}. How can I help you today?`;
     } else if (ppHour >= 17 && ppHour < 22) {
-        quote = "Good evening, Boss. Winding down for the day—here's where we stand.";
+        quote = isUserOwner ? "Good evening, Boss. Winding down for the day—here's where we stand." : `Good evening, ${userTitle}. Hope you had a great day.`;
     } else {
-        quote = "Quiet night, Boss. Standing by whenever you need me.";
+        quote = isUserOwner ? "Quiet night, Boss. Standing by whenever you need me." : `Quiet night, ${userTitle}. Standing by if you need anything.`;
     }
 
     const sign = netBalance > 0 ? "+" : "";
@@ -129,21 +132,97 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
         `_Configure preferences or manage your records below:_`
     ].join("\n");
 
+    const keyboard = [
+        [{ text: toggleLabel, callback_data: "toggle_currency" }],
+        [{ text: voiceToggleLabel, callback_data: "toggle_voice_mode" }],
+        [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
+        [{ text: "📥 Export CSV Backup", callback_data: "export_csv" }]
+    ];
+
+    if (isOwner(userId, env)) {
+        keyboard.push([{ text: "👥 Manage Users & Access", callback_data: "manage_users" }]);
+    }
+
+    keyboard.push([
+        { text: "🗑️ Clear Today", callback_data: "clear_today_warn" },
+        { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
+    ]);
+    keyboard.push([{ text: "🏠 Main Hub", callback_data: "hub" }]);
+
     await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
         reply_markup: {
-            inline_keyboard: [
-                [{ text: toggleLabel, callback_data: "toggle_currency" }],
-                [{ text: voiceToggleLabel, callback_data: "toggle_voice_mode" }],
-                [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
-                [{ text: "📥 Export CSV Backup", callback_data: "export_csv" }],
-                [
-                    { text: "🗑️ Clear Today", callback_data: "clear_today_warn" },
-                    { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
-                ],
-                [{ text: "🏠 Main Hub", callback_data: "hub" }]
-            ]
+            inline_keyboard: keyboard
         }
+    });
+}
+
+export async function sendUserManagementMenu(env, chatId, userId, messageId = null) {
+    await ensureTables(env.DB);
+    const users = await listAuthorizedUsers(env.DB);
+    const owner = users.find(u => u.role === "owner") || { user_id: OWNER_USER_ID, first_name: "Boss" };
+    const guests = users.filter(u => u.role !== "owner");
+    const activeGuests = guests.filter(g => g.status === "active");
+    const pendingGuests = guests.filter(g => g.status === "pending");
+
+    const textLines = [
+        `👥 *F.R.I.D.A.Y. • User Access Matrix*`,
+        `────────────────────`,
+        `👑 *Owner:* ${cleanMd(owner.first_name || "Boss")} (\`${owner.user_id}\`)`,
+        ``
+    ];
+
+    if (activeGuests.length > 0) {
+        textLines.push(`🟢 *Active Guests (${activeGuests.length}):*`);
+        for (const g of activeGuests) {
+            const uName = g.username ? ` (@${g.username})` : "";
+            textLines.push(`• *${cleanMd(g.first_name || "Guest")}*${uName} — \`${g.user_id}\``);
+        }
+        textLines.push("");
+    } else {
+        textLines.push(`_No active guests yet._\n`);
+    }
+
+    if (pendingGuests.length > 0) {
+        textLines.push(`⏳ *Pending Approvals (${pendingGuests.length}):*`);
+        for (const p of pendingGuests) {
+            const uName = p.username ? ` (@${p.username})` : "";
+            textLines.push(`• *${cleanMd(p.first_name || "Guest")}*${uName} — \`${p.user_id}\``);
+        }
+        textLines.push("");
+    }
+
+    textLines.push(`────────────────────`);
+    textLines.push(`_Manage approvals or revoke guest access below:_`);
+
+    const keyboard = [];
+
+    // Pending approvals
+    for (const p of pendingGuests) {
+        keyboard.push([
+            { text: `✅ Approve ${p.first_name || p.user_id}`, callback_data: `approve_user:${p.user_id}` },
+            { text: `❌ Deny`, callback_data: `deny_user:${p.user_id}` }
+        ]);
+    }
+
+    // Revocation for active guests
+    for (const g of activeGuests) {
+        keyboard.push([
+            { text: `🚫 Revoke ${g.first_name || g.user_id}`, callback_data: `revoke_user:${g.user_id}` }
+        ]);
+    }
+
+    keyboard.push([
+        { text: "🔄 Refresh", callback_data: "manage_users" },
+        { text: "⚙️ Settings", callback_data: "settings" }
+    ]);
+    keyboard.push([
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
+
+    await safeEditOrSendMessage(env, chatId, messageId, textLines.join("\n"), {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
     });
 }
 
@@ -173,6 +252,7 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         ``,
         `🤖 *F.R.I.D.A.Y. Tactical Assistant*`,
         `• \`/search <query>\` — Live Google Search grounding (weather, crypto, news, scores)`,
+        `• \`/users\` — Dynamic user access matrix & guest approval (Boss only)`,
         `• \`/briefing\` or \`/friday\` — Tactical morning/status briefing`,
         `• \`/remember <fact>\` — Teach Friday personal preferences & habits`,
         `• \`/memory\` — Inspect Friday's long-term memory matrix`,

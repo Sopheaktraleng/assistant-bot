@@ -31,8 +31,20 @@ export const QUICK_INCOME_CATS = [
     { name: "Other", icon: "✨" }
 ];
 
-// Authorized Telegram User IDs (Personal assistant mode: owner only)
+// Primary Owner Telegram User ID
+export const OWNER_USER_ID = "849550186";
+
+// Authorized Telegram User IDs (Personal assistant mode: owner + approved users)
 export const DEFAULT_ALLOWED_USERS = ["849550186"];
+
+/**
+ * Checks whether a given Telegram user ID is the system Owner (Boss).
+ */
+export function isOwner(userId, env = {}) {
+    if (!userId) return false;
+    const ownerId = String(env?.OWNER_ID || env?.OWNER_TELEGRAM_ID || OWNER_USER_ID).trim();
+    return String(userId).trim() === ownerId;
+}
 
 /**
  * Resolves the list of authorized Telegram user IDs.
@@ -55,11 +67,31 @@ export function getAllowedUserIds(env = {}) {
 }
 
 /**
- * Checks whether a given Telegram user ID is authorized to interact with the bot.
+ * Synchronous static authorization check (env / owner).
  */
 export function isUserAuthorized(userId, env = {}) {
     if (!userId) return false;
+    if (isOwner(userId, env)) return true;
     const allowed = getAllowedUserIds(env);
     if (!allowed) return true; // unrestricted test mode
     return allowed.includes(String(userId).trim());
+}
+
+/**
+ * Asynchronous dynamic authorization check against environment whitelist and D1 authorized_users.
+ */
+export async function isUserAuthorizedAsync(db, userId, env = {}) {
+    if (!userId) return false;
+    if (isOwner(userId, env)) return true;
+    if (isUserAuthorized(userId, env)) return true;
+    if (db) {
+        try {
+            const row = await db
+                .prepare("SELECT status FROM authorized_users WHERE user_id = ?")
+                .bind(String(userId))
+                .first();
+            return row?.status === "active";
+        } catch (_) {}
+    }
+    return false;
 }

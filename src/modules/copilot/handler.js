@@ -11,7 +11,7 @@ import {
     saveUserMemory, 
     getUserVoiceMode 
 } from "../../db/queries.js";
-import { EXCHANGE_RATE } from "../../config/constants.js";
+import { EXCHANGE_RATE, isOwner } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage, sendTelegramVoice } from "../../services/telegram.js";
 import { buildAiUserContext, askAiCopilot, generateSpeechAudio } from "../../services/ai.js";
@@ -21,12 +21,14 @@ export { sendFridayTacticalBriefing, sendFridayWakeupCall, sendDailyScheduledWak
  * Intelligent deterministic fallback when AI APIs are unreachable or timing out.
  * Computes exact answers and supports full system actions from onboard database tables.
  */
-export function buildSmartLocalFallback(query, context) {
+export function buildSmartLocalFallback(query, context = {}) {
     const q = (query || "").toLowerCase();
     const curr = context.displayCurrency || "USD";
     const symbol = curr === "USD" ? "$" : "";
     const suffix = curr === "KHR" ? " ៛" : "";
     const isUsd = curr === "USD";
+    const isOwnerUser = context?.isOwner !== false;
+    const title = isOwnerUser ? "Boss" : (context?.userName || "there");
 
     const totalInc = (context.totals ? (isUsd ? context.totals.thisMonthIncomeUsd : context.totals.thisMonthIncomeKhr) : null) ?? (context.summary?.totalIncome || 0);
     const totalExp = (context.totals ? (isUsd ? context.totals.thisMonthExpenseUsd : context.totals.thisMonthExpenseKhr) : null) ?? (context.summary?.totalExpenses || 0);
@@ -293,8 +295,8 @@ export function buildSmartLocalFallback(query, context) {
         else greeting = "Good evening";
 
         return {
-            reply: `${greeting}, Boss! I'm right here and everything is running smoothly. How are things with you today?`,
-            voice_summary: `${greeting} Boss! I'm right here. How can I help you today?`
+            reply: `${greeting}, ${title}! Everything is running smoothly. How can I help you today?`,
+            voice_summary: `${greeting} ${title}! How can I help you today?`
         };
     }
     if (q.includes("how are you") || q.includes("how's it going") || q.includes("how you doing")) {
@@ -365,7 +367,11 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             await telegram(env, "sendChatAction", { chat_id: chatId, action: shouldVoice ? "record_voice" : "typing" });
         } catch (e) {}
 
+        const isUserOwner = isOwner(userId, env);
+        const requesterName = from?.first_name || from?.username || (isUserOwner ? "Boss" : "Friend");
         const context = await buildAiUserContext(env.DB, userId);
+        context.isOwner = isUserOwner;
+        context.userName = requesterName;
         let result = null;
 
         // Try conversational AI if keys are present

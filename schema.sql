@@ -135,3 +135,20 @@ CREATE TABLE IF NOT EXISTS daily_broadcast_logs (
 CREATE INDEX IF NOT EXISTS idx_broadcast_logs_user_date
 ON daily_broadcast_logs (user_id, type, date);
 
+CREATE TABLE IF NOT EXISTS authorized_users (
+    user_id TEXT PRIMARY KEY,
+    username TEXT,
+    first_name TEXT,
+    role TEXT NOT NULL DEFAULT 'guest', -- 'owner' | 'guest'
+    status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'pending' | 'revoked'
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_by TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_authorized_users_status
+ON authorized_users (status);
+
+INSERT OR IGNORE INTO authorized_users (user_id, first_name, role, status, approved_by)
+VALUES ('849550186', 'Boss', 'owner', 'active', 'system');
+
+

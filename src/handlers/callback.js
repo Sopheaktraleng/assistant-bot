@@ -1,6 +1,6 @@
-import { TIME_ZONE, EXCHANGE_RATE, isUserAuthorized } from "../config/constants.js";
+import { TIME_ZONE, EXCHANGE_RATE, isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "../config/constants.js";
 import { today, currentTime } from "../utils/time.js";
-import { formatMoney } from "../utils/format.js";
+import { formatMoney, cleanMd } from "../utils/format.js";
 import { ensureTables } from "../db/schema.js";
 import {
     getDisplayCurrency,
@@ -13,7 +13,10 @@ import {
     clearUserMemories,
     getUserVoiceMode,
     setUserVoiceMode,
-    getLastModelChatMessage
+    getLastModelChatMessage,
+    addOrUpdateAuthorizedUser,
+    setAuthorizedUserStatus,
+    getAuthorizedUser
 } from "../db/queries.js";
 import {
     telegram,
@@ -27,7 +30,8 @@ import {
     sendMainHub,
     sendMainMenu,
     sendSettingsMenu,
-    sendHelpMessage
+    sendHelpMessage,
+    sendUserManagementMenu
 } from "../modules/hub/views.js";
 import {
     sendFinanceHub,
@@ -75,12 +79,16 @@ export async function handleCallback(callback, env, origin) {
     const messageId = callback.message?.message_id;
 
     // Enforce strict personal assistant access control on interactive callbacks
-    if (userId && !isUserAuthorized(userId, env)) {
-        await answerCallback(env, callback.id, {
-            text: "⛔ Access denied: This assistant is private.",
-            show_alert: true
-        }).catch(() => {});
-        return;
+    // (Special exemption: allow request_access callback for unauthorized users)
+    if (!data.startsWith("request_access")) {
+        const isAuth = await isUserAuthorizedAsync(env.DB, userId, env);
+        if (userId && !isAuth) {
+            await answerCallback(env, callback.id, {
+                text: "⛔ Access denied: This assistant is private.",
+                show_alert: true
+            }).catch(() => {});
+            return;
+        }
     }
 
     // Callbacks that show their own specific toast notification will invoke answerCallback with text
@@ -90,6 +98,10 @@ export async function handleCallback(callback, env, origin) {
         "toggle_expense_reminder",
         "remind_test_general"
     ].includes(data) || 
+    data.startsWith("request_access") ||
+    data.startsWith("approve_user:") ||
+    data.startsWith("deny_user:") ||
+    data.startsWith("revoke_user:") ||
     data.startsWith("remind_toggle") || 
     data.startsWith("remind_quick_timer:") || 
     data.startsWith("remind_shift:") || 
@@ -108,6 +120,161 @@ export async function handleCallback(callback, env, origin) {
     }
 
     if (!chatId) return;
+
+    // --- Dynamic User Access Management (Boss & Guest Workflow) ---
+    if (data.startsWith("request_access")) {
+        const fromUser = callback.from || {};
+        const requesterId = String(fromUser.id || userId);
+        const name = [fromUser.first_name, fromUser.last_name].filter(Boolean).join(" ") || "Guest";
+        const username = fromUser.username ? `@${fromUser.username}` : "None";
+
+        await addOrUpdateAuthorizedUser(env.DB, {
+            userId: requesterId,
+            username: fromUser.username || "",
+            firstName: fromUser.first_name || name,
+            role: "guest",
+            status: "pending",
+            approvedBy: ""
+        });
+
+        await answerCallback(env, callback.id, {
+            text: "✅ Access request forwarded to Boss!",
+            show_alert: true
+        });
+
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `⏳ *Access Request Submitted*\n────────────────────\nHello ${name}! Your request has been forwarded directly to Boss.\n\nYou will receive a notification as soon as it's reviewed!`,
+            { parse_mode: "Markdown" }
+        );
+
+        // Notify Boss
+        const ownerId = env?.OWNER_ID || env?.OWNER_TELEGRAM_ID || OWNER_USER_ID;
+        await sendMessage(
+            env,
+            ownerId,
+            `🔔 *New Access Request Received*\n────────────────────\n👤 *Name:* ${cleanMd(name)}\n💬 *Username:* ${username}\n🆔 *User ID:* \`${requesterId}\`\n\nWould you like to grant guest access to F.R.I.D.A.Y.?`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "✅ Approve as Guest", callback_data: `approve_user:${requesterId}` },
+                            { text: "❌ Deny", callback_data: `deny_user:${requesterId}` }
+                        ]
+                    ]
+                }
+            }
+        ).catch(e => console.warn("Failed to notify owner:", e.message));
+        return;
+    }
+
+    if (data.startsWith("approve_user:")) {
+        if (!isOwner(userId, env)) {
+            await answerCallback(env, callback.id, { text: "⛔ Only Boss can approve users.", show_alert: true });
+            return;
+        }
+
+        const targetId = data.replace("approve_user:", "").trim();
+        const existing = await getAuthorizedUser(env.DB, targetId);
+        const targetName = existing?.first_name || "Guest";
+
+        await addOrUpdateAuthorizedUser(env.DB, {
+            userId: targetId,
+            username: existing?.username || "",
+            firstName: targetName,
+            role: "guest",
+            status: "active",
+            approvedBy: userId
+        });
+
+        await answerCallback(env, callback.id, { text: `✅ ${targetName} approved as Guest!` });
+
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `✅ *Access Granted*\n────────────────────\n👤 *User:* ${cleanMd(targetName)} (\`${targetId}\`)\n🛡️ *Role:* Guest (Standard AI Persona, no Boss data access)\n\n_User has been notified and can now chat with F.R.I.D.A.Y._`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "👥 Manage Users", callback_data: "manage_users" }],
+                        [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                    ]
+                }
+            }
+        );
+
+        // Send welcome message to guest
+        await sendMessage(
+            env,
+            targetId,
+            `🎉 *Welcome to F.R.I.D.A.Y.!*\n────────────────────\nHello ${targetName}! Boss has approved your access.\n\nI'm F.R.I.D.A.Y., your intelligent AI assistant. Feel free to ask me questions, search the live web, check weather, or chat anytime.\n\nHow can I help you today?`,
+            { parse_mode: "Markdown" }
+        ).catch(() => {});
+        return;
+    }
+
+    if (data.startsWith("deny_user:")) {
+        if (!isOwner(userId, env)) {
+            await answerCallback(env, callback.id, { text: "⛔ Only Boss can deny users.", show_alert: true });
+            return;
+        }
+
+        const targetId = data.replace("deny_user:", "").trim();
+        await setAuthorizedUserStatus(env.DB, targetId, "revoked");
+
+        await answerCallback(env, callback.id, { text: `❌ Access denied for user ${targetId}` });
+
+        await safeEditOrSendMessage(
+            env,
+            chatId,
+            messageId,
+            `❌ *Access Denied*\n────────────────────\nRequest from user \`${targetId}\` was declined.`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "👥 Manage Users", callback_data: "manage_users" }],
+                        [{ text: "🏠 Main Hub", callback_data: "hub" }]
+                    ]
+                }
+            }
+        );
+
+        await sendMessage(
+            env,
+            targetId,
+            `⛔ *Access Request Status*\n\nYour request to access F.R.I.D.A.Y. was declined.`,
+            { parse_mode: "Markdown" }
+        ).catch(() => {});
+        return;
+    }
+
+    if (data === "manage_users") {
+        if (!isOwner(userId, env)) {
+            await answerCallback(env, callback.id, { text: "⛔ User management is restricted to Boss.", show_alert: true });
+            return;
+        }
+        await sendUserManagementMenu(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data.startsWith("revoke_user:")) {
+        if (!isOwner(userId, env)) {
+            await answerCallback(env, callback.id, { text: "⛔ Only Boss can revoke users.", show_alert: true });
+            return;
+        }
+
+        const targetId = data.replace("revoke_user:", "").trim();
+        await setAuthorizedUserStatus(env.DB, targetId, "revoked");
+        await answerCallback(env, callback.id, { text: `🚫 Revoked access for ${targetId}`, show_alert: true });
+        await sendUserManagementMenu(env, chatId, userId, messageId);
+        return;
+    }
 
     // --- Main Hub, Finance Hub & Settings ---
     if (data === "menu" || data === "hub") {

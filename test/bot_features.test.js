@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { GEMINI_MODELS, isUserAuthorized, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
+import { GEMINI_MODELS, isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
+import { addOrUpdateAuthorizedUser, listAuthorizedUsers, setAuthorizedUserStatus } from "../src/db/queries.js";
 import { normalizeReminderTime } from "../src/utils/time.js";
 import { isCompoundOrMultiAction, isRealTimeSearchQuery, isConversationalOrCorrection } from "../src/utils/natural.js";
 import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/copilot/handler.js";
@@ -730,6 +731,151 @@ describe("Bot Improvements & Stability", () => {
             expect(payload.text).not.toContain("Ledger: +");
             expect(payload.text).not.toContain("Work Done:");
             expect(payload.reply_markup?.inline_keyboard?.[0]?.[0]?.text).not.toBe("⚡ Daily Briefing");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Dynamic User Management & Guest Persona Separation", () => {
+        it("isOwner should strictly identify owner ID 849550186", () => {
+            expect(isOwner("849550186")).toBe(true);
+            expect(isOwner(849550186)).toBe(true);
+            expect(isOwner("999999999")).toBe(false);
+            expect(isOwner(null)).toBe(false);
+        });
+
+        it("isUserAuthorizedAsync should authorize active guests from D1 and block revoked users", async () => {
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn((uid) => ({
+                        first: vi.fn().mockImplementation(async () => {
+                            if (uid === "777777") return { status: "active" };
+                            if (uid === "888888") return { status: "revoked" };
+                            return null;
+                        })
+                    }))
+                })
+            };
+
+            const env = { ALLOWED_USER_IDS: "849550186" };
+
+            // Owner is always authorized
+            expect(await isUserAuthorizedAsync(mockDb, "849550186", env)).toBe(true);
+
+            // Active guest is authorized via D1
+            expect(await isUserAuthorizedAsync(mockDb, "777777", env)).toBe(true);
+
+            // Revoked guest is rejected
+            expect(await isUserAuthorizedAsync(mockDb, "888888", env)).toBe(false);
+
+            // Unknown user is rejected
+            expect(await isUserAuthorizedAsync(mockDb, "123456", env)).toBe(false);
+        });
+
+        it("buildCopilotPrompt should tailor persona: 'Boss' for owner vs friendly name for guest (never 'Boss')", () => {
+            // 1. Owner Prompt
+            const ownerPrompt = buildCopilotPrompt("What's up?", { isOwner: true, userName: "Boss" });
+            expect(ownerPrompt).toContain("Boss's exceptionally smart, loyal, high-EQ personal AI executive assistant");
+            expect(ownerPrompt).toContain("Address the user with loyalty and executive warmth as 'Boss'");
+            expect(ownerPrompt).not.toContain("NEVER call this user \"Boss\"");
+
+            // 2. Guest Prompt (e.g. Jinie)
+            const guestPrompt = buildCopilotPrompt("How is the weather?", { isOwner: false, userName: "Jinie" });
+            expect(guestPrompt).toContain("The user chatting with you is 'Jinie'");
+            expect(guestPrompt).toContain("NEVER call this user \"Boss\"");
+            expect(guestPrompt).toContain("Do NOT mention Boss's personal finances");
+            expect(guestPrompt).not.toContain("Boss's exceptionally smart, loyal");
+        });
+
+        it("handleCallback should allow unauthorized guest to trigger request_access and notify Boss", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue(null),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186",
+                OWNER_ID: "849550186"
+            };
+
+            await handleCallback(
+                {
+                    id: "cb_req_1",
+                    data: "request_access:987654321",
+                    from: { id: 987654321, first_name: "Jinie", username: "jinie_t" },
+                    message: { chat: { id: 987654321 }, message_id: 111 }
+                },
+                mockEnv,
+                "https://cashflow.workers.dev"
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            // Boss should have received a notification with approval buttons
+            const bossNotification = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.chat_id === "849550186" && body.text?.includes("New Access Request Received");
+            });
+            expect(bossNotification).toBeDefined();
+            const payload = JSON.parse(bossNotification[1].body);
+            expect(payload.text).toContain("Jinie");
+            expect(payload.text).toContain("987654321");
+            expect(payload.reply_markup.inline_keyboard[0][0].callback_data).toBe("approve_user:987654321");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("handleCallback should allow Boss to approve guest with 1-tap and notify the guest", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ user_id: "987654321", first_name: "Jinie", username: "jinie_t" }),
+                        run: vi.fn().mockResolvedValue({})
+                    })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186",
+                OWNER_ID: "849550186"
+            };
+
+            // Boss taps approve
+            await handleCallback(
+                {
+                    id: "cb_app_1",
+                    data: "approve_user:987654321",
+                    from: { id: 849550186, first_name: "Tra" },
+                    message: { chat: { id: 849550186 }, message_id: 222 }
+                },
+                mockEnv,
+                "https://cashflow.workers.dev"
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            // Guest should receive welcome message
+            const guestWelcome = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.chat_id === "987654321" && body.text?.includes("Welcome to F.R.I.D.A.Y.!");
+            });
+            expect(guestWelcome).toBeDefined();
+            const payload = JSON.parse(guestWelcome[1].body);
+            expect(payload.text).toContain("Boss has approved your access");
 
             fetchSpy.mockRestore();
         });

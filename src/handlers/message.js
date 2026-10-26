@@ -1,6 +1,6 @@
 import { today, dateDaysAgo } from "../utils/time.js";
 import { formatAmount } from "../utils/format.js";
-import { isUserAuthorized } from "../config/constants.js";
+import { isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "../config/constants.js";
 import { telegram, sendMessage, sendTelegramVoice } from "../services/telegram.js";
 import { generateSpeechAudio, askGeminiWithGoogleSearch } from "../services/ai.js";
 import {
@@ -18,12 +18,14 @@ import {
     setUserVoiceMode,
     getUserBriefingMode,
     setUserBriefingMode,
-    getLastModelChatMessage
+    getLastModelChatMessage,
+    addOrUpdateAuthorizedUser,
+    setAuthorizedUserStatus
 } from "../db/queries.js";
 import { isConversationalOrCorrection, isCompoundOrMultiAction, isRealTimeSearchQuery, parseNaturalIncome, parseNaturalExpense } from "../utils/natural.js";
 
 // Hub
-import { sendMainHub, sendHelpMessage, sendSettingsMenu } from "../modules/hub/views.js";
+import { sendMainHub, sendHelpMessage, sendSettingsMenu, sendUserManagementMenu } from "../modules/hub/views.js";
 
 // Finance
 import {
@@ -113,12 +115,18 @@ export async function handleRealTimeSearchCommand(env, chatId, userId, query, me
         await telegram(env, "sendChatAction", { chat_id: chatId, action: wantsVoice ? "record_voice" : "typing" });
     } catch (_) {}
 
-    const result = await askGeminiWithGoogleSearch(env, cleanQuery, { currentDate: today() });
+    const isUserOwner = isOwner(userId, env);
+    const requesterName = message?.from?.first_name || (isUserOwner ? "Boss" : "Friend");
+    const result = await askGeminiWithGoogleSearch(env, cleanQuery, { 
+        currentDate: today(),
+        isOwner: isUserOwner,
+        userName: requesterName
+    });
     if (!result || !result.reply) {
         await sendMessage(
             env,
             chatId,
-            `⚠️ *Search Error*\n\nBoss, I couldn't reach the search service right now. Please try again in a moment.`,
+            `⚠️ *Search Error*\n\n${isUserOwner ? "Boss" : requesterName}, I couldn't reach the search service right now. Please try again in a moment.`,
             { parse_mode: "Markdown" }
         );
         return;
@@ -172,14 +180,23 @@ export async function handleMessage(message, env, origin) {
     const chatType = message.chat?.type || "private";
     const isGroup = chatType === "group" || chatType === "supergroup";
 
-    // Enforce strict personal assistant access control
-    if (userId && !isUserAuthorized(userId, env)) {
+    // Enforce dynamic personal assistant access control
+    const isAuth = await isUserAuthorizedAsync(env.DB, userId, env);
+    if (userId && !isAuth) {
         if (!isGroup) {
+            const requesterName = message.from?.first_name || "Friend";
             await sendMessage(
                 env,
                 chatId,
-                `⛔ *Access Restricted*\n────────────────────\nThis assistant is private and configured for authorized personal use only.`,
-                { parse_mode: "Markdown" }
+                `🔒 *F.R.I.D.A.Y. • Access Restricted*\n────────────────────\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
+                {
+                    parse_mode: "Markdown",
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "📩 Request Access from Boss", callback_data: `request_access:${userId}` }]
+                        ]
+                    }
+                }
             ).catch(() => {});
         }
         return;
@@ -704,6 +721,53 @@ export async function handleMessage(message, env, origin) {
 
     if (text === "/settings") {
         await sendSettingsMenu(env, chatId, userId);
+        return;
+    }
+
+    // 6.1 👥 Dynamic User Access Management (/users, /share, /whitelist)
+    if (text === "/users" || text.startsWith("/users ") || text === "/share" || text.startsWith("/share ") || text.startsWith("/whitelist")) {
+        if (!isOwner(userId, env)) {
+            await sendMessage(
+                env,
+                chatId,
+                `⛔ *Access Denied*\n\nUser access management is restricted to Boss.`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        const parts = text.split(/\s+/);
+        const sub = (parts[1] || "").toLowerCase();
+        const targetId = (parts[2] || "").trim();
+
+        if (sub === "add" && targetId) {
+            await addOrUpdateAuthorizedUser(env.DB, {
+                userId: targetId,
+                role: "guest",
+                status: "active",
+                approvedBy: userId
+            });
+            await sendMessage(
+                env,
+                chatId,
+                `✅ *User Authorized*\n\nUser ID \`${targetId}\` has been authorized as an active Guest.`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        if ((sub === "remove" || sub === "revoke" || sub === "del") && targetId) {
+            await setAuthorizedUserStatus(env.DB, targetId, "revoked");
+            await sendMessage(
+                env,
+                chatId,
+                `🚫 *User Access Revoked*\n\nUser ID \`${targetId}\` access has been revoked.`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        await sendUserManagementMenu(env, chatId, userId);
         return;
     }
 

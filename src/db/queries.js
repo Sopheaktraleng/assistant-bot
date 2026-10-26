@@ -476,3 +476,80 @@ export async function claimDailyBroadcast(db, userId, type, date) {
         return true;
     }
 }
+
+export async function getAuthorizedUser(db, userId) {
+    if (!db || !userId) return null;
+    try {
+        return await db
+            .prepare("SELECT user_id, username, first_name, role, status, created_at, approved_by FROM authorized_users WHERE user_id = ?")
+            .bind(String(userId))
+            .first();
+    } catch (e) {
+        console.warn("getAuthorizedUser error:", e.message);
+        return null;
+    }
+}
+
+export async function listAuthorizedUsers(db) {
+    if (!db) return [];
+    try {
+        const { results } = await db
+            .prepare("SELECT user_id, username, first_name, role, status, created_at, approved_by FROM authorized_users ORDER BY role DESC, created_at ASC")
+            .all();
+        return results || [];
+    } catch (e) {
+        console.warn("listAuthorizedUsers error:", e.message);
+        return [];
+    }
+}
+
+export async function addOrUpdateAuthorizedUser(db, { userId, username = "", firstName = "", role = "guest", status = "active", approvedBy = "owner" }) {
+    if (!db || !userId) return false;
+    try {
+        await db
+            .prepare(
+                `INSERT INTO authorized_users (user_id, username, first_name, role, status, approved_by)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    role = excluded.role,
+                    status = excluded.status,
+                    approved_by = excluded.approved_by`
+            )
+            .bind(String(userId), username, firstName, role, status, approvedBy)
+            .run();
+        return true;
+    } catch (e) {
+        console.error("addOrUpdateAuthorizedUser error:", e);
+        return false;
+    }
+}
+
+export async function setAuthorizedUserStatus(db, userId, status) {
+    if (!db || !userId) return false;
+    try {
+        await db
+            .prepare("UPDATE authorized_users SET status = ? WHERE user_id = ?")
+            .bind(status, String(userId))
+            .run();
+        return true;
+    } catch (e) {
+        console.error("setAuthorizedUserStatus error:", e);
+        return false;
+    }
+}
+
+export async function isUserAllowedInDb(db, userId) {
+    if (!db || !userId) return false;
+    try {
+        const row = await db
+            .prepare("SELECT status FROM authorized_users WHERE user_id = ?")
+            .bind(String(userId))
+            .first();
+        return row?.status === "active";
+    } catch (e) {
+        return false;
+    }
+}
+

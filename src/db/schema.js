@@ -96,6 +96,15 @@ const TABLE_SCHEMAS = [
         date TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, type, date)
+    );`,
+    `CREATE TABLE IF NOT EXISTS authorized_users (
+        user_id TEXT PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        role TEXT NOT NULL DEFAULT 'guest',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        approved_by TEXT
     );`
 ];
 
@@ -126,6 +135,21 @@ export async function ensureTables(db) {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, type, date)
             )`).run();
+        } catch (e) {}
+        try {
+            await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_users (
+                user_id TEXT PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                role TEXT NOT NULL DEFAULT 'guest',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                approved_by TEXT
+            )`).run();
+            await db.prepare(`
+                INSERT OR IGNORE INTO authorized_users (user_id, first_name, role, status, approved_by)
+                VALUES ('849550186', 'Boss', 'owner', 'active', 'system')
+            `).run();
         } catch (e) {}
         tablesEnsured = true;
     } catch (e) {
