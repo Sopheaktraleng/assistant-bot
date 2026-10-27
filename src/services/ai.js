@@ -1240,9 +1240,9 @@ export function extractGroundingSources(groundingMetadata) {
 
 /**
  * Intelligent deterministic real-time fallback for common live external queries
- * when Gemini Search APIs are rate-limited or temporarily unreachable.
+ * when external Search APIs are temporarily unreachable.
  */
-export async function getLiveRealtimeFallback(query, context = {}) {
+export async function getLiveRealtimeFallback(query, context = {}, quickOnly = false) {
     const q = (query || "").toLowerCase();
 
     // 1. Live Weather (Phnom Penh / Cambodia via Open-Meteo)
@@ -1337,6 +1337,8 @@ export async function getLiveRealtimeFallback(query, context = {}) {
         };
     }
 
+    if (quickOnly) return null;
+
     const isOwner = context?.isOwner !== false;
     const userName = context?.userName || (isOwner ? "Boss" : "there");
     const addressUser = isOwner ? "Boss" : userName;
@@ -1356,8 +1358,67 @@ export async function getLiveRealtimeFallback(query, context = {}) {
 }
 
 /**
- * Queries Gemini with real-time Google Search grounding.
- * Returns { reply, voice_summary, sources: [{ title, url }] }
+ * Real-time web search crawler using DuckDuckGo to provide 100% free web grounding
+ * even when Google Search Grounding tools hit billing or quota limits.
+ */
+export async function searchWebDuckDuckGo(query, limit = 5) {
+    try {
+        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            signal: AbortSignal.timeout(6000)
+        });
+        if (!res.ok) return [];
+        const html = await res.text();
+        const results = [];
+        const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+        const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+
+        const titles = [];
+        let tMatch;
+        while ((tMatch = titleRegex.exec(html)) && titles.length < limit) {
+            let rawUrl = tMatch[1];
+            if (rawUrl.includes("uddg=")) {
+                const m = rawUrl.match(/uddg=([^&]+)/);
+                if (m) rawUrl = decodeURIComponent(m[1]);
+            } else if (rawUrl.startsWith("//")) {
+                rawUrl = "https:" + rawUrl;
+            }
+            const cleanTitle = tMatch[2].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").trim();
+            titles.push({ url: rawUrl, title: cleanTitle });
+        }
+
+        const snippets = [];
+        let sMatch;
+        while ((sMatch = snippetRegex.exec(html)) && snippets.length < limit) {
+            const cleanSnippet = sMatch[1].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").trim();
+            snippets.push(cleanSnippet);
+        }
+
+        for (let i = 0; i < titles.length; i++) {
+            results.push({
+                title: titles[i].title,
+                url: titles[i].url,
+                snippet: snippets[i] || ""
+            });
+        }
+        return results;
+    } catch (err) {
+        console.warn("searchWebDuckDuckGo error:", err.message);
+        return [];
+    }
+}
+
+/**
+ * Queries real-time Web Search Grounding with multi-tier fallback:
+ * 1. Dedicated domain endpoints (Weather, Crypto, Rates)
+ * 2. Native Gemini Google Search tool
+ * 3. DuckDuckGo Web Crawler + Gemini Text Synthesis
+ * 4. Cloudflare Workers AI Synthesis (Free Edge GPU)
+ * 5. Direct Clean Web Snippets Card
  */
 export async function askGeminiWithGoogleSearch(env, query, context = {}) {
     const cleanQuery = (query || "").trim();
@@ -1366,6 +1427,12 @@ export async function askGeminiWithGoogleSearch(env, query, context = {}) {
     const dateStr = context?.currentDate || today();
     const timeStr = context?.currentTime || currentTime();
     const tz = context?.timezone || TIME_ZONE;
+
+    // 1. Instant domain telemetry check (Weather, Crypto, Exchange rates)
+    const quickLocalFeed = await getLiveRealtimeFallback(cleanQuery, context, true);
+    if (quickLocalFeed) {
+        return quickLocalFeed;
+    }
 
     const candidateModels = [
         env?.GEMINI_MODEL,
@@ -1383,7 +1450,7 @@ Boss Query: "${cleanQuery}"
 
 CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
 1. Accuracy & Grounding:
-   - Use Google Search to retrieve accurate, live, up-to-the-minute real-world information.
+   - Use live search results to provide accurate, up-to-the-minute real-world information.
    - Ground your answer strictly in fresh live search results.
 2. Tone & Persona:
    - Speak with executive warmth, loyalty, and polish, addressing the user as "Boss".
@@ -1399,7 +1466,7 @@ User Query: "${cleanQuery}"
 
 CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
 1. Accuracy & Grounding:
-   - Use Google Search to retrieve accurate, live, up-to-the-minute real-world information.
+   - Use live search results to provide accurate, up-to-the-minute real-world information.
    - Ground your answer strictly in fresh live search results.
 2. Tone & Persona:
    - Speak with warmth, friendliness, and polish.
@@ -1410,73 +1477,157 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
 3. Language:
    - If the user asks in Khmer (ភាសាខ្មែរ / អក្សរខ្មែរ), reply fluently and naturally in Khmer. Otherwise reply in natural English.`;
 
-    const requestBody = JSON.stringify({
-        contents: [
-            {
-                parts: [{ text: `${systemPrompt}\n\n${addressUser} says: "${cleanQuery}"` }]
-            }
-        ],
-        tools: [
-            {
-                google_search: {}
-            }
-        ],
-        generationConfig: {
-            temperature: 0.4
-        }
-    });
-
+    // 2. Try Gemini native google_search tool (if account has search tool enabled/quota)
     if (env?.GEMINI_API_KEY) {
+        const googleSearchPayload = JSON.stringify({
+            contents: [
+                {
+                    parts: [{ text: `${systemPrompt}\n\n${addressUser} says: "${cleanQuery}"` }]
+                }
+            ],
+            tools: [{ google_search: {} }],
+            generationConfig: { temperature: 0.4 }
+        });
+
         for (const model of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
                 const resp = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: requestBody,
-                    signal: AbortSignal.timeout(12000)
+                    body: googleSearchPayload,
+                    signal: AbortSignal.timeout(8000)
                 });
 
-                if (!resp.ok) {
-                    const errText = await resp.text();
-                    console.warn(`Gemini Search Grounding error for ${model} (${resp.status}):`, errText);
-                    continue;
+                if (resp.ok) {
+                    const resJson = await resp.json();
+                    const candidate = resJson?.candidates?.[0];
+                    const rawText = candidate?.content?.parts?.[0]?.text;
+                    if (rawText && rawText.trim()) {
+                        const metadata = candidate?.groundingMetadata;
+                        const sources = extractGroundingSources(metadata);
+                        let formattedReply = rawText.trim();
+                        if (sources && sources.length > 0) {
+                            const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                            formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+                        }
+                        const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
+                        return { reply: formattedReply, voice_summary: spoken, sources: sources || [] };
+                    }
                 }
-
-                const resJson = await resp.json();
-                const candidate = resJson?.candidates?.[0];
-                const rawText = candidate?.content?.parts?.[0]?.text;
-                if (!rawText || !rawText.trim()) continue;
-
-                // Extract grounding sources
-                const metadata = candidate?.groundingMetadata;
-                const sources = extractGroundingSources(metadata);
-
-                let formattedReply = rawText.trim();
-                if (sources && sources.length > 0) {
-                    const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
-                    formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
-                }
-
-                // Spoken voice summary: strip markdown formatting
-                const spoken = rawText
-                    .replace(/[*_#`~\[\]\(\)]/g, "")
-                    .replace(/https?:\/\/\S+/g, "")
-                    .trim();
-
-                return {
-                    reply: formattedReply,
-                    voice_summary: spoken,
-                    sources: sources || []
-                };
             } catch (e) {
-                console.warn(`Gemini Search fetch error for ${model}:`, e.message);
+                // Continue to robust DuckDuckGo web search fallback
             }
         }
     }
 
-    // Smart real-time deterministic fallback if Gemini Search is rate-limited or unavailable
-    return await getLiveRealtimeFallback(cleanQuery, context);
+    // 3. Robust Live Web Search Fallback via DuckDuckGo + AI Synthesis
+    const searchResults = await searchWebDuckDuckGo(cleanQuery, 5);
+    const hasSearchResults = Array.isArray(searchResults) && searchResults.length > 0;
+
+    const sources = hasSearchResults
+        ? searchResults.map(r => ({
+            title: r.title.length > 30 ? r.title.slice(0, 27) + "..." : r.title,
+            url: r.url
+        }))
+        : [];
+
+    const groundingContext = hasSearchResults
+        ? searchResults.map((r, i) => `[Source ${i + 1}] (${r.title}) - ${r.url}\n${r.snippet}`).join("\n\n")
+        : "";
+
+    const synthesisPrompt = hasSearchResults
+        ? `${systemPrompt}\n\nLive Real-Time Web Search Results:\n${groundingContext}\n\n${addressUser} asks: "${cleanQuery}"\nUsing the live search results above, formulate an accurate, direct, well-structured answer addressing ${addressUser}. Include key names and numbers in bold.`
+        : `${systemPrompt}\n\n${addressUser} asks: "${cleanQuery}"\nAnswer to the best of your knowledge with clear, direct points.`;
+
+    // 3a. Synthesize with Gemini Text Model (without google_search tool so it never hits the tool 429 quota)
+    if (env?.GEMINI_API_KEY) {
+        const textPayload = JSON.stringify({
+            contents: [{ parts: [{ text: synthesisPrompt }] }],
+            generationConfig: { temperature: 0.4 }
+        });
+
+        for (const model of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+                const resp = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: textPayload,
+                    signal: AbortSignal.timeout(8000)
+                });
+
+                if (resp.ok) {
+                    const resJson = await resp.json();
+                    const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (rawText && rawText.trim()) {
+                        let formattedReply = rawText.trim();
+                        if (sources.length > 0) {
+                            const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                            formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+                        }
+                        const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
+                        return { reply: formattedReply, voice_summary: spoken, sources };
+                    }
+                }
+            } catch (e) {
+                console.warn(`Gemini synthesis error for ${model}:`, e.message);
+            }
+        }
+    }
+
+    // 3b. Synthesize with Cloudflare Workers AI (Llama 3.1) if Gemini is completely rate-limited
+    if (env?.AI) {
+        try {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: hasSearchResults ? `Live Web Search Results:\n${groundingContext}\n\nQuestion: "${cleanQuery}"` : cleanQuery }
+                ],
+                max_tokens: 1000,
+                temperature: 0.3
+            });
+
+            const outputText = aiResp?.response || (typeof aiResp === "string" ? aiResp : "");
+            if (outputText && outputText.trim()) {
+                let formattedReply = outputText.trim();
+                if (sources.length > 0) {
+                    const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                    formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+                }
+                const spoken = outputText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
+                return { reply: formattedReply, voice_summary: spoken, sources };
+            }
+        } catch (cfErr) {
+            console.error("Workers AI search synthesis error:", cfErr.message);
+        }
+    }
+
+    // 3c. Direct Structured Search Snippets if AI models are unreachable
+    if (hasSearchResults) {
+        const replyLines = [
+            `🌐 *F.R.I.D.A.Y. • Real-Time Web Intelligence*`,
+            `────────────────────`,
+            `${addressUser}, here is the live search intelligence for *"${cleanMd(cleanQuery)}"*:`,
+            ``
+        ];
+        searchResults.slice(0, 3).forEach((r) => {
+            replyLines.push(`● *[${cleanMd(r.title)}](${r.url})*`);
+            replyLines.push(`${cleanMd(r.snippet)}`);
+            replyLines.push(``);
+        });
+        replyLines.push(`────────────────────`);
+        replyLines.push(`_Synthesized via real-time web telemetry._`);
+
+        return {
+            reply: replyLines.join("\n"),
+            voice_summary: `${addressUser}, I retrieved live web search results for ${cleanQuery}.`,
+            sources
+        };
+    }
+
+    // 4. Default Standby Notice
+    return await getLiveRealtimeFallback(cleanQuery, context, false);
 }
 
 export async function callAiTextModel(env, systemPrompt, userPrompt, temperature = 0.3) {

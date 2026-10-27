@@ -584,6 +584,53 @@ describe("Bot Improvements & Stability", () => {
 
             fetchSpy.mockRestore();
         });
+
+        it("askGeminiWithGoogleSearch should fallback to web crawler when google_search tool encounters 429", async () => {
+            const mockDdGHtml = `
+                <div class="result results_links">
+                    <h2 class="result__title">
+                        <a class="result__a" href="https://example.com/ballon-dor">2026 Ballon d'Or Winner</a>
+                    </h2>
+                    <a class="result__snippet">Harry Kane won the 2026 Ballon d'Or award in London.</a>
+                </div>
+            `;
+
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url, opts) => {
+                const urlStr = typeof url === "string" ? url : "";
+                // 1. Gemini with google_search tool returns 429
+                if (urlStr.includes("generativelanguage.googleapis.com") && opts?.body?.includes("google_search")) {
+                    return Promise.resolve(new Response(JSON.stringify({
+                        error: { code: 429, message: "Resource exhausted" }
+                    }), { status: 429 }));
+                }
+                // 2. DuckDuckGo web search crawler returns HTML results
+                if (urlStr.includes("duckduckgo.com")) {
+                    return Promise.resolve(new Response(mockDdGHtml, { status: 200 }));
+                }
+                // 3. Gemini text synthesis (without google_search tool) succeeds
+                if (urlStr.includes("generativelanguage.googleapis.com")) {
+                    return Promise.resolve(new Response(JSON.stringify({
+                        candidates: [{
+                            content: { parts: [{ text: "Boss, **Harry Kane** won the 2026 Ballon d'Or in London." }] }
+                        }]
+                    }), { status: 200 }));
+                }
+                return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+            });
+
+            const result = await askGeminiWithGoogleSearch(
+                { GEMINI_API_KEY: "test_key" },
+                "who won ballor'dor in 2026",
+                { isOwner: true }
+            );
+
+            expect(result).toBeDefined();
+            expect(result.reply).toContain("Harry Kane");
+            expect(result.reply).toContain("🌐 *Live Sources:*");
+            expect(result.sources.length).toBeGreaterThan(0);
+
+            fetchSpy.mockRestore();
+        });
     });
 
     describe("Webhook Security & Secret Verification", () => {

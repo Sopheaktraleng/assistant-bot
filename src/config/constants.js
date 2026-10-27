@@ -2,13 +2,15 @@ export const TIME_ZONE = "Asia/Phnom_Penh";
 export const CURRENCY = "KHR";
 export const EXCHANGE_RATE = 4000; // 1 USD = 4000 KHR
 
-// Verified production models ordered by intelligence, reliability, and speed
+// Verified production models ordered by intelligence, reliability, and quota resilience
 export const GEMINI_MODELS = [
-    "gemini-3.5-flash",       // High intelligence, reliable 200 OK, full reasoning
-    "gemini-3.6-flash",       // Next-gen high intelligence flash
-    "gemini-3.1-pro-preview", // Pro-tier intelligence (if account has quota/billing)
-    "gemini-3.8-flash",       // Flagship flash
-    "gemini-3.5-flash-lite"   // Lite speed fallback
+    "gemini-3.5-flash",         // Standard high intelligence
+    "gemini-flash-lite-latest", // High quota availability on free tier
+    "gemini-3.6-flash",         // Next-gen flash
+    "gemini-3.1-flash-lite",    // Lite fallback
+    "gemini-3.8-flash",         // Flagship flash
+    "gemini-3.5-flash-lite",    // Lite speed fallback
+    "gemini-flash-latest"       // Latest alias
 ];
 
 export const QUICK_EXPENSE_CATS = [
