@@ -1,20 +1,21 @@
 import { TIME_ZONE } from "../../config/constants.js";
 import { ensureTables } from "../../db/schema.js";
 import { safeEditOrSendMessage } from "../../services/telegram.js";
+import { cleanMd } from "../../utils/format.js";
 
 export async function sendPromptAddReminder(env, chatId, messageId = null) {
     const text = [
-        `⏰ *Quick Timers & Reminders*`,
-        `────────────────────`,
-        `⚡ *1-Tap Countdown Timers:*`,
-        `Tap any button below to start a quick alert right now:`,
+        `⏱️ *Quick Timers & Reminders*`,
         ``,
-        `✍️ *Or Type Naturally Anytime:*`,
+        `*1-Tap Countdown Timers:*`,
+        `Tap any preset below to start an alert right away:`,
+        ``,
+        `*Or Type Naturally Anytime:*`,
         `• \`remind in 25m Check oven\``,
         `• \`remind 18:30 Pick up laundry\``,
         `• \`remind 9am Team sprint review\``,
-        `────────────────────`,
-        `_The bot will alert you on Telegram when it's time!_`
+        ``,
+        `_Friday will deliver an alert notification when the time arrives!_`
     ].join("\n");
 
     const buttons = [
@@ -32,7 +33,7 @@ export async function sendPromptAddReminder(env, chatId, messageId = null) {
         ],
         [
             { text: "‹ Back to Reminders", callback_data: "reminders" },
-            { text: "🏠 Main Hub", callback_data: "hub" }
+            { text: "‹ Main Hub", callback_data: "hub" }
         ]
     ];
 
@@ -70,37 +71,37 @@ export async function sendRemindersMenu(env, chatId, userId, messageId = null) {
 
     let customTextList = "";
     if (customReminders.length === 0) {
-        customTextList = `_No custom timers right now. Tap **＋ Quick Timers** below!_`;
+        customTextList = `_No custom alerts scheduled._`;
     } else {
-        customTextList = customReminders.map((r, idx) => {
+        customTextList = customReminders.map((r) => {
             const status = r.is_active ? "🟢" : "⚪";
             const freq = r.frequency === "weekdays" ? "Mon–Fri" : r.frequency === "daily" ? "Daily" : "Once";
-            return `${idx + 1}. ${status} \`${r.reminder_time}\` (${freq}) • *${r.title}*`;
+            return `${status} \`${r.reminder_time}\`  ${cleanMd(r.title)} _(${freq})_`;
         }).join("\n");
     }
 
     const text = [
         `⏰ *Reminders & Alerts Hub*`,
-        `────────────────────`,
-        `● *Automations:*  \`${autoCount}\` of 3 active`,
-        `● *Custom Timers:* \`${activeCustom}\` active`,
-        `● *Timezone:*      \`${TIME_ZONE}\` (UTC+7)`,
-        `────────────────────`,
-        `🤖 *Daily Routine Automations:*`,
-        `${standupActive ? "🟢" : "⚪"} *09:00* • 🗣️ Morning Standup Sync (Mon–Fri)`,
-        `${lunchboxActive ? "🟢" : "⚪"} *17:30* • 🎒 Departure Alarm (Mon–Fri)`,
-        `${expenseActive ? "🟢" : "⚪"} *21:00* • 💳 Daily Expense Check (Daily)`,
         ``,
-        `📌 *Custom Reminders & Timers:*`,
+        `● *Automations:*   \`${autoCount} of 3 active\``,
+        `● *Custom Timers:* \`${activeCustom} active\`${customReminders.length ? ` _(${customReminders.length} total)_` : ""}`,
+        `● *Timezone:*      \`Phnom Penh (UTC+7)\``,
+        ``,
+        `*Daily Routine Automations:*`,
+        `${standupActive ? "🟢" : "⚪"} \`09:00\`  Morning Standup Sync _(Mon–Fri)_`,
+        `${lunchboxActive ? "🟢" : "⚪"} \`17:30\`  Departure Alarm _(Mon–Fri)_`,
+        `${expenseActive ? "🟢" : "⚪"} \`21:00\`  Daily Expense Check _(Daily)_`,
+        ``,
+        `*Custom Reminders & Timers:*`,
         customTextList,
-        `────────────────────`,
-        `💡 _Tap any automation to toggle, or type: \`remind in 20m <task>\`_`
+        ``,
+        `_💡 Tap routine to toggle, or type: \`remind in 20m <task>\`_`
     ].join("\n");
 
     const buttons = [
         [
-            { text: "＋ New Reminder", callback_data: "remind_prompt_add" },
-            { text: "⏱️ Quick Timers", callback_data: "remind_prompt_add" }
+            { text: "⏱️ Quick Timers", callback_data: "remind_prompt_add" },
+            { text: "🔔 Test Alert", callback_data: "remind_test_general" }
         ],
         [
             { 
@@ -116,22 +117,21 @@ export async function sendRemindersMenu(env, chatId, userId, messageId = null) {
             { 
                 text: `${expenseActive ? "🟢" : "⚪"} Expense Check 21:00`, 
                 callback_data: "toggle_expense_reminder" 
-            },
-            { text: "🔔 Test Alert", callback_data: "remind_test_general" }
+            }
         ]
     ];
 
     for (const r of customReminders.slice(0, 5)) {
         const statusIcon = r.is_active ? "🟢" : "⚪";
-        const shortTitle = r.title.length > 18 ? r.title.slice(0, 17) + "…" : r.title;
+        const shortTitle = r.title.length > 14 ? r.title.slice(0, 13) + "…" : r.title;
         buttons.push([
-            { text: `${statusIcon} ${r.reminder_time} • ${shortTitle}`, callback_data: `remind_toggle:${r.id}` },
+            { text: `${statusIcon} ${r.reminder_time} ${shortTitle}`, callback_data: `remind_toggle:${r.id}` },
             { text: "⚙️ Edit", callback_data: `remind_time_menu:${r.id}` }
         ]);
     }
 
     buttons.push([
-        { text: "🏠 Main Hub", callback_data: "hub" }
+        { text: "‹ Main Hub", callback_data: "hub" }
     ]);
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -162,11 +162,11 @@ export async function sendReminderTimeMenu(env, chatId, userId, reminderId, mess
 
     const text = [
         `⚙️ *Manage Reminder*`,
-        `────────────────────`,
-        `📌 *${r.title}*`,
-        `● *Status:*     ${statusLabel}`,
-        `● *Time:*       \`${r.reminder_time}\` (${freqLabel})`,
-        `────────────────────`,
+        ``,
+        `*${cleanMd(r.title)}*`,
+        `● *Status:* ${statusLabel}`,
+        `● *Time:*   \`${r.reminder_time}\` _(${freqLabel})_`,
+        ``,
         `_Quickly toggle, shift time, change repeat, or delete:_`
     ].join("\n");
 
@@ -176,22 +176,22 @@ export async function sendReminderTimeMenu(env, chatId, userId, reminderId, mess
             { text: `🔁 Repeat: ${freqLabel}`, callback_data: `remind_freq:${r.id}:${nextFreq}` }
         ],
         [
-            { text: "⏱️ +15m", callback_data: `remind_shift:${r.id}:15` },
-            { text: "⏱️ +30m", callback_data: `remind_shift:${r.id}:30` },
-            { text: "⏱️ +1h", callback_data: `remind_shift:${r.id}:60` }
+            { text: "+15m", callback_data: `remind_shift:${r.id}:15` },
+            { text: "+30m", callback_data: `remind_shift:${r.id}:30` },
+            { text: "+1h", callback_data: `remind_shift:${r.id}:60` }
         ],
         [
-            { text: "🌅 09:00", callback_data: `remind_set_time:${r.id}:09:00` },
-            { text: "☀️ 12:00", callback_data: `remind_set_time:${r.id}:12:00` },
-            { text: "🌇 17:30", callback_data: `remind_set_time:${r.id}:17:30` },
-            { text: "🌙 21:00", callback_data: `remind_set_time:${r.id}:21:00` }
+            { text: "09:00", callback_data: `remind_set_time:${r.id}:09:00` },
+            { text: "12:00", callback_data: `remind_set_time:${r.id}:12:00` },
+            { text: "17:30", callback_data: `remind_set_time:${r.id}:17:30` },
+            { text: "21:00", callback_data: `remind_set_time:${r.id}:21:00` }
         ],
         [
             { text: "🗑️ Delete Reminder", callback_data: `remind_del:${r.id}` }
         ],
         [
             { text: "‹ Back to Reminders", callback_data: "reminders" },
-            { text: "🏠 Main Hub", callback_data: "hub" }
+            { text: "‹ Main Hub", callback_data: "hub" }
         ]
     ];
 

@@ -73,8 +73,8 @@ describe("Bot Improvements & Stability", () => {
 
             // Verify clean buttons exist
             const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
-            expect(buttonTexts).toContain("＋ New Reminder");
             expect(buttonTexts).toContain("⏱️ Quick Timers");
+            expect(buttonTexts).toContain("🔔 Test Alert");
             expect(buttonTexts).toContain("🟢 Standup 09:00");
             expect(buttonTexts).toContain("⚪ Departure 17:30");
             expect(buttonTexts).toContain("⚙️ Edit");
