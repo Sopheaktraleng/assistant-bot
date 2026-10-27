@@ -317,17 +317,15 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
 }
 
 export async function sendSummary(env, chatId, userId, period = "month", messageId = null) {
-    const safePeriod = (period === "today" || period === "all") ? period : "month";
+    const safePeriod = "month";
     const [displayCurrency, stats, breakdown, budgetStatus] = await Promise.all([
         getDisplayCurrency(env.DB, userId),
         getPeriodStats(env.DB, userId, safePeriod),
         getCategoryRows(env.DB, userId, safePeriod, 5),
-        safePeriod === "month" ? getBudgetStatus(env.DB, userId) : Promise.resolve(null)
+        getBudgetStatus(env.DB, userId)
     ]);
 
-    let title = `Monthly Insights (${monthLabel()})`;
-    if (safePeriod === "all") title = `All-Time Insights (Lifetime)`;
-    if (safePeriod === "today") title = `Daily Summary (${today()})`;
+    const title = `Monthly Insights (${monthLabel()})`;
 
     const lines = [
         `📊 *${title}*`,
@@ -338,11 +336,9 @@ export async function sendSummary(env, chatId, userId, period = "month", message
     ];
 
     if (stats.maxAmount) {
-        const symbol = stats.maxCurrency === "USD" ? "$" : "";
-        const suffix = stats.maxCurrency === "KHR" ? " ៛" : "";
-        const amt = stats.maxCurrency === "USD" ? formatMoney(stats.maxAmount) : formatMoney(stats.maxAmount);
+        const maxKhr = stats.maxCurrency === "USD" ? stats.maxAmount * EXCHANGE_RATE : stats.maxAmount;
         const icon = getCategoryIcon(stats.maxCategory, "expense");
-        lines.push(`● *Biggest Spend:* \`${symbol}${amt}${suffix}\` (${icon} ${capitalize(stats.maxCategory)})`);
+        lines.push(`● *Biggest Spend:* \`${formatAmount(maxKhr, displayCurrency)}\` (${icon} ${capitalize(stats.maxCategory)})`);
     }
 
     if (budgetStatus) {
@@ -362,23 +358,16 @@ export async function sendSummary(env, chatId, userId, period = "month", message
         });
     }
 
-    const tabRow = [
-        { text: safePeriod === "month" ? "• This Month •" : "📆 This Month", callback_data: "summary_month" },
-        { text: safePeriod === "all" ? "• All-Time •" : "🌐 All-Time", callback_data: "summary_all" },
-        { text: safePeriod === "today" ? "• Today •" : "📅 Today", callback_data: "summary_today" }
-    ];
-
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
-                tabRow,
                 [
                     { text: "📋 Transactions", callback_data: "view_transactions" },
                     { text: "💳 Finance Hub", callback_data: "finance_hub" }
                 ],
                 [
-                    { text: "🏠 Main Hub", callback_data: "hub" }
+                    { text: "‹ Main Hub", callback_data: "hub" }
                 ]
             ]
         }
