@@ -14,14 +14,16 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
 
     const netBalance = allSummary?.balanceKhr || 0;
     const isNegative = netBalance < 0;
-    const balanceIndicator = isNegative ? "🔴" : "🟢";
+    const sign = netBalance > 0 ? "+" : "";
+    const balanceStatus = isNegative ? "deficit" : "healthy";
+    const balanceStr = `${sign}${formatAmount(netBalance, displayCurrency)}`;
 
     const text = [
         `💳 *Finance & Cashflow*`,
         ``,
-        `${balanceIndicator} *Net Balance:*  \`${formatAmount(netBalance, displayCurrency)}\``,
-        `📅 *This Month:*   \`${formatAmount(monthSummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
-        `📊 *Spent Today:*  \`${formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
+        `● *Net Balance:*  \`${balanceStr}\` _(${balanceStatus})_`,
+        `● *Spent Today:*  \`${formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
+        `● *This Month:*   \`${formatAmount(monthSummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
         ``,
         `_📸 Snap any ABA / KHQR receipt or type: \`5 coffee\` or \`+500 salary\`_`
     ].join("\n");
@@ -31,20 +33,15 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "📸 Scan Slip", callback_data: "scan_prompt" },
-                    { text: "💸 Expense", callback_data: "add_expense" },
-                    { text: "💵 Income", callback_data: "add_income" }
+                    { text: "－ Expense", callback_data: "add_expense" },
+                    { text: "＋ Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📜 Today's Ledger", callback_data: "view_transactions" },
+                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
                     { text: "📊 Summary", callback_data: "summary_today" }
                 ],
                 [
-                    { text: "🎯 Budget", callback_data: "budget_help" },
-                    { text: "📥 Export CSV", callback_data: "export_csv" }
-                ],
-                [
-                    { text: "🏠 Main Hub", callback_data: "hub" }
+                    { text: "‹ Main Hub", callback_data: "hub" }
                 ]
             ]
         }
