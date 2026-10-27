@@ -105,6 +105,19 @@ const TABLE_SCHEMAS = [
         status TEXT NOT NULL DEFAULT 'active',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         approved_by TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS pending_statements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        chat_id TEXT NOT NULL,
+        bank TEXT,
+        period TEXT,
+        currency TEXT DEFAULT 'USD',
+        total_inflow REAL DEFAULT 0,
+        total_outflow REAL DEFAULT 0,
+        transaction_count INTEGER DEFAULT 0,
+        transactions_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`
 ];
 
@@ -150,6 +163,26 @@ export async function ensureTables(db) {
                 INSERT OR IGNORE INTO authorized_users (user_id, first_name, role, status, approved_by)
                 VALUES ('849550186', 'Boss', 'owner', 'active', 'system')
             `).run();
+        } catch (e) {}
+        try {
+            await db.prepare(`CREATE TABLE IF NOT EXISTS pending_statements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                bank TEXT,
+                period TEXT,
+                currency TEXT DEFAULT 'USD',
+                total_inflow REAL DEFAULT 0,
+                total_outflow REAL DEFAULT 0,
+                transaction_count INTEGER DEFAULT 0,
+                transactions_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )`).run();
+        } catch (e) {}
+        try {
+            await db.prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS work_logs_fts USING fts5(user_id UNINDEXED, content, category, date UNINDEXED)`).run();
+            await db.prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS expenses_fts USING fts5(user_id UNINDEXED, category, type, currency UNINDEXED, date UNINDEXED)`).run();
+            await db.prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS user_memories_fts USING fts5(user_id UNINDEXED, fact, category)`).run();
         } catch (e) {}
         tablesEnsured = true;
     } catch (e) {

@@ -553,3 +553,282 @@ export async function isUserAllowedInDb(db, userId) {
     }
 }
 
+/**
+ * Searches engineering work logs using FTS5 when available, falling back to LIKE.
+ */
+export async function searchWorkLogs(db, userId, query, limit = 10) {
+    if (!db || !userId) return [];
+    const cleanQuery = (query || "").trim();
+    if (!cleanQuery) {
+        const rows = await db.prepare(
+            "SELECT id, date, time, content, category FROM work_logs WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT ?"
+        ).bind(String(userId), limit).all();
+        return rows.results || [];
+    }
+
+    // Attempt FTS5 virtual table first
+    try {
+        const ftsQuery = cleanQuery.replace(/[^a-zA-Z0-9_\u1780-\u17FF\s]/g, " ").trim();
+        if (ftsQuery) {
+            const ftsRows = await db.prepare(
+                `SELECT rowid as id, date, content, category 
+                 FROM work_logs_fts 
+                 WHERE user_id = ? AND work_logs_fts MATCH ? 
+                 ORDER BY rank 
+                 LIMIT ?`
+            ).bind(String(userId), `${ftsQuery}*`, limit).all();
+            if (ftsRows.results && ftsRows.results.length > 0) {
+                return ftsRows.results;
+            }
+        }
+    } catch (_) {}
+
+    // Resilient fallback to LIKE
+    try {
+        const term = `%${cleanQuery}%`;
+        const rows = await db.prepare(
+            `SELECT id, date, time, content, category 
+             FROM work_logs 
+             WHERE user_id = ? AND (content LIKE ? OR category LIKE ?) 
+             ORDER BY date DESC, id DESC 
+             LIMIT ?`
+        ).bind(String(userId), term, term, limit).all();
+        return rows.results || [];
+    } catch (e) {
+        console.warn("searchWorkLogs error:", e.message);
+        return [];
+    }
+}
+
+/**
+ * Searches user memory matrix using FTS5 when available, falling back to LIKE.
+ */
+export async function searchUserMemories(db, userId, query, limit = 10) {
+    if (!db || !userId) return [];
+    const cleanQuery = (query || "").trim();
+    if (!cleanQuery) {
+        return getUserMemories(db, userId, limit);
+    }
+
+    // Attempt FTS5 virtual table first
+    try {
+        const ftsQuery = cleanQuery.replace(/[^a-zA-Z0-9_\u1780-\u17FF\s]/g, " ").trim();
+        if (ftsQuery) {
+            const ftsRows = await db.prepare(
+                `SELECT rowid as id, fact, category 
+                 FROM user_memories_fts 
+                 WHERE user_id = ? AND user_memories_fts MATCH ? 
+                 ORDER BY rank 
+                 LIMIT ?`
+            ).bind(String(userId), `${ftsQuery}*`, limit).all();
+            if (ftsRows.results && ftsRows.results.length > 0) {
+                return ftsRows.results;
+            }
+        }
+    } catch (_) {}
+
+    // Resilient fallback to LIKE
+    try {
+        const term = `%${cleanQuery}%`;
+        const rows = await db.prepare(
+            `SELECT id, fact, category 
+             FROM user_memories 
+             WHERE user_id = ? AND (fact LIKE ? OR category LIKE ?) 
+             ORDER BY id DESC 
+             LIMIT ?`
+        ).bind(String(userId), term, term, limit).all();
+        return rows.results || [];
+    } catch (e) {
+        console.warn("searchUserMemories error:", e.message);
+        return [];
+    }
+}
+
+/**
+ * Flexible ledger search by date range, category, and type.
+ */
+export async function searchLedger(db, userId, options = {}) {
+    if (!db || !userId) return { transactions: [], totalKhr: 0, count: 0 };
+    const { fromDate, toDate, category, type, limit = 20 } = options;
+
+    const conditions = ["user_id = ?"];
+    const params = [String(userId)];
+
+    if (fromDate) {
+        conditions.push("date >= ?");
+        params.push(fromDate);
+    }
+    if (toDate) {
+        conditions.push("date <= ?");
+        params.push(toDate);
+    }
+    if (category) {
+        conditions.push("LOWER(category) = LOWER(?)");
+        params.push(category);
+    }
+    if (type && type !== "all") {
+        conditions.push("type = ?");
+        params.push(type);
+    }
+
+    const whereClause = conditions.join(" AND ");
+    params.push(limit);
+
+    try {
+        const rows = await db.prepare(
+            `SELECT id, date, amount, currency, category, type, created_at 
+             FROM expenses 
+             WHERE ${whereClause} 
+             ORDER BY date DESC, id DESC 
+             LIMIT ?`
+        ).bind(...params).all();
+
+        const transactions = rows.results || [];
+        let totalKhr = 0;
+        for (const t of transactions) {
+            const amtKhr = t.currency === "USD" ? t.amount * EXCHANGE_RATE : t.amount;
+            totalKhr += amtKhr;
+        }
+
+        return {
+            transactions,
+            count: transactions.length,
+            totalKhr,
+            totalUsd: Number((totalKhr / EXCHANGE_RATE).toFixed(2))
+        };
+    } catch (e) {
+        console.warn("searchLedger error:", e.message);
+        return { transactions: [], totalKhr: 0, count: 0 };
+    }
+}
+
+/**
+ * Unified RAG search across memories, work logs, and ledger transactions.
+ */
+export async function searchHistoricalRecords(db, userId, query, options = {}) {
+    if (!db || !userId) return { memories: [], workLogs: [], transactions: [] };
+    const limit = options.limit || 5;
+
+    const [memories, workLogs, txns] = await Promise.all([
+        searchUserMemories(db, userId, query, limit),
+        searchWorkLogs(db, userId, query, limit),
+        searchLedger(db, userId, { category: query, limit })
+    ]);
+
+    return {
+        memories,
+        workLogs,
+        transactions: txns.transactions || []
+    };
+}
+
+/**
+ * Saves a multi-transaction parsed PDF statement for user confirmation.
+ */
+export async function savePendingStatement(db, { userId, chatId, bank, period, currency, totalInflow, totalOutflow, transactionCount, transactionsJson }) {
+    if (!db) return null;
+    try {
+        const result = await db.prepare(
+            `INSERT INTO pending_statements 
+             (user_id, chat_id, bank, period, currency, total_inflow, total_outflow, transaction_count, transactions_json) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+            String(userId),
+            String(chatId),
+            bank || "Bank Statement",
+            period || "",
+            currency || "USD",
+            totalInflow || 0,
+            totalOutflow || 0,
+            transactionCount || 0,
+            transactionsJson
+        ).run();
+
+        return result.meta?.last_row_id || result.lastRowId || null;
+    } catch (e) {
+        console.error("savePendingStatement error:", e);
+        return null;
+    }
+}
+
+/**
+ * Retrieves a pending statement by id and user_id.
+ */
+export async function getPendingStatement(db, id, userId) {
+    if (!db || !id) return null;
+    try {
+        return await db.prepare(
+            "SELECT * FROM pending_statements WHERE id = ? AND user_id = ?"
+        ).bind(id, String(userId)).first();
+    } catch (e) {
+        console.error("getPendingStatement error:", e);
+        return null;
+    }
+}
+
+/**
+ * Deletes a pending statement by id and user_id.
+ */
+export async function deletePendingStatement(db, id, userId) {
+    if (!db || !id) return false;
+    try {
+        await db.prepare(
+            "DELETE FROM pending_statements WHERE id = ? AND user_id = ?"
+        ).bind(id, String(userId)).run();
+        return true;
+    } catch (e) {
+        console.error("deletePendingStatement error:", e);
+        return false;
+    }
+}
+
+/**
+ * Imports all extracted transactions from a pending statement into the expenses ledger.
+ */
+export async function importPendingStatementTransactions(db, id, userId) {
+    if (!db || !id) return { success: false, count: 0 };
+    const stmt = await getPendingStatement(db, id, userId);
+    if (!stmt) return { success: false, count: 0 };
+
+    let transactions = [];
+    try {
+        transactions = JSON.parse(stmt.transactions_json);
+    } catch (e) {
+        console.error("Failed to parse statement transactions_json:", e);
+        return { success: false, count: 0 };
+    }
+
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+        await deletePendingStatement(db, id, userId);
+        return { success: true, count: 0 };
+    }
+
+    const stmts = transactions.map(t => {
+        const amt = parseFloat(t.amount);
+        const curr = (t.currency || stmt.currency || "USD").toUpperCase();
+        const cat = normalizeCategory(t.category || (t.type === "income" ? "Income" : "Other"));
+        const tType = t.type === "income" ? "income" : "expense";
+        const tDate = t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date) ? t.date : today();
+
+        return db.prepare(
+            "INSERT INTO expenses (user_id, date, amount, category, type, currency) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(String(userId), tDate, amt, cat, tType, curr);
+    });
+
+    try {
+        if (typeof db.batch === "function") {
+            await db.batch(stmts);
+        } else {
+            for (const s of stmts) {
+                await s.run();
+            }
+        }
+        await deletePendingStatement(db, id, userId);
+        return { success: true, count: transactions.length, transactions };
+    } catch (err) {
+        console.error("importPendingStatementTransactions error:", err);
+        return { success: false, count: 0, error: err.message };
+    }
+}
+
+

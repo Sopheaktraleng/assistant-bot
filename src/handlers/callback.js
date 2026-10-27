@@ -54,7 +54,11 @@ import {
     handleScanSetCategory,
     handleScanToggleType,
     renderPendingScanCard,
-    handleScanDiscard
+    handleScanDiscard,
+    handleStatementImport,
+    handleStatementViewBreakdown,
+    renderPendingStatementCard,
+    handleStatementDiscard
 } from "../modules/finance/scanner.js";
 import {
     handleListTodayTasksCommand
@@ -1139,6 +1143,31 @@ export async function handleCallback(callback, env, origin) {
     if (data.startsWith("scan_del:")) {
         const scanId = parseInt(data.slice(9), 10);
         await handleScanDiscard(env, chatId, userId, scanId, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    // --- Bank PDF Statement Callbacks ---
+    if (data.startsWith("stmt_import:")) {
+        const stmtId = parseInt(data.slice(12), 10);
+        await handleStatementImport(env, chatId, userId, stmtId, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    if (data.startsWith("stmt_view:")) {
+        const stmtId = parseInt(data.slice(10), 10);
+        await handleStatementViewBreakdown(env, chatId, userId, stmtId, callback.message?.message_id, callback.id);
+        return;
+    }
+
+    if (data.startsWith("stmt_back:")) {
+        const stmtId = parseInt(data.slice(10), 10);
+        await renderPendingStatementCard(env, chatId, stmtId, callback.message?.message_id);
+        return;
+    }
+
+    if (data.startsWith("stmt_del:")) {
+        const stmtId = parseInt(data.slice(9), 10);
+        await handleStatementDiscard(env, chatId, userId, stmtId, callback.message?.message_id, callback.id);
         return;
     }
 }

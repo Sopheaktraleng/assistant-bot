@@ -151,4 +151,77 @@ ON authorized_users (status);
 INSERT OR IGNORE INTO authorized_users (user_id, first_name, role, status, approved_by)
 VALUES ('849550186', 'Boss', 'owner', 'active', 'system');
 
+-- Pending Multi-Transaction PDF Statements
+CREATE TABLE IF NOT EXISTS pending_statements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    bank TEXT,
+    period TEXT,
+    currency TEXT DEFAULT 'USD',
+    total_inflow REAL DEFAULT 0,
+    total_outflow REAL DEFAULT 0,
+    transaction_count INTEGER DEFAULT 0,
+    transactions_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_statements_user
+ON pending_statements (user_id);
+
+-- FTS5 Full-Text Search Virtual Tables for Semantic RAG
+CREATE VIRTUAL TABLE IF NOT EXISTS work_logs_fts USING fts5(
+    user_id UNINDEXED,
+    content,
+    category,
+    date UNINDEXED
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS expenses_fts USING fts5(
+    user_id UNINDEXED,
+    category,
+    type,
+    currency UNINDEXED,
+    date UNINDEXED
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS user_memories_fts USING fts5(
+    user_id UNINDEXED,
+    fact,
+    category
+);
+
+-- Triggers for FTS5 Synchronization
+CREATE TRIGGER IF NOT EXISTS trg_work_logs_ai AFTER INSERT ON work_logs BEGIN
+    INSERT INTO work_logs_fts(rowid, user_id, content, category, date)
+    VALUES (new.id, new.user_id, new.content, new.category, new.date);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_work_logs_ad AFTER DELETE ON work_logs BEGIN
+    DELETE FROM work_logs_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_work_logs_au AFTER UPDATE ON work_logs BEGIN
+    UPDATE work_logs_fts SET content = new.content, category = new.category, date = new.date WHERE rowid = new.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_user_memories_ai AFTER INSERT ON user_memories BEGIN
+    INSERT INTO user_memories_fts(rowid, user_id, fact, category)
+    VALUES (new.id, new.user_id, new.fact, new.category);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_user_memories_ad AFTER DELETE ON user_memories BEGIN
+    DELETE FROM user_memories_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_expenses_ai AFTER INSERT ON expenses BEGIN
+    INSERT INTO expenses_fts(rowid, user_id, category, type, currency, date)
+    VALUES (new.id, new.user_id, new.category, new.type, new.currency, new.date);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_expenses_ad AFTER DELETE ON expenses BEGIN
+    DELETE FROM expenses_fts WHERE rowid = old.id;
+END;
+
+
 

@@ -16,6 +16,9 @@
 ## ✨ Key Capabilities
 
 ### 🤖 F.R.I.D.A.Y. Tactical Assistant
+- **Native Gemini Tool Calling (Function Calling):** Powered by Gemini's official `tools: [{ function_declarations: [...] }]`, Friday autonomously queries your database ledger (`query_ledger`), searches engineering logs (`query_work_logs`), recalls memories (`search_memories`), and executes multi-step system actions with zero JSON parsing failure.
+- **Semantic RAG & Historical Search (D1 FTS5 & Search):** Instant retrieval across historical memories, past work logs, and ledger items. Ask: *"When was the last time I changed my oil?"* or *"How much did I spend on Grab last month?"* and Friday retrieves exact past records.
+- **Bank PDF Statement & Invoice OCR:** Send official PDF e-statements (ABA Bank, Bakong, Acleda) or utility bills (EDC electricity, internet) directly as documents. Friday analyzes the statement, calculates inflows/outflows, and imports all itemized transactions in 1 tap.
 - **Grounded Real-World AI:** Sharp, direct, and supportive personal chief of staff. Grounded strictly in real-world finance, software engineering, and daily productivity (zero fictional movie tropes).
 - **Multi-Turn Conversation Memory:** Remembers conversational context across turns (`chat_history`), enabling natural follow-up queries (*"Can I afford a $45 keyboard?"* ➔ *"What about in Riel?"*).
 - **Full Database System Control:** Friday can directly manage your system: add income/expenses, configure monthly budgets, switch currency, and undo transactions.
@@ -174,7 +177,10 @@ Run the test suite with [Vitest](https://vitest.dev/):
 npm test
 ```
 
-All 82 unit tests verify:
+All 146 unit tests verify:
+- Native Gemini tool calling & autonomous multi-step execution
+- Semantic RAG and SQLite FTS5 historical search
+- Bank PDF monthly statement & single invoice OCR
 - Neural speech synthesis and language detection
 - Multi-turn conversation history construction
 - Long-term memory storage and retrieval

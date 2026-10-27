@@ -369,7 +369,10 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
 
         const isUserOwner = isOwner(userId, env);
         const requesterName = from?.first_name || from?.username || (isUserOwner ? "Boss" : "Friend");
-        const context = await buildAiUserContext(env.DB, userId);
+        const context = await buildAiUserContext(env.DB, userId, cleanQuery);
+        context.db = env.DB;
+        context.userId = userId;
+        context.chatId = chatId;
         context.isOwner = isUserOwner;
         context.userName = requesterName;
         let result = null;
@@ -401,7 +404,7 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
 
         for (const act of actionsToExecute) {
             try {
-                if (!act || typeof act !== "object") continue;
+                if (!act || typeof act !== "object" || act.alreadyExecuted) continue;
 
                 if (act.type === "add_expense" && act.amount && act.amount > 0) {
                     const cat = act.category || "Other";

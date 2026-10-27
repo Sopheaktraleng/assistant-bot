@@ -47,6 +47,7 @@ import {
 } from "../modules/finance/commands.js";
 import {
     handleImageReceipt,
+    handlePdfDocument,
     sendScanHelp
 } from "../modules/finance/scanner.js";
 
@@ -205,6 +206,15 @@ export async function handleMessage(message, env, origin) {
     // 0. Smart Bank Slip & Receipt Scanner (Photo or Image Document)
     if (message.photo || (message.document && message.document.mime_type && message.document.mime_type.startsWith("image/"))) {
         await handleImageReceipt(message, env, origin);
+        return;
+    }
+
+    // 0.05. 📄 Smart Bank PDF Statement & Invoice OCR
+    if (message.document && (
+        message.document.mime_type === "application/pdf" ||
+        (message.document.file_name && message.document.file_name.toLowerCase().endsWith(".pdf"))
+    )) {
+        await handlePdfDocument(message, env, origin);
         return;
     }
 

@@ -1,14 +1,116 @@
 import { TIME_ZONE, EXCHANGE_RATE, GEMINI_MODELS } from "../config/constants.js";
-import { today, currentTime } from "../utils/time.js";
+import { today, currentTime, normalizeReminderTime } from "../utils/time.js";
 import { cleanMd, normalizeCategory } from "../utils/format.js";
 import { arrayBufferToBase64 } from "../utils/crypto.js";
-import { getDisplayCurrency, getFinancialSummary, getCategoryRows, getRecentChatHistory, getUserMemories } from "../db/queries.js";
+import { 
+    getDisplayCurrency, 
+    getFinancialSummary, 
+    getCategoryRows, 
+    getRecentChatHistory, 
+    getUserMemories,
+    searchHistoricalRecords,
+    searchLedger,
+    searchWorkLogs,
+    searchUserMemories,
+    addExpenseRecord,
+    deleteLastTransaction,
+    setDisplayCurrency,
+    setMonthlyBudget,
+    saveUserMemory
+} from "../db/queries.js";
 
 export function extractGeminiCandidateText(data) {
     const parts = data?.candidates?.[0]?.content?.parts;
     if (!Array.isArray(parts) || parts.length === 0) return null;
     const textPart = parts.find(p => p.text && !p.thought) || parts.find(p => p.text) || parts[parts.length - 1];
     return textPart?.text || null;
+}
+
+export function parseExtractedPdfStatementJson(text) {
+    if (!text) return null;
+    try {
+        let cleaned = text.trim();
+        const match = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (match) {
+            cleaned = match[1].trim();
+        } else {
+            const start = cleaned.indexOf("{");
+            const end = cleaned.lastIndexOf("}");
+            if (start !== -1 && end !== -1 && end > start) {
+                cleaned = cleaned.substring(start, end + 1);
+            }
+        }
+        const parsed = JSON.parse(cleaned);
+        const isStatement = parsed.is_statement === true || (Array.isArray(parsed.transactions) && parsed.transactions.length > 1);
+
+        if (isStatement) {
+            const rawTxns = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+            const transactions = rawTxns.map(t => {
+                let amount = parseFloat(t.amount);
+                if (isNaN(amount) || amount <= 0) return null;
+                let currency = (t.currency || parsed.currency || "USD").toUpperCase();
+                if (currency !== "USD" && currency !== "KHR") {
+                    currency = amount >= 500 ? "KHR" : "USD";
+                }
+                return {
+                    date: t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date) ? t.date : today(),
+                    amount,
+                    currency,
+                    merchant: cleanMd(t.merchant || "Bank Transaction"),
+                    category: normalizeCategory(t.category || (t.type === "income" ? "Income" : "Other")),
+                    type: t.type === "income" ? "income" : "expense",
+                    note: cleanMd(t.note || "")
+                };
+            }).filter(Boolean);
+
+            let totalInflow = typeof parsed.total_inflow === "number" ? parsed.total_inflow : 0;
+            let totalOutflow = typeof parsed.total_outflow === "number" ? parsed.total_outflow : 0;
+
+            if (totalInflow === 0 && totalOutflow === 0 && transactions.length > 0) {
+                for (const t of transactions) {
+                    if (t.type === "income") totalInflow += t.amount;
+                    else totalOutflow += t.amount;
+                }
+            }
+
+            return {
+                is_statement: true,
+                bank: cleanMd(parsed.bank_or_issuer || parsed.bank || "Bank Statement"),
+                account_name: cleanMd(parsed.account_name || ""),
+                period: cleanMd(parsed.period || ""),
+                currency: (parsed.currency || (transactions[0]?.currency) || "USD").toUpperCase(),
+                total_inflow: Number(totalInflow.toFixed(2)),
+                total_outflow: Number(totalOutflow.toFixed(2)),
+                transaction_count: transactions.length,
+                transactions,
+                summary_markdown: (parsed.summary_markdown || "").trim()
+            };
+        } else {
+            const single = parsed.single_transaction || parsed;
+            let amount = parseFloat(single.amount);
+            let currency = (single.currency || "USD").toUpperCase();
+            if (isNaN(amount) || amount <= 0) return null;
+            if (currency !== "USD" && currency !== "KHR") {
+                currency = amount >= 500 ? "KHR" : "USD";
+            }
+            return {
+                is_statement: false,
+                is_slip: true,
+                amount,
+                currency,
+                merchant: cleanMd(single.merchant || single.recipient || parsed.bank_or_issuer || "Invoice"),
+                bank: cleanMd(single.bank || parsed.bank_or_issuer || "Bank / Issuer"),
+                category: normalizeCategory(single.category || "Bills"),
+                type: single.type === "income" ? "income" : "expense",
+                note: cleanMd(single.note || ""),
+                date: single.date && /^\d{4}-\d{2}-\d{2}$/.test(single.date) ? single.date : null,
+                summary_markdown: (parsed.summary_markdown || "").trim()
+            };
+        }
+    } catch (e) {
+        console.error("parseExtractedPdfStatementJson error:", e.message);
+        return null;
+    }
 }
 
 export function parseExtractedJson(text) {
@@ -227,7 +329,106 @@ export async function parseReceiptImage(env, base64Data, mimeType = "image/jpeg"
     return null;
 }
 
-export async function buildAiUserContext(db, userId) {
+export async function parseStatementOrInvoicePdfWithGemini(env, base64Pdf, fileName = "statement.pdf", caption = "") {
+    const apiKey = env?.GEMINI_API_KEY;
+    if (!apiKey) return null;
+
+    const candidateModels = [env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean);
+
+    const prompt = `You are an expert financial document, invoice, and bank statement analyzer for Cambodia and international banking.
+Examine this PDF document carefully. It may be:
+1. An official bank monthly account statement (e.g. ABA Bank Account Statement, Bakong KHQR Statement, Acleda ToanChet, Canadia Bank, Prince Bank, Wing).
+2. A single utility bill or invoice (EDC electricity bill, Phnom Penh Water Supply PPWSA, internet bill, office rent).
+3. A store receipt, restaurant invoice, or payment voucher.
+
+Analyze the contents and return ONLY valid JSON matching this schema:
+{
+  "is_statement": boolean (true if multi-transaction account statement; false if single invoice, receipt, or payment slip),
+  "bank_or_issuer": string (e.g. "ABA Bank", "Bakong KHQR", "Acleda", "EDC", "Brown Coffee", "Store Invoice"),
+  "account_name": string (account holder name if visible, or null),
+  "period": string (e.g. "October 2026", "2026-10-01 to 2026-10-31", or invoice date),
+  "currency": "USD" or "KHR",
+  "total_inflow": number (sum of deposits/credits),
+  "total_outflow": number (sum of payments/debits),
+  "transaction_count": number (number of extracted transactions),
+  "single_transaction": {
+    "is_slip": boolean,
+    "amount": number (positive numeric value),
+    "currency": "USD" or "KHR",
+    "merchant": string,
+    "bank": string,
+    "category": string ("Food", "Coffee", "Transport", "Taxi", "Shopping", "Bills", "Rent", or "Other"),
+    "type": "expense" or "income",
+    "date": "YYYY-MM-DD" or null,
+    "note": string
+  },
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "amount": number (positive numeric value),
+      "currency": "USD" or "KHR",
+      "merchant": string,
+      "category": string ("Food", "Coffee", "Transport", "Shopping", "Bills", "Rent", "Income", or "Other"),
+      "type": "expense" or "income",
+      "note": string
+    }
+  ],
+  "summary_markdown": string (concise 2-3 sentence executive summary of the document for Boss)
+}
+${caption ? `User caption note: "${caption}"` : ""}
+Return ONLY pure JSON.`;
+
+    const requestBody = JSON.stringify({
+        contents: [
+            {
+                parts: [
+                    { text: prompt },
+                    {
+                        inline_data: {
+                            mime_type: "application/pdf",
+                            data: base64Pdf
+                        }
+                    }
+                ]
+            }
+        ],
+        generationConfig: {
+            response_mime_type: "application/json",
+            temperature: 0.1
+        }
+    });
+
+    for (const model of candidateModels) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: requestBody,
+                signal: AbortSignal.timeout(12000)
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.warn(`Gemini PDF OCR model ${model} failed (${response.status}):`, errText);
+                continue;
+            }
+
+            const resJson = await response.json();
+            const rawText = extractGeminiCandidateText(resJson);
+            if (rawText) {
+                const parsed = parseExtractedPdfStatementJson(rawText);
+                if (parsed) return parsed;
+            }
+        } catch (e) {
+            console.warn(`Gemini PDF OCR fetch error for ${model}:`, e.message);
+        }
+    }
+
+    return null;
+}
+
+export async function buildAiUserContext(db, userId, userQuery = null) {
     const curDate = today();
     const curTime = currentTime();
     const displayCurrency = await getDisplayCurrency(db, userId);
@@ -267,6 +468,13 @@ export async function buildAiUserContext(db, userId) {
         getRecentChatHistory(db, userId, 6),
         getUserMemories(db, userId, 15)
     ]);
+
+    let relevantHistory = null;
+    if (userQuery && typeof userQuery === "string" && userQuery.trim().length > 2) {
+        try {
+            relevantHistory = await searchHistoricalRecords(db, userId, userQuery.trim(), { limit: 5 });
+        } catch (_) {}
+    }
 
     const budgetKhr = settingsRow?.monthly_budget || 0;
     const spentMonthKhr = monthSummary?.totalExpenseInKhr || 0;
@@ -329,7 +537,12 @@ export async function buildAiUserContext(db, userId) {
             frequency: r.frequency
         })),
         chatHistory: (recentChat || []).map(c => ({ role: c.role, content: c.content })),
-        userMemories: (memories || []).map(m => ({ id: m.id, category: m.category, fact: m.fact }))
+        userMemories: (memories || []).map(m => ({ id: m.id, category: m.category, fact: m.fact })),
+        relevantHistory: (relevantHistory && (
+            (relevantHistory.memories && relevantHistory.memories.length > 0) ||
+            (relevantHistory.workLogs && relevantHistory.workLogs.length > 0) ||
+            (relevantHistory.transactions && relevantHistory.transactions.length > 0)
+        )) ? relevantHistory : null
     };
 }
 
@@ -345,6 +558,24 @@ export function buildCopilotPrompt(userQuery, context) {
             .map(m => `• [${(m.category || "PREFERENCE").toUpperCase()}] ${m.fact}`)
             .join("\n");
         memoryBlock = `\n=== WHAT FRIDAY KNOWS ABOUT ${isOwner ? "BOSS" : "USER"} (Long-term Personal Memory) ===\n${memLines}\n=================================================================\n`;
+    }
+
+    let ragBlock = "";
+    if (context?.relevantHistory) {
+        const rh = context.relevantHistory;
+        const lines = [];
+        if (rh.memories?.length) {
+            lines.push("Matched Memories: " + rh.memories.map(m => `• [${m.category}] ${m.fact}`).join("; "));
+        }
+        if (rh.workLogs?.length) {
+            lines.push("Matched Past Work: " + rh.workLogs.map(w => `• [${w.date}] ${w.content} (${w.category})`).join("; "));
+        }
+        if (rh.transactions?.length) {
+            lines.push("Matched Past Transactions: " + rh.transactions.map(t => `• [${t.date}] ${t.type} ${t.currency === "USD" ? "$" : ""}${t.amount}${t.currency === "KHR" ? " ៛" : ""} (${t.category})`).join("; "));
+        }
+        if (lines.length > 0) {
+            ragBlock = `\n=== HISTORICAL SEARCH & RAG MEMORY CONTEXT ===\n${lines.join("\n")}\n==============================================\n`;
+        }
     }
 
     const personaIdentity = isOwner
@@ -364,7 +595,7 @@ Exchange rate: 1 USD = 4,000 KHR.
 Today's Date: ${context?.currentDate || today()}, Time: ${context?.currentTime || currentTime()} (${context?.timezone || TIME_ZONE}).
 Preferred Display Currency: ${context?.displayCurrency || "USD"}.
 Session Entropy Seed: ${entropySeed}.
-${memoryBlock}
+${memoryBlock}${ragBlock}
 === ONBOARD LIVE TELEMETRY (Reference ONLY when ${userLabel} explicitly asks about money, expenses, work, or schedule) ===
 ${JSON.stringify(context, null, 2)}
 ===================================================================================================================
@@ -544,6 +775,230 @@ export function parseCopilotResponse(rawText) {
     return null;
 }
 
+export const FRIDAY_FUNCTION_DECLARATIONS = [
+    {
+        name: "query_ledger",
+        description: "Query historical financial transactions from the database ledger by date range, category, or type (income/expense).",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                from_date: { type: "STRING", description: "Start date in YYYY-MM-DD format" },
+                to_date: { type: "STRING", description: "End date in YYYY-MM-DD format" },
+                category: { type: "STRING", description: "Filter by category name, e.g. Coffee, Food, Transport, Rent, Bills" },
+                type: { type: "STRING", enum: ["expense", "income", "all"], description: "Type of transaction" },
+                limit: { type: "INTEGER", description: "Max number of records to return (default 10)" }
+            }
+        }
+    },
+    {
+        name: "query_work_logs",
+        description: "Search or retrieve engineering work accomplishments and tasks logged in the work journal.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                query: { type: "STRING", description: "Keyword to search within work task descriptions" },
+                category: { type: "STRING", description: "Category, e.g. Development, Bugfix, Meeting, Release, Design" },
+                limit: { type: "INTEGER", description: "Max number of records to return (default 10)" }
+            }
+        }
+    },
+    {
+        name: "search_memories",
+        description: "Search user's long-term memory matrix for facts, rules, preferences, or identity details.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                query: { type: "STRING", description: "Keyword or topic to search within memories" }
+            },
+            required: ["query"]
+        }
+    },
+    {
+        name: "add_expense",
+        description: "Record an expense into the user's financial ledger.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                amount: { type: "NUMBER", description: "Expense amount (positive number)" },
+                currency: { type: "STRING", enum: ["USD", "KHR"], description: "Currency (USD $ or KHR ៛)" },
+                category: { type: "STRING", description: "Category, e.g. Food, Coffee, Transport, Shopping, Bills" },
+                date: { type: "STRING", description: "Date in YYYY-MM-DD format if not today" }
+            },
+            required: ["amount"]
+        }
+    },
+    {
+        name: "add_income",
+        description: "Record an income or deposit into the ledger.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                amount: { type: "NUMBER", description: "Income amount (positive number)" },
+                currency: { type: "STRING", enum: ["USD", "KHR"], description: "Currency (USD $ or KHR ៛)" },
+                category: { type: "STRING", description: "Category, e.g. Salary, Freelance, Gift, Bonus, Investment" },
+                date: { type: "STRING", description: "Date in YYYY-MM-DD format if not today" }
+            },
+            required: ["amount"]
+        }
+    },
+    {
+        name: "delete_last_transaction",
+        description: "Undo or delete the most recent recorded transaction.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                filter: { type: "STRING", enum: ["expense", "income", "any"], description: "Type of transaction to delete" }
+            }
+        }
+    },
+    {
+        name: "set_currency",
+        description: "Switch the user's preferred display currency (USD or KHR).",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                currency: { type: "STRING", enum: ["USD", "KHR"], description: "Target currency code" }
+            },
+            required: ["currency"]
+        }
+    },
+    {
+        name: "set_budget",
+        description: "Set the monthly spending budget threshold.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                amount: { type: "NUMBER", description: "Budget limit amount" },
+                currency: { type: "STRING", enum: ["USD", "KHR"], description: "Currency of budget" }
+            },
+            required: ["amount"]
+        }
+    },
+    {
+        name: "add_work",
+        description: "Log an accomplishment or completed task into the engineering work journal.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                content: { type: "STRING", description: "Task description" },
+                category: { type: "STRING", description: "Category e.g. Development, Bugfix, Meeting, Documentation, Release" }
+            },
+            required: ["content"]
+        }
+    },
+    {
+        name: "add_reminder",
+        description: "Schedule a reminder or alarm.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                title: { type: "STRING", description: "Reminder description" },
+                time: { type: "STRING", description: "24-hour time in HH:mm format (Asia/Phnom_Penh UTC+7)" },
+                frequency: { type: "STRING", enum: ["once", "daily", "weekdays"], description: "Repeat frequency" }
+            },
+            required: ["title", "time"]
+        }
+    },
+    {
+        name: "add_memory",
+        description: "Commit a fact, preference, or rule about the user into the permanent memory matrix.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                fact: { type: "STRING", description: "Fact or preference to remember permanently" },
+                category: { type: "STRING", enum: ["preference", "work", "identity", "goal", "rule"], description: "Memory category" }
+            },
+            required: ["fact"]
+        }
+    }
+];
+
+export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs = {}) {
+    if (!db || !userId) return { success: false, error: "Database or user unavailable" };
+    try {
+        switch (toolName) {
+            case "query_ledger": {
+                const res = await searchLedger(db, userId, {
+                    fromDate: toolArgs.from_date,
+                    toDate: toolArgs.to_date,
+                    category: toolArgs.category,
+                    type: toolArgs.type,
+                    limit: toolArgs.limit || 10
+                });
+                return { success: true, ...res };
+            }
+            case "query_work_logs": {
+                const res = await searchWorkLogs(db, userId, toolArgs.query, toolArgs.limit || 10);
+                return { success: true, count: res.length, tasks: res };
+            }
+            case "search_memories": {
+                const res = await searchUserMemories(db, userId, toolArgs.query, 10);
+                return { success: true, count: res.length, memories: res };
+            }
+            case "add_expense": {
+                const amt = parseFloat(toolArgs.amount);
+                const curr = (toolArgs.currency || "USD").toUpperCase();
+                const cat = normalizeCategory(toolArgs.category || "Other");
+                const date = (toolArgs.date && /^\d{4}-\d{2}-\d{2}$/.test(toolArgs.date)) ? toolArgs.date : today();
+                await addExpenseRecord(db, userId, amt, cat, "expense", curr, date);
+                return { success: true, recorded: { type: "expense", amount: amt, currency: curr, category: cat, date } };
+            }
+            case "add_income": {
+                const amt = parseFloat(toolArgs.amount);
+                const curr = (toolArgs.currency || "USD").toUpperCase();
+                const cat = normalizeCategory(toolArgs.category || "Income");
+                const date = (toolArgs.date && /^\d{4}-\d{2}-\d{2}$/.test(toolArgs.date)) ? toolArgs.date : today();
+                await addExpenseRecord(db, userId, amt, cat, "income", curr, date);
+                return { success: true, recorded: { type: "income", amount: amt, currency: curr, category: cat, date } };
+            }
+            case "delete_last_transaction": {
+                const deleted = await deleteLastTransaction(db, userId, toolArgs.filter || null);
+                return { success: !!deleted, deletedTransaction: deleted };
+            }
+            case "set_currency": {
+                const curr = (toolArgs.currency || "USD").toUpperCase();
+                await setDisplayCurrency(db, userId, curr);
+                return { success: true, currency: curr };
+            }
+            case "set_budget": {
+                const amt = parseFloat(toolArgs.amount);
+                const curr = (toolArgs.currency || "USD").toUpperCase();
+                const budgetKhr = curr === "USD" ? Math.round(amt * EXCHANGE_RATE) : Math.round(amt);
+                await setMonthlyBudget(db, userId, budgetKhr);
+                return { success: true, budgetLimitKhr: budgetKhr };
+            }
+            case "add_work": {
+                const curTime = currentTime();
+                const curDate = today();
+                const cat = toolArgs.category || "General";
+                await db.prepare(
+                    "INSERT INTO work_logs (user_id, date, time, content, category) VALUES (?, ?, ?, ?, ?)"
+                ).bind(userId, curDate, curTime, toolArgs.content.trim(), cat).run();
+                return { success: true, task: toolArgs.content.trim(), category: cat, time: curTime };
+            }
+            case "add_reminder": {
+                const cleanTitle = (toolArgs.title || "Reminder").trim();
+                const cleanTime = (toolArgs.time ? normalizeReminderTime(toolArgs.time) : null) || (toolArgs.time ? toolArgs.time.trim() : "12:00");
+                const freq = toolArgs.frequency || "once";
+                await db.prepare(
+                    "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
+                ).bind(userId, String(chatId || userId), cleanTitle, cleanTime, freq).run();
+                return { success: true, reminder: { title: cleanTitle, time: cleanTime, frequency: freq } };
+            }
+            case "add_memory": {
+                const memCat = toolArgs.category || "preference";
+                await saveUserMemory(db, userId, toolArgs.fact.trim(), memCat);
+                return { success: true, memory: { fact: toolArgs.fact.trim(), category: memCat } };
+            }
+            default:
+                return { success: false, error: `Unknown tool: ${toolName}` };
+        }
+    } catch (err) {
+        console.error(`executeCopilotTool ${toolName} error:`, err);
+        return { success: false, error: err.message };
+    }
+}
+
 export async function askAiCopilot(env, userQuery, context) {
     const prompt = buildCopilotPrompt(userQuery, context);
 
@@ -565,8 +1020,12 @@ export async function askAiCopilot(env, userQuery, context) {
                 parts: [{ text: prompt }]
             },
             contents,
+            tools: [
+                {
+                    function_declarations: FRIDAY_FUNCTION_DECLARATIONS
+                }
+            ],
             generationConfig: {
-                response_mime_type: "application/json",
                 temperature
             }
         });
@@ -581,7 +1040,7 @@ export async function askAiCopilot(env, userQuery, context) {
                     signal: AbortSignal.timeout(12000)
                 });
 
-                // Fallback to monolithic prompt if model rejects system_instruction
+                // Fallback to monolithic prompt if model rejects tools or system_instruction
                 if (!resp.ok && resp.status === 400) {
                     const fallbackBody = JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
@@ -605,6 +1064,107 @@ export async function askAiCopilot(env, userQuery, context) {
                 }
 
                 const resJson = await resp.json();
+                const candidate = resJson?.candidates?.[0];
+                const parts = candidate?.content?.parts || [];
+
+                // 1. Native Gemini Tool Calling (Function Calling)
+                const functionCalls = parts.filter(p => p.functionCall).map(p => p.functionCall);
+                if (functionCalls.length > 0) {
+                    const queryToolNames = ["query_ledger", "query_work_logs", "search_memories"];
+                    const hasQueryTool = functionCalls.some(f => queryToolNames.includes(f.name));
+
+                    const executedActions = [];
+                    const functionResponses = [];
+
+                    for (const fCall of functionCalls) {
+                        const toolName = fCall.name;
+                        const toolArgs = fCall.args || {};
+                        const toolResult = await executeCopilotTool(context?.db, context?.userId, context?.chatId, toolName, toolArgs);
+
+                        functionResponses.push({
+                            functionResponse: {
+                                name: toolName,
+                                response: { name: toolName, content: toolResult }
+                            }
+                        });
+
+                        if (!queryToolNames.includes(toolName)) {
+                            executedActions.push({
+                                type: toolName,
+                                alreadyExecuted: true,
+                                ...toolArgs
+                            });
+                        }
+                    }
+
+                    // If a query tool was called, run a follow-up turn so Gemini synthesizes retrieved telemetry
+                    if (hasQueryTool && context?.db) {
+                        try {
+                            const followUpContents = [
+                                ...contents,
+                                { role: "model", parts: candidate.content.parts },
+                                { role: "function", parts: functionResponses }
+                            ];
+
+                            const followUpResp = await fetch(url, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    system_instruction: { parts: [{ text: prompt }] },
+                                    contents: followUpContents,
+                                    generationConfig: { temperature: 0.3 }
+                                }),
+                                signal: AbortSignal.timeout(8000)
+                            });
+
+                            if (followUpResp.ok) {
+                                const followUpJson = await followUpResp.json();
+                                const textPart = extractGeminiCandidateText(followUpJson);
+                                if (textPart) {
+                                    const parsed = parseCopilotResponse(textPart);
+                                    if (parsed) {
+                                        return {
+                                            ...parsed,
+                                            actions: [...executedActions, ...(parsed.actions || [])]
+                                        };
+                                    }
+                                    return {
+                                        reply: textPart,
+                                        voice_summary: textPart.replace(/[*_#`~\[\]\(\)]/g, "").slice(0, 200),
+                                        action: executedActions[0] || null,
+                                        actions: executedActions
+                                    };
+                                }
+                            }
+                        } catch (turn2Err) {
+                            console.warn("Gemini tool follow-up turn error:", turn2Err.message);
+                        }
+                    }
+
+                    // For action tools or if turn 2 completed/skipped
+                    const textPart = parts.find(p => p.text)?.text;
+                    if (textPart) {
+                        const parsed = parseCopilotResponse(textPart);
+                        if (parsed) {
+                            return {
+                                ...parsed,
+                                actions: [...executedActions, ...(parsed.actions || [])]
+                            };
+                        }
+                    }
+
+                    const isOwner = context?.isOwner !== false;
+                    const addressTitle = isOwner ? "Boss" : (context?.userName || "there");
+                    const reply = `Done right away, ${addressTitle}. Executed ${executedActions.length} system command${executedActions.length > 1 ? "s" : ""}.`;
+                    return {
+                        reply,
+                        voice_summary: `Done right away ${addressTitle}.`,
+                        action: executedActions[0] || null,
+                        actions: executedActions
+                    };
+                }
+
+                // 2. Standard candidate text (JSON or plain text)
                 const rawText = extractGeminiCandidateText(resJson);
                 if (rawText) {
                     const parsed = parseCopilotResponse(rawText);
