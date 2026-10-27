@@ -15,7 +15,9 @@ import {
     monthPrefix,
     monthLabel,
     dateDaysAgo,
-    getPreviousWorkdayDate
+    getPreviousWorkdayDate,
+    formatCambodiaDateTime,
+    formatTimeFromCreatedAt
 } from "../src/utils/time.js";
 import { timingSafeEqual, validateTelegramInitData } from "../src/utils/crypto.js";
 
@@ -205,6 +207,26 @@ describe("Crypto & Security Utilities", () => {
             const fakeData = "query_id=123&user=%7B%22id%22%3A12345%7D&auth_date=1700000000&hash=invalidhash1234567890abcdef";
             const result = await validateTelegramInitData(fakeData, "fake_bot_token");
             expect(result).toBeNull();
+        });
+    });
+
+    describe("Cambodia Date & Time Formatting", () => {
+        it("should format date and 12-hour time in Asia/Phnom_Penh", () => {
+            const dt = formatCambodiaDateTime("2026-10-27T08:15:00Z");
+            expect(dt.date).toBe("27 Oct 2026");
+            expect(dt.time).toMatch(/3:15\s*PM/i);
+            expect(dt.full).toContain("27 Oct 2026");
+            expect(dt.full).toMatch(/3:15\s*PM/i);
+        });
+
+        it("should extract 12-hour time from SQLite UTC created_at timestamp", () => {
+            const timeStr = formatTimeFromCreatedAt("2026-10-27 08:30:00");
+            expect(timeStr).toMatch(/3:30\s*PM/i);
+        });
+
+        it("should handle null or invalid timestamps gracefully", () => {
+            expect(formatTimeFromCreatedAt(null)).toBe("");
+            expect(formatTimeFromCreatedAt("")).toBe("");
         });
     });
 });

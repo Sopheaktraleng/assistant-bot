@@ -1,5 +1,5 @@
 import { EXCHANGE_RATE, QUICK_EXPENSE_CATS } from "../../config/constants.js";
-import { today } from "../../utils/time.js";
+import { today, formatCambodiaDateTime } from "../../utils/time.js";
 import { cleanMd, formatMoney, capitalize, getCategoryIcon, normalizeCategory } from "../../utils/format.js";
 import { arrayBufferToBase64 } from "../../utils/crypto.js";
 import { 
@@ -32,16 +32,16 @@ export function formatPendingScanText(scan) {
     const bankName = scan.bank || "Bank Transfer";
     const merchant = scan.merchant ? scan.merchant : "Merchant / Store";
     const note = scan.note ? `\n📝 *Note:* ${cleanMd(scan.note)}` : "";
-    const date = scan.date || today();
+    const cambodiaDate = formatCambodiaDateTime(scan.date || null);
 
     return [
         `🧾 *Slip / Receipt Detected*`,
         `────────────────────`,
-        `● *Bank:*     ${cleanMd(bankName)}`,
-        `● *${isIncome ? "Payer" : "Merchant"}:*  ${cleanMd(merchant)}`,
-        `● *Amount:*   \`${mainAmt}\`${altAmt}`,
-        `● *Category:* ${icon} *${capitalize(scan.category)}*`,
-        `● *Date:*     \`${date}\`${note}`,
+        `● *Bank:*        ${cleanMd(bankName)}`,
+        `● *${isIncome ? "Payer" : "Merchant"}:*   ${cleanMd(merchant)}`,
+        `● *Amount:*      \`${mainAmt}\`${altAmt}`,
+        `● *Category:*    ${icon} *${capitalize(scan.category)}*`,
+        `● *Date & Time:* 📅 \`${cambodiaDate.full} ICT\`${note}`,
         `────────────────────`,
         `_Tap below to confirm and record:_`
     ].join("\n");
@@ -166,14 +166,16 @@ export async function handleScanConfirm(env, chatId, userId, scanId, messageId, 
         return;
     }
 
-    await addExpenseRecord(
+    const txId = await addExpenseRecord(
         env.DB,
         userId,
         scan.amount,
         scan.category,
         scan.type,
         scan.currency,
-        scan.date
+        scan.date,
+        scan.merchant || null,
+        scan.note || null
     );
 
     await env.DB.prepare("DELETE FROM pending_scans WHERE id = ?").bind(scanId).run();
@@ -184,6 +186,7 @@ export async function handleScanConfirm(env, chatId, userId, scanId, messageId, 
     const suffix = scan.currency === "KHR" ? " ៛" : "";
     const amtStr = `${symbol}${formatMoney(scan.amount)}${suffix}`;
     const icon = getCategoryIcon(scan.category, scan.type);
+    const cambodiaDate = formatCambodiaDateTime(scan.date || null);
 
     if (messageId) {
         try {
@@ -193,11 +196,11 @@ export async function handleScanConfirm(env, chatId, userId, scanId, messageId, 
                 text: [
                     `✅ *Receipt Recorded*`,
                     `────────────────────`,
-                    `● *Amount:*   \`${amtStr}\``,
-                    `● *Category:* ${icon} *${capitalize(scan.category)}*`,
-                    `● *Source:*   ${cleanMd(scan.bank || "Bank Transfer")}`,
-                    scan.merchant ? `● *Merchant:* *${cleanMd(scan.merchant)}*` : "",
-                    `● *Date:*     \`${scan.date || today()}\``,
+                    `● *Amount:*      \`${amtStr}\``,
+                    `● *Category:*    ${icon} *${capitalize(scan.category)}*`,
+                    `● *Source:*      ${cleanMd(scan.bank || "Bank Transfer")}`,
+                    scan.merchant ? `● *Merchant:*    🏪 *${cleanMd(scan.merchant)}*` : "",
+                    `● *Date & Time:* 📅 \`${cambodiaDate.full} ICT\``,
                     `────────────────────`,
                     `_Saved to your ledger._`
                 ].filter(Boolean).join("\n"),
@@ -213,7 +216,9 @@ export async function handleScanConfirm(env, chatId, userId, scanId, messageId, 
         scan.type,
         scan.amount,
         scan.currency,
-        scan.category
+        scan.category,
+        null,
+        { merchant: scan.merchant, note: scan.note, txId, customDate: scan.date }
     );
 }
 

@@ -162,6 +162,20 @@ export function parseNaturalIncome(text) {
 
     // Determine category
     let category = "Income";
+    let source = null;
+    let note = null;
+
+    const noteMatch = rawCategory.match(/\(([^)]+)\)/);
+    if (noteMatch) {
+        note = noteMatch[1].trim();
+        rawCategory = rawCategory.replace(/\([^)]+\)/, "").trim();
+    }
+    const fromMatch = rawCategory.match(/\s+(?:from|by)\s+([a-zA-Z0-9\s'-]+)$/i);
+    if (fromMatch) {
+        source = fromMatch[1].trim();
+        rawCategory = rawCategory.slice(0, fromMatch.index).trim();
+    }
+
     const catLower = rawCategory.toLowerCase();
     if (catLower.includes("salary")) category = "Salary";
     else if (catLower.includes("bonus")) category = "Bonus";
@@ -178,7 +192,10 @@ export function parseNaturalIncome(text) {
         else if (u === "KHR" || u === "RIEL") currency = "KHR";
     }
 
-    return { amount, currency, category };
+    const res = { amount, currency, category };
+    if (source) res.source = source;
+    if (note) res.note = note;
+    return res;
 }
 
 /**
@@ -206,10 +223,10 @@ export function parseNaturalExpense(text) {
         return null;
     }
 
-    const expMatch3 = clean.match(/^(?:i\s+)?(?:spent|paid|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:on|for)?\s*([a-zA-Z\s]+)$/i);
-    const expMatch4 = clean.match(/^(?:i\s+)?(?:spent|paid|bought)\s+([a-zA-Z\s]+)\s+(?:for|at)?\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?$/i);
-    const expMatch1 = clean.match(/^(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z\s]+)$/i);
-    const expMatch2 = clean.match(/^([a-zA-Z\s]+)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
+    const expMatch3 = clean.match(/^(?:i\s+)?(?:spent|paid|bought)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?\s*(?:on|for)?\s*([a-zA-Z0-9\s()@'-]+)$/i);
+    const expMatch4 = clean.match(/^(?:i\s+)?(?:spent|paid|bought)\s+([a-zA-Z0-9\s()@'-]+)\s+(?:for|at)?\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$|dollars|riel)?$/i);
+    const expMatch1 = clean.match(/^(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$)?\s+([a-zA-Z0-9\s()@'-]+)$/i);
+    const expMatch2 = clean.match(/^([a-zA-Z0-9\s()@'-]+)\s+(\$?[0-9]+(?:\.[0-9]+)?)\s*(usd|khr|\$)?$/i);
 
     let amount = null;
     let category = null;
@@ -254,6 +271,23 @@ export function parseNaturalExpense(text) {
         return null;
     }
 
+    let merchant = null;
+    let note = null;
+
+    const noteMatch = category.match(/\(([^)]+)\)/);
+    if (noteMatch) {
+        note = noteMatch[1].trim();
+        category = category.replace(/\([^)]+\)/, "").trim();
+    }
+
+    const atMatch = category.match(/\s+(?:at|@)\s+([a-zA-Z0-9\s'-]+)$/i);
+    if (atMatch) {
+        merchant = atMatch[1].trim();
+        category = category.slice(0, atMatch.index).trim();
+    }
+
+    if (!category) return null;
+
     let currency = null;
     if (currencyHint) {
         const u = currencyHint.toUpperCase();
@@ -261,7 +295,10 @@ export function parseNaturalExpense(text) {
         else if (u === "KHR" || u === "RIEL") currency = "KHR";
     }
 
-    return { amount, currency, category };
+    const res = { amount, currency, category };
+    if (merchant) res.merchant = merchant;
+    if (note) res.note = note;
+    return res;
 }
 
 /**

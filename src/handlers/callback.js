@@ -1,12 +1,13 @@
 import { TIME_ZONE, EXCHANGE_RATE, isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "../config/constants.js";
 import { today, currentTime } from "../utils/time.js";
-import { formatMoney, cleanMd } from "../utils/format.js";
+import { formatMoney, cleanMd, capitalize } from "../utils/format.js";
 import { ensureTables } from "../db/schema.js";
 import {
     getDisplayCurrency,
     setDisplayCurrency,
     getTotalExpenses,
     addExpenseRecord,
+    deleteExpenseById,
     clearToday,
     clearAllExpenses,
     getUserMemories,
@@ -411,8 +412,8 @@ export async function handleCallback(callback, env, origin) {
         const [, category, amountText] = data.split(":");
         const amount = Number(amountText);
         const displayCurrency = await getDisplayCurrency(env.DB, userId);
-        await addExpenseRecord(env.DB, userId, amount, category, "expense", displayCurrency);
-        await sendTransactionReceipt(env, chatId, userId, "expense", amount, displayCurrency, category, messageId);
+        const txId = await addExpenseRecord(env.DB, userId, amount, category, "expense", displayCurrency);
+        await sendTransactionReceipt(env, chatId, userId, "expense", amount, displayCurrency, category, messageId, { txId });
         return;
     }
 
@@ -420,8 +421,8 @@ export async function handleCallback(callback, env, origin) {
         const [, category, amountText] = data.split(":");
         const amount = Number(amountText);
         const displayCurrency = await getDisplayCurrency(env.DB, userId);
-        await addExpenseRecord(env.DB, userId, amount, category, "income", displayCurrency);
-        await sendTransactionReceipt(env, chatId, userId, "income", amount, displayCurrency, category, messageId);
+        const txId = await addExpenseRecord(env.DB, userId, amount, category, "income", displayCurrency);
+        await sendTransactionReceipt(env, chatId, userId, "income", amount, displayCurrency, category, messageId, { txId });
         return;
     }
 
@@ -446,6 +447,45 @@ export async function handleCallback(callback, env, origin) {
                 ]
             }
         });
+        return;
+    }
+
+    // --- Undo / Delete Transaction Callback ---
+    if (data.startsWith("undo_tx:")) {
+        const txId = parseInt(data.slice(8), 10);
+        const deleted = await deleteExpenseById(env.DB, userId, txId);
+        if (deleted) {
+            await answerCallback(env, callback.id, { text: "🗑️ Transaction undone!" });
+            const symbol = deleted.currency === "USD" ? "$" : "";
+            const suffix = deleted.currency === "KHR" ? " ៛" : "";
+            const amtStr = `${symbol}${formatMoney(deleted.amount)}${suffix}`;
+            const header = deleted.type === "income" ? "❌ *Income Undone / Removed*" : "❌ *Expense Undone / Removed*";
+            await safeEditOrSendMessage(env, chatId, messageId, [
+                header,
+                `────────────────────`,
+                `● *Amount:*   ~${amtStr}~`,
+                `● *Category:* ~${capitalize(deleted.category)}~`,
+                `● *Date:*     ~${deleted.date}~`,
+                `────────────────────`,
+                `_This transaction was successfully removed from your ledger._`
+            ].join("\n"), {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "＋ Re-enter Expense", callback_data: "add_expense" },
+                            { text: "📜 Today's Ledger", callback_data: "view_transactions" }
+                        ],
+                        [
+                            { text: "💳 Finance Hub", callback_data: "finance_hub" },
+                            { text: "🏠 Main Hub", callback_data: "hub" }
+                        ]
+                    ]
+                }
+            });
+        } else {
+            await answerCallback(env, callback.id, { text: "⚠️ Transaction already deleted or not found." });
+        }
         return;
     }
 

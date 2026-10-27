@@ -252,6 +252,21 @@ describe("Natural Language Command Parsers", () => {
             expect(parseNaturalExpense("paid 20000 for gas")).toEqual({ amount: 20000, currency: null, category: "gas" });
         });
 
+        it("should extract merchant and note when specified", () => {
+            expect(parseNaturalExpense("5 coffee at starbucks")).toEqual({
+                amount: 5,
+                currency: null,
+                category: "coffee",
+                merchant: "starbucks"
+            });
+            expect(parseNaturalExpense("15 lunch (team meetup)")).toEqual({
+                amount: 15,
+                currency: null,
+                category: "lunch",
+                note: "team meetup"
+            });
+        });
+
         it("CRITICAL: should NEVER parse '40$ is my income not my expensse' as an expense", () => {
             expect(parseNaturalExpense("40$ is my income not my expensse")).toBeNull();
         });

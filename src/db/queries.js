@@ -225,12 +225,15 @@ export async function getCategoryRows(db, userId, period, limit) {
     return results || [];
 }
 
-export async function addExpenseRecord(db, userId, amount, category, type = "expense", currency = "KHR", customDate = null) {
+export async function addExpenseRecord(db, userId, amount, category, type = "expense", currency = "KHR", customDate = null, merchant = null, note = null) {
     const recordDate = (customDate && /^\d{4}-\d{2}-\d{2}$/.test(customDate)) ? customDate : today();
-    await db
-        .prepare("INSERT INTO expenses (user_id, date, amount, category, type, currency) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(userId, recordDate, amount, normalizeCategory(category), type, currency)
+    const cleanMerchant = merchant && typeof merchant === "string" ? merchant.trim() : null;
+    const cleanNote = note && typeof note === "string" ? note.trim() : null;
+    const res = await db
+        .prepare("INSERT INTO expenses (user_id, date, amount, category, type, currency, merchant, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(userId, recordDate, amount, normalizeCategory(category), type, currency, cleanMerchant, cleanNote)
         .run();
+    return res?.meta?.last_row_id ?? res?.meta?.changes ?? null;
 }
 
 export async function clearToday(db, userId) {
@@ -292,26 +295,74 @@ export async function setMonthlyBudget(db, userId, budgetInKhr) {
         .run();
 }
 
-export async function getBudgetWarningText(db, userId) {
-    const [settingsRow, monthSummary, displayCurrency] = await Promise.all([
-        db.prepare("SELECT monthly_budget FROM user_settings WHERE user_id = ?").bind(userId).first(),
-        getFinancialSummary(db, userId, "month"),
-        getDisplayCurrency(db, userId)
-    ]);
-    
-    const budgetKhr = settingsRow?.monthly_budget || 0;
-    if (budgetKhr <= 0) return "";
+/**
+ * Calculates current month's budget status including visual progress bar and safe-spend burn rate.
+ */
+export async function getBudgetStatus(db, userId) {
+    try {
+        const [settingsRow, monthSummary, displayCurrency] = await Promise.all([
+            db.prepare("SELECT monthly_budget FROM user_settings WHERE user_id = ?").bind(userId).first(),
+            getFinancialSummary(db, userId, "month"),
+            getDisplayCurrency(db, userId)
+        ]);
 
-    const totalSpentInKhr = monthSummary.totalExpenseInKhr;
-    const percent = Math.round((totalSpentInKhr / budgetKhr) * 100);
+        const budgetKhr = settingsRow?.monthly_budget || 0;
+        if (budgetKhr <= 0) return null;
+
+        const spentKhr = monthSummary?.totalExpenseInKhr || 0;
+        const percent = Math.round((spentKhr / budgetKhr) * 100);
+
+        // 10-block progress bar e.g. ▓▓▓▓░░░░░░ 42%
+        const filled = Math.min(10, Math.max(0, Math.round(percent / 10)));
+        const empty = Math.max(0, 10 - filled);
+        const bar = "▓".repeat(filled) + "░".repeat(empty);
+
+        const spentStr = formatAmount(spentKhr, displayCurrency);
+        const budgetStr = formatAmount(budgetKhr, displayCurrency);
+
+        // Days remaining in the current month (Asia/Phnom_Penh)
+        const parts = today().split("-");
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const currentDay = parseInt(parts[2], 10);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const daysRemaining = Math.max(1, daysInMonth - currentDay + 1);
+
+        const remainingKhr = budgetKhr - spentKhr;
+        const safeDailyKhr = remainingKhr > 0 ? Math.round(remainingKhr / daysRemaining) : 0;
+        const safeDailyStr = formatAmount(safeDailyKhr, displayCurrency);
+
+        return {
+            budgetKhr,
+            spentKhr,
+            remainingKhr,
+            percent,
+            bar,
+            spentStr,
+            budgetStr,
+            daysRemaining,
+            safeDailyStr,
+            displayCurrency,
+            isOver: percent > 100,
+            isWarning: percent >= 85 && percent <= 100
+        };
+    } catch (e) {
+        console.error("getBudgetStatus error:", e);
+        return null;
+    }
+}
+
+export async function getBudgetWarningText(db, userId) {
+    const status = await getBudgetStatus(db, userId);
+    if (!status) return "";
     
-    if (percent >= 100) {
-        const overageInKhr = totalSpentInKhr - budgetKhr;
-        const formattedOverage = formatAmount(overageInKhr, displayCurrency);
-        return `\n🚨 *OVER BUDGET ALERT!*\n└ You have exceeded your monthly budget by *${formattedOverage}* (${percent}% spent).`;
-    } else if (percent >= 90) {
-        const formattedRemaining = formatAmount(budgetKhr - totalSpentInKhr, displayCurrency);
-        return `\n⚠️ *BUDGET WARNING!*\n└ You have spent *${percent}%* of your monthly budget (only *${formattedRemaining}* remaining).`;
+    if (status.percent >= 100) {
+        const overageInKhr = status.spentKhr - status.budgetKhr;
+        const formattedOverage = formatAmount(overageInKhr, status.displayCurrency);
+        return `\n🚨 *OVER BUDGET ALERT!*\n└ Exceeded monthly budget by *${formattedOverage}* (\`${status.bar}\` ${status.percent}% spent).`;
+    } else if (status.percent >= 85) {
+        const formattedRemaining = formatAmount(status.remainingKhr, status.displayCurrency);
+        return `\n⚠️ *BUDGET WARNING!*\n└ Spent *${status.percent}%* (\`${status.bar}\`). Only *${formattedRemaining}* remaining (\`${status.safeDailyStr}/day\` safe).`;
     }
     return "";
 }
@@ -641,7 +692,7 @@ export async function searchUserMemories(db, userId, query, limit = 10) {
  */
 export async function searchLedger(db, userId, options = {}) {
     if (!db || !userId) return { transactions: [], totalKhr: 0, count: 0 };
-    const { fromDate, toDate, category, type, limit = 20 } = options;
+    const { fromDate, toDate, category, type, query, limit = 20 } = options;
 
     const conditions = ["user_id = ?"];
     const params = [String(userId)];
@@ -662,13 +713,18 @@ export async function searchLedger(db, userId, options = {}) {
         conditions.push("type = ?");
         params.push(type);
     }
+    if (query && typeof query === "string" && query.trim()) {
+        const qTerm = `%${query.trim().toLowerCase()}%`;
+        conditions.push("(LOWER(category) LIKE ? OR LOWER(COALESCE(merchant, '')) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)");
+        params.push(qTerm, qTerm, qTerm);
+    }
 
     const whereClause = conditions.join(" AND ");
     params.push(limit);
 
     try {
         const rows = await db.prepare(
-            `SELECT id, date, amount, currency, category, type, created_at 
+            `SELECT id, date, amount, currency, category, type, merchant, note, created_at 
              FROM expenses 
              WHERE ${whereClause} 
              ORDER BY date DESC, id DESC 
@@ -704,7 +760,7 @@ export async function searchHistoricalRecords(db, userId, query, options = {}) {
     const [memories, workLogs, txns] = await Promise.all([
         searchUserMemories(db, userId, query, limit),
         searchWorkLogs(db, userId, query, limit),
-        searchLedger(db, userId, { category: query, limit })
+        searchLedger(db, userId, { query, limit })
     ]);
 
     return {

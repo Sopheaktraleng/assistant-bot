@@ -31,6 +31,8 @@ const TABLE_SCHEMAS = [
         category TEXT NOT NULL,
         type TEXT NOT NULL DEFAULT 'expense',
         currency TEXT NOT NULL DEFAULT 'KHR',
+        merchant TEXT,
+        note TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`,
     `CREATE TABLE IF NOT EXISTS user_settings (
@@ -123,6 +125,12 @@ export async function ensureTables(db) {
         }
         try {
             await db.prepare("ALTER TABLE user_settings ADD COLUMN briefing_mode TEXT DEFAULT 'on'").run();
+        } catch (e) {}
+        try {
+            await db.prepare("ALTER TABLE expenses ADD COLUMN merchant TEXT").run();
+        } catch (e) {}
+        try {
+            await db.prepare("ALTER TABLE expenses ADD COLUMN note TEXT").run();
         } catch (e) {}
         try {
             await db.prepare(`CREATE TABLE IF NOT EXISTS daily_broadcast_logs (

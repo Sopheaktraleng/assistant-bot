@@ -30,6 +30,43 @@ export function currentTime() {
     }).format(new Date());
 }
 
+/**
+ * Formats a date into a clean, human-readable Cambodia local date & 12-hour time string.
+ * Example: { date: "27 Oct 2026", time: "3:15 PM", full: "27 Oct 2026 • 3:15 PM" }
+ */
+export function formatCambodiaDateTime(isoStringOrDate = null) {
+    const d = isoStringOrDate ? new Date(isoStringOrDate) : new Date();
+    const safeDate = isNaN(d.getTime()) ? new Date() : d;
+    const dateFormatted = new Intl.DateTimeFormat("en-GB", {
+        timeZone: TIME_ZONE,
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+    }).format(safeDate);
+    const timeFormatted = new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+    }).format(safeDate);
+    return { date: dateFormatted, time: timeFormatted, full: `${dateFormatted} • ${timeFormatted}` };
+}
+
+/**
+ * Extracts a formatted 12-hour time (e.g. "3:15 PM") from SQLite UTC created_at timestamp.
+ */
+export function formatTimeFromCreatedAt(created_at) {
+    if (!created_at) return "";
+    const utcDate = new Date(created_at.includes("T") ? created_at : `${created_at.replace(" ", "T")}Z`);
+    if (isNaN(utcDate.getTime())) return "";
+    return new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+    }).format(utcDate);
+}
+
 export function lastMonthPrefix() {
     const now = new Date();
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);

@@ -1,7 +1,7 @@
 import { EXCHANGE_RATE, QUICK_EXPENSE_CATS, QUICK_INCOME_CATS, isUserAuthorized } from "../../config/constants.js";
-import { today, monthLabel, dateDaysAgo } from "../../utils/time.js";
-import { formatAmount, formatMoney, capitalize, getCategoryIcon, generateTextProgressBar } from "../../utils/format.js";
-import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, claimDailyBroadcast } from "../../db/queries.js";
+import { today, monthLabel, dateDaysAgo, formatCambodiaDateTime, formatTimeFromCreatedAt } from "../../utils/time.js";
+import { formatAmount, formatMoney, capitalize, getCategoryIcon, generateTextProgressBar, cleanMd } from "../../utils/format.js";
+import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, getBudgetStatus, claimDailyBroadcast } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage } from "../../services/telegram.js";
 
@@ -140,7 +140,13 @@ export async function sendAmountPicker(env, chatId, category, type = "expense", 
     });
 }
 
-export async function sendTransactionReceipt(env, chatId, userId, type, amount, currency, category, messageId = null) {
+export async function sendTransactionReceipt(env, chatId, userId, type, amount, currency, category, messageId = null, extra = {}) {
+    // Graceful support if caller passed options as 8th argument
+    if (messageId && typeof messageId === "object" && !extra.txId && !extra.merchant && !extra.note) {
+        extra = messageId;
+        messageId = null;
+    }
+
     const isIncome = type === "income";
     const sign = isIncome ? "+" : "-";
     const symbol = currency === "USD" ? "$" : "";
@@ -156,12 +162,14 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
     }
 
     const icon = getCategoryIcon(category, type);
-    const [displayCurrency, todayTotalRow, warn] = await Promise.all([
+    const cambodiaTime = formatCambodiaDateTime(extra.customDate || null);
+
+    const [displayCurrency, todayTotalRow, budgetStatus] = await Promise.all([
         getDisplayCurrency(env.DB, userId),
         env.DB.prepare(
             `SELECT COALESCE(SUM(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) as total FROM expenses WHERE user_id = ? AND date = ? AND type = 'expense'`
         ).bind(userId, today()).first(),
-        !isIncome ? getBudgetWarningText(env.DB, userId) : Promise.resolve("")
+        !isIncome ? getBudgetStatus(env.DB, userId) : Promise.resolve(null)
     ]);
     const todaySpentKhr = todayTotalRow?.total || 0;
     const todaySpentStr = formatAmount(todaySpentKhr, displayCurrency);
@@ -172,43 +180,64 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
         `────────────────────`,
         `● *Amount:*      \`${mainAmt}\`${altAmt}`,
         `● *Category:*    ${icon} *${capitalize(category)}*`,
+        extra.merchant ? `● *Merchant:*    🏪 *${cleanMd(extra.merchant)}*` : null,
+        extra.note ? `● *Note:*        📝 _${cleanMd(extra.note)}_` : null,
+        `● *Date & Time:* 📅 \`${cambodiaTime.full} ICT\``,
         `● *Spent Today:* \`${todaySpentStr}\``
-    ];
-    if (warn) lines.push(`────────────────────`, warn);
+    ].filter(Boolean);
+
+    if (budgetStatus) {
+        lines.push(`────────────────────`);
+        if (budgetStatus.isOver) {
+            const overAmt = formatAmount(budgetStatus.spentKhr - budgetStatus.budgetKhr, displayCurrency);
+            lines.push(`🚨 *Over Budget:* \`${budgetStatus.bar}\` *${budgetStatus.percent}%*`);
+            lines.push(`   └ Over by *${overAmt}* (Limit: ${budgetStatus.budgetStr})`);
+        } else {
+            lines.push(`📊 *Monthly Budget:* \`${budgetStatus.bar}\` *${budgetStatus.percent}%*`);
+            lines.push(`   └ [${budgetStatus.spentStr} / ${budgetStatus.budgetStr}] • \`${budgetStatus.safeDailyStr}/day\` safe`);
+        }
+    }
 
     const addAnotherCb = isIncome ? "add_income" : "add_expense";
     const addAnotherText = isIncome ? "＋ Add More" : "＋ Add Another";
 
+    const inlineKeyboard = [
+        [
+            { text: addAnotherText, callback_data: addAnotherCb },
+            { text: "📜 Today's Ledger", callback_data: "view_transactions" }
+        ]
+    ];
+
+    const actionRow = [];
+    if (extra.txId) {
+        actionRow.push({ text: "❌ Undo", callback_data: `undo_tx:${extra.txId}` });
+    }
+    actionRow.push({ text: "💳 Finance", callback_data: "finance_hub" });
+    inlineKeyboard.push(actionRow);
+    inlineKeyboard.push([{ text: "🏠 Main Hub", callback_data: "hub" }]);
+
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
         reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: addAnotherText, callback_data: addAnotherCb },
-                    { text: "📜 Today's Ledger", callback_data: "view_transactions" }
-                ],
-                [
-                    { text: "💳 Finance", callback_data: "finance_hub" },
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
+            inline_keyboard: inlineKeyboard
         }
     });
 }
 
 export async function sendTransactions(env, chatId, userId, messageId = null) {
     const date = today();
+    const cambodiaDate = formatCambodiaDateTime().date;
     const [displayCurrency, { results }] = await Promise.all([
         getDisplayCurrency(env.DB, userId),
         env.DB.prepare(
-            "SELECT amount, category, type, currency, created_at FROM expenses WHERE user_id = ? AND date = ? ORDER BY id ASC"
+            "SELECT id, amount, category, type, currency, merchant, note, created_at FROM expenses WHERE user_id = ? AND date = ? ORDER BY id ASC"
         ).bind(userId, date).all()
     ]);
 
     if (!results || !results.length) {
         await safeEditOrSendMessage(env, chatId, messageId, [
             `📜 *Today's Ledger*`,
-            `📅 \`${date}\``,
+            `📅 \`${cambodiaDate} • Phnom Penh\``,
             `────────────────────`,
             `_No transactions recorded today yet._`,
             ``,
@@ -245,15 +274,18 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         if (isIncome) totalIncome += amtKhr;
         else totalExpense += amtKhr;
 
-        const amtStr = `${sign}${symbol}${row.currency === "USD" ? formatMoney(row.amount) : formatMoney(row.amount)}${suffix}`;
-        return `${icon} \`${amtStr}\` • ${capitalize(row.category)}`;
+        const amtStr = `${sign}${symbol}${formatMoney(row.amount)}${suffix}`;
+        const timeStr = row.created_at ? formatTimeFromCreatedAt(row.created_at) : "";
+        const timeBadge = timeStr ? `\`${timeStr}\` ` : "";
+        const merchantDetail = row.merchant ? ` (${cleanMd(row.merchant)})` : "";
+        return `• ${timeBadge}${icon} \`${amtStr}\` • ${capitalize(row.category)}${merchantDetail}`;
     });
 
     const netKhr = totalIncome - totalExpense;
 
     const message = [
         `📜 *Today's Ledger*`,
-        `📅 \`${date}\``,
+        `📅 \`${cambodiaDate} • Phnom Penh\``,
         `────────────────────`,
         ...lines,
         `────────────────────`,

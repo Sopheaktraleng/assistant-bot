@@ -1,7 +1,7 @@
 import { EXCHANGE_RATE } from "../../config/constants.js";
 import { today } from "../../utils/time.js";
 import { formatMoney, capitalize } from "../../utils/format.js";
-import { getDisplayCurrency, addExpenseRecord, setMonthlyBudget } from "../../db/queries.js";
+import { getDisplayCurrency, addExpenseRecord, setMonthlyBudget, getBudgetStatus } from "../../db/queries.js";
 import { sendMessage, safeEditOrSendMessage, sendTelegramDocument } from "../../services/telegram.js";
 import { sendTransactionReceipt } from "./views.js";
 
@@ -45,13 +45,29 @@ export async function addTransactionFromCommand(env, chatId, userId, text) {
         return;
     }
 
-    await addExpenseRecord(env.DB, userId, amount, category, type, currency);
-    await sendTransactionReceipt(env, chatId, userId, type, amount, currency, category);
+    const txId = await addExpenseRecord(env.DB, userId, amount, category, type, currency);
+    await sendTransactionReceipt(env, chatId, userId, type, amount, currency, category, null, { txId });
 }
 
 export async function handleBudgetCommand(env, chatId, userId, text) {
     const parts = text.split(/\s+/);
     if (parts.length < 2) {
+        const status = await getBudgetStatus(env.DB, userId);
+        if (status) {
+            const statusLines = [
+                `🎯 *Monthly Budget Status*`,
+                `━━━━━━━━━━━━━━━━━━━━━`,
+                `● *Budget:*     \`${status.budgetStr}\``,
+                `● *Spent:*      \`${status.spentStr}\` (${status.percent}%)`,
+                `● *Safe Spend:* \`${status.safeDailyStr}/day\` (${status.daysRemaining} days left)`,
+                `● *Gauge:*      \`${status.bar}\``,
+                `━━━━━━━━━━━━━━━━━━━━━`,
+                `💡 *Commands:*\n• Update: \`/budget <amount> [USD/KHR]\`\n• Disable: \`/budget 0\``
+            ];
+            await sendMessage(env, chatId, statusLines.join("\n"), { parse_mode: "Markdown" });
+            return;
+        }
+
         await sendMessage(
             env,
             chatId,

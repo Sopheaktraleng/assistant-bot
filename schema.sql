@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS expenses (
     category TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'expense',
     currency TEXT NOT NULL DEFAULT 'KHR',
+    merchant TEXT,
+    note TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { GEMINI_MODELS, isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID, getAllowedUserIds, DEFAULT_ALLOWED_USERS } from "../src/config/constants.js";
-import { addOrUpdateAuthorizedUser, listAuthorizedUsers, setAuthorizedUserStatus } from "../src/db/queries.js";
+import { addOrUpdateAuthorizedUser, listAuthorizedUsers, setAuthorizedUserStatus, getBudgetStatus, searchLedger, addExpenseRecord } from "../src/db/queries.js";
 import { normalizeReminderTime } from "../src/utils/time.js";
 import { isCompoundOrMultiAction, isRealTimeSearchQuery, isConversationalOrCorrection } from "../src/utils/natural.js";
 import { buildSmartLocalFallback, handleAiCopilotQuery } from "../src/modules/copilot/handler.js";
@@ -948,6 +948,111 @@ describe("Bot Improvements & Stability", () => {
             expect(guestWelcome).toBeDefined();
             const payload = JSON.parse(guestWelcome[1].body);
             expect(payload.text).toContain("Boss has approved your access");
+
+            fetchSpy.mockRestore();
+        });
+    });
+
+    describe("Finance System Upgrades (Phases 1-3)", () => {
+        it("getBudgetStatus should calculate visual progress bar and safe daily spend rate", async () => {
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            first: vi.fn().mockImplementation(async () => {
+                                if (sql.includes("monthly_budget")) return { monthly_budget: 4000000 };
+                                if (sql.includes("display_currency")) return { display_currency: "USD" };
+                                return null;
+                            }),
+                            all: vi.fn().mockImplementation(async () => {
+                                if (sql.includes("FROM expenses")) {
+                                    return { results: [{ total: 420, currency: "USD", type: "expense" }] };
+                                }
+                                return { results: [] };
+                            })
+                        })
+                    };
+                })
+            };
+
+            const status = await getBudgetStatus(mockDb, "user_1");
+            expect(status).not.toBeNull();
+            expect(status.percent).toBe(42);
+            expect(status.bar).toBe("▓▓▓▓░░░░░░");
+            expect(status.spentStr).toBe("$420");
+            expect(status.budgetStr).toBe("$1,000");
+            expect(status.daysRemaining).toBeGreaterThanOrEqual(1);
+            expect(status.safeDailyStr).toContain("$");
+            expect(status.isOver).toBe(false);
+        });
+
+        it("searchLedger should filter transactions by keyword query matching merchant or note", async () => {
+            const captured = {};
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    captured.sql = sql;
+                    return {
+                        bind: vi.fn().mockImplementation((...args) => {
+                            captured.args = args;
+                            return {
+                                all: vi.fn().mockResolvedValue({
+                                    results: [
+                                        { id: 10, date: "2026-10-27", amount: 5, currency: "USD", category: "Coffee", merchant: "Starbucks", note: "Latte" }
+                                    ]
+                                })
+                            };
+                        })
+                    };
+                })
+            };
+
+            const result = await searchLedger(mockDb, "user_1", { query: "starbucks" });
+            expect(captured.sql).toContain("LOWER(COALESCE(merchant, '')) LIKE ?");
+            expect(captured.args).toContain("%starbucks%");
+            expect(result.count).toBe(1);
+            expect(result.transactions[0].merchant).toBe("Starbucks");
+        });
+
+        it("handleCallback should handle undo_tx and remove transaction cleanly", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            first: vi.fn().mockResolvedValue({ id: 99, amount: 5, category: "Coffee", type: "expense", currency: "USD", date: "2026-10-27" }),
+                            run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186",
+                OWNER_ID: "849550186"
+            };
+
+            await handleCallback(
+                {
+                    id: "cb_undo_1",
+                    data: "undo_tx:99",
+                    from: { id: 849550186, first_name: "Boss" },
+                    message: { chat: { id: 849550186 }, message_id: 333 }
+                },
+                mockEnv,
+                "https://cashflow.workers.dev"
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const editCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("Undone");
+            });
+            expect(editCall).toBeDefined();
 
             fetchSpy.mockRestore();
         });

@@ -412,12 +412,12 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                     const cat = act.category || "Other";
                     const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
                     const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
-                    await addExpenseRecord(env.DB, userId, act.amount, cat, "expense", curr, recordDate);
+                    await addExpenseRecord(env.DB, userId, act.amount, cat, "expense", curr, recordDate, act.merchant || null, act.note || null);
                 } else if (act.type === "add_income" && act.amount && act.amount > 0) {
                     const cat = act.category || "Income";
                     const curr = (act.currency || context.displayCurrency || "USD").toUpperCase();
                     const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
-                    await addExpenseRecord(env.DB, userId, act.amount, cat, "income", curr, recordDate);
+                    await addExpenseRecord(env.DB, userId, act.amount, cat, "income", curr, recordDate, act.source || act.merchant || null, act.note || null);
                 } else if (act.type === "delete_last_transaction") {
                     await deleteLastTransaction(env.DB, userId, act.filter || null);
                 } else if (act.type === "delete_transaction" && act.id) {

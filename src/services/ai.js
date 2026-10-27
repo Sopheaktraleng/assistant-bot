@@ -455,7 +455,7 @@ export async function buildAiUserContext(db, userId, userQuery = null) {
         getCategoryRows(db, userId, "month", 5),
         getCategoryRows(db, userId, "today", 5),
         db.prepare(
-            "SELECT id, date, amount, currency, category, type FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 5"
+            "SELECT id, date, amount, currency, category, type, merchant, note, created_at FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 10"
         ).bind(userId).all(),
         db.prepare(
             "SELECT time, content, category FROM work_logs WHERE user_id = ? AND date = ? ORDER BY time ASC, id ASC"
@@ -779,10 +779,11 @@ export function parseCopilotResponse(rawText) {
 export const FRIDAY_FUNCTION_DECLARATIONS = [
     {
         name: "query_ledger",
-        description: "Query historical financial transactions from the database ledger by date range, category, or type (income/expense).",
+        description: "Query historical financial transactions from the database ledger by date range, category, query keyword, or type (income/expense).",
         parameters: {
             type: "OBJECT",
             properties: {
+                query: { type: "STRING", description: "Search keyword matching category, merchant, or note, e.g. Starbucks, Brown Coffee, rent, groceries" },
                 from_date: { type: "STRING", description: "Start date in YYYY-MM-DD format" },
                 to_date: { type: "STRING", description: "End date in YYYY-MM-DD format" },
                 category: { type: "STRING", description: "Filter by category name, e.g. Coffee, Food, Transport, Rent, Bills" },
@@ -823,6 +824,8 @@ export const FRIDAY_FUNCTION_DECLARATIONS = [
                 amount: { type: "NUMBER", description: "Expense amount (positive number)" },
                 currency: { type: "STRING", enum: ["USD", "KHR"], description: "Currency (USD $ or KHR ៛)" },
                 category: { type: "STRING", description: "Category, e.g. Food, Coffee, Transport, Shopping, Bills" },
+                merchant: { type: "STRING", description: "Store, vendor, or merchant name, e.g. Starbucks, Brown Coffee, Amazon" },
+                note: { type: "STRING", description: "Optional remark or note for this expense" },
                 date: { type: "STRING", description: "Date in YYYY-MM-DD format if not today" }
             },
             required: ["amount"]
@@ -837,6 +840,8 @@ export const FRIDAY_FUNCTION_DECLARATIONS = [
                 amount: { type: "NUMBER", description: "Income amount (positive number)" },
                 currency: { type: "STRING", enum: ["USD", "KHR"], description: "Currency (USD $ or KHR ៛)" },
                 category: { type: "STRING", description: "Category, e.g. Salary, Freelance, Gift, Bonus, Investment" },
+                source: { type: "STRING", description: "Payer, employer, or client name" },
+                note: { type: "STRING", description: "Optional remark or note" },
                 date: { type: "STRING", description: "Date in YYYY-MM-DD format if not today" }
             },
             required: ["amount"]
@@ -923,6 +928,7 @@ export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs 
                     fromDate: toolArgs.from_date,
                     toDate: toolArgs.to_date,
                     category: toolArgs.category,
+                    query: toolArgs.query,
                     type: toolArgs.type,
                     limit: toolArgs.limit || 10
                 });
@@ -941,16 +947,20 @@ export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs 
                 const curr = (toolArgs.currency || "USD").toUpperCase();
                 const cat = normalizeCategory(toolArgs.category || "Other");
                 const date = (toolArgs.date && /^\d{4}-\d{2}-\d{2}$/.test(toolArgs.date)) ? toolArgs.date : today();
-                await addExpenseRecord(db, userId, amt, cat, "expense", curr, date);
-                return { success: true, recorded: { type: "expense", amount: amt, currency: curr, category: cat, date } };
+                const merchant = toolArgs.merchant || null;
+                const note = toolArgs.note || null;
+                const txId = await addExpenseRecord(db, userId, amt, cat, "expense", curr, date, merchant, note);
+                return { success: true, recorded: { id: txId, type: "expense", amount: amt, currency: curr, category: cat, date, merchant, note } };
             }
             case "add_income": {
                 const amt = parseFloat(toolArgs.amount);
                 const curr = (toolArgs.currency || "USD").toUpperCase();
                 const cat = normalizeCategory(toolArgs.category || "Income");
                 const date = (toolArgs.date && /^\d{4}-\d{2}-\d{2}$/.test(toolArgs.date)) ? toolArgs.date : today();
-                await addExpenseRecord(db, userId, amt, cat, "income", curr, date);
-                return { success: true, recorded: { type: "income", amount: amt, currency: curr, category: cat, date } };
+                const source = toolArgs.source || toolArgs.merchant || null;
+                const note = toolArgs.note || null;
+                const txId = await addExpenseRecord(db, userId, amt, cat, "income", curr, date, source, note);
+                return { success: true, recorded: { id: txId, type: "income", amount: amt, currency: curr, category: cat, date, source, note } };
             }
             case "delete_last_transaction": {
                 const deleted = await deleteLastTransaction(db, userId, toolArgs.filter || null);

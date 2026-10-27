@@ -949,8 +949,28 @@ export async function handleMessage(message, env, origin) {
             } else if (incData.amount < 100) {
                 curr = "USD";
             }
-            await addExpenseRecord(env.DB, userId, incData.amount, incData.category, "income", curr);
-            await sendTransactionReceipt(env, chatId, userId, "income", incData.amount, curr, incData.category);
+            const txId = await addExpenseRecord(
+                env.DB,
+                userId,
+                incData.amount,
+                incData.category,
+                "income",
+                curr,
+                null,
+                incData.source || null,
+                incData.note || null
+            );
+            await sendTransactionReceipt(
+                env,
+                chatId,
+                userId,
+                "income",
+                incData.amount,
+                curr,
+                incData.category,
+                null,
+                { merchant: incData.source, note: incData.note, txId }
+            );
             return;
         }
 
@@ -964,8 +984,28 @@ export async function handleMessage(message, env, origin) {
                 if (expData.amount >= 500) curr = "KHR";
                 else curr = "USD";
             }
-            await addExpenseRecord(env.DB, userId, expData.amount, expData.category, "expense", curr);
-            await sendTransactionReceipt(env, chatId, userId, "expense", expData.amount, curr, expData.category);
+            const txId = await addExpenseRecord(
+                env.DB,
+                userId,
+                expData.amount,
+                expData.category,
+                "expense",
+                curr,
+                null,
+                expData.merchant || null,
+                expData.note || null
+            );
+            await sendTransactionReceipt(
+                env,
+                chatId,
+                userId,
+                "expense",
+                expData.amount,
+                curr,
+                expData.category,
+                null,
+                { merchant: expData.merchant, note: expData.note, txId }
+            );
             return;
         }
 
