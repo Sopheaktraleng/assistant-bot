@@ -56,12 +56,12 @@ export async function handleBudgetCommand(env, chatId, userId, text) {
         if (status) {
             const statusLines = [
                 `🎯 *Monthly Budget Status*`,
-                `━━━━━━━━━━━━━━━━━━━━━`,
+                ``,
                 `● *Budget:*     \`${status.budgetStr}\``,
                 `● *Spent:*      \`${status.spentStr}\` (${status.percent}%)`,
                 `● *Safe Spend:* \`${status.safeDailyStr}/day\` (${status.daysRemaining} days left)`,
                 `● *Gauge:*      \`${status.bar}\``,
-                `━━━━━━━━━━━━━━━━━━━━━`,
+                ``,
                 `💡 *Commands:*\n• Update: \`/budget <amount> [USD/KHR]\`\n• Disable: \`/budget 0\``
             ];
             await sendMessage(env, chatId, statusLines.join("\n"), { parse_mode: "Markdown" });

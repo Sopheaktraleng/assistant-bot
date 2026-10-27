@@ -18,11 +18,11 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
 
     const text = [
         `💳 *Finance & Cashflow*`,
-        `━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
         `${balanceIndicator} *Net Balance:*  \`${formatAmount(netBalance, displayCurrency)}\``,
         `📅 *This Month:*   \`${formatAmount(monthSummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
         `📊 *Spent Today:*  \`${formatAmount(todaySummary?.totalExpenseInKhr || 0, displayCurrency)}\``,
-        `━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
         `_📸 Snap any ABA / KHQR receipt or type: \`5 coffee\` or \`+500 salary\`_`
     ].join("\n");
 

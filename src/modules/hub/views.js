@@ -74,14 +74,13 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
 
     const text = [
         `⚡ *F.R.I.D.A.Y.*`,
-        `━━━━━━━━━━━━━━━━━━━━━`,
         `*"${quote}"*`,
         ``,
         `💳 *Ledger:* \`${sign}${balanceStr}\` _(${balanceColorNote})_`,
         `💸 *Spent Today:* \`${todayStr}\``,
         `📋 *Work Done:* \`${workCount} tasks\` _(${monthLabel()})_`,
         `⏰ *Alarms:* ${agendaLine}`,
-        `━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
         `_Standing by whenever you're ready._`
     ].join("\n");
 
@@ -130,11 +129,11 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
 
     const text = [
         `⚙️ *System Settings*`,
-        `━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
         `💱 *Display Currency:* \`${displayCurrency}\``,
         `🎯 *Monthly Budget:*   \`${budgetStr}\``,
         `🎙️ *Auto-Voice Mode:*  \`${voiceMode === "on" ? "Enabled (Always Speak)" : "Disabled (Text + On-demand)"}\``,
-        `━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
         `_Configure preferences or manage your records below:_`
     ].join("\n");
 
