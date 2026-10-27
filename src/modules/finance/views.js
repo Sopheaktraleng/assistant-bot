@@ -315,32 +315,36 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
     });
 }
 
-export async function sendSummary(env, chatId, userId, period, messageId = null) {
+export async function sendSummary(env, chatId, userId, period = "today", messageId = null) {
+    const safePeriod = (period === "month" || period === "all") ? period : "today";
     const [displayCurrency, stats, breakdown] = await Promise.all([
         getDisplayCurrency(env.DB, userId),
-        getPeriodStats(env.DB, userId, period),
-        getCategoryRows(env.DB, userId, period, 5)
+        getPeriodStats(env.DB, userId, safePeriod),
+        getCategoryRows(env.DB, userId, safePeriod, 5)
     ]);
-    const title = period === "month" ? `Monthly Summary (${monthLabel()})` : `Daily Summary (${today()})`;
+
+    let title = `Daily Summary (${today()})`;
+    if (safePeriod === "month") title = `Monthly Summary (${monthLabel()})`;
+    if (safePeriod === "all") title = `All-Time Summary (Lifetime)`;
 
     const lines = [
         `📊 *${title}*`,
-        `────────────────────`,
+        ``,
         `● *Total Spent:*   \`${formatAmount(stats.total, displayCurrency)}\``,
         `● *Average / Tx:*  \`${formatAmount(stats.average, displayCurrency)}\``,
-        `● *Entries:*       \`${stats.count} transactions\``,
+        `● *Entries:*       \`${stats.count} transactions\``
     ];
 
     if (stats.maxAmount) {
         const symbol = stats.maxCurrency === "USD" ? "$" : "";
         const suffix = stats.maxCurrency === "KHR" ? " ៛" : "";
-        const amt = stats.maxCurrency === "USD" ? stats.maxAmount : formatMoney(stats.maxAmount);
+        const amt = stats.maxCurrency === "USD" ? formatMoney(stats.maxAmount) : formatMoney(stats.maxAmount);
         const icon = getCategoryIcon(stats.maxCategory, "expense");
         lines.push(`● *Biggest Spend:* \`${symbol}${amt}${suffix}\` (${icon} ${capitalize(stats.maxCategory)})`);
     }
 
     if (breakdown.length) {
-        lines.push(`────────────────────`, `🏷️ *Category Breakdown:*`);
+        lines.push(``, `🏷️ *Category Breakdown:*`);
         breakdown.forEach((row) => {
             const percent = stats.total > 0 ? Math.round((row.total / stats.total) * 100) : 0;
             const bar = generateTextProgressBar(percent);
@@ -349,15 +353,20 @@ export async function sendSummary(env, chatId, userId, period, messageId = null)
         });
     }
 
-    lines.push(`────────────────────`);
+    const tabRow = [
+        { text: safePeriod === "today" ? "• Today •" : "📅 Today", callback_data: "summary_today" },
+        { text: safePeriod === "month" ? "• This Month •" : "📆 This Month", callback_data: "summary_month" },
+        { text: safePeriod === "all" ? "• All-Time •" : "🌐 All-Time", callback_data: "summary_all" }
+    ];
 
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
+                tabRow,
                 [
-                    { text: "📜 Daily Ledger", callback_data: "view_transactions" },
-                    { text: "💳 Finance", callback_data: "finance_hub" }
+                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" }
                 ],
                 [
                     { text: "🏠 Main Hub", callback_data: "hub" }

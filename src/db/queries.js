@@ -175,8 +175,16 @@ export async function getTotalExpenses(db, userId) {
 }
 
 export async function getPeriodStats(db, userId, period) {
-    const condition = period === "month" ? "date LIKE ?" : "date = ?";
-    const value = period === "month" ? `${monthPrefix()}%` : today();
+    let condition = "date = ?";
+    let params = [userId, today()];
+    
+    if (period === "month") {
+        condition = "date LIKE ?";
+        params = [userId, `${monthPrefix()}%`];
+    } else if (period === "all") {
+        condition = "1 = 1";
+        params = [userId];
+    }
     
     const [row, biggest] = await Promise.all([
         db.prepare(
@@ -185,14 +193,14 @@ export async function getPeriodStats(db, userId, period) {
                     COALESCE(AVG(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) AS average
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND ${condition}`
-        ).bind(userId, value).first(),
+        ).bind(...params).first(),
         db.prepare(
             `SELECT amount, category, currency
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND ${condition}
              ORDER BY (CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END) DESC, id DESC
              LIMIT 1`
-        ).bind(userId, value).first()
+        ).bind(...params).first()
     ]);
 
     return {
@@ -206,8 +214,17 @@ export async function getPeriodStats(db, userId, period) {
 }
 
 export async function getCategoryRows(db, userId, period, limit) {
-    const condition = period === "month" ? "date LIKE ?" : "date = ?";
-    const value = period === "month" ? `${monthPrefix()}%` : today();
+    let condition = "date = ?";
+    let params = [userId, today(), limit];
+
+    if (period === "month") {
+        condition = "date LIKE ?";
+        params = [userId, `${monthPrefix()}%`, limit];
+    } else if (period === "all") {
+        condition = "1 = 1";
+        params = [userId, limit];
+    }
+
     const { results } = await db
         .prepare(
             `SELECT category, 
@@ -219,7 +236,7 @@ export async function getCategoryRows(db, userId, period, limit) {
              ORDER BY total DESC
              LIMIT ?`
         )
-        .bind(userId, value, limit)
+        .bind(...params)
         .all();
 
     return results || [];

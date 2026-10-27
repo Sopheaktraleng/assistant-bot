@@ -925,6 +925,11 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
+    if (data === "summary_all") {
+        await sendSummary(env, chatId, userId, "all", messageId);
+        return;
+    }
+
     // --- Clear Data Callbacks ---
     if (data === "clear_data") {
         await askClearConfirmation(env, chatId, messageId);
