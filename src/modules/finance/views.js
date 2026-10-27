@@ -37,7 +37,7 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
                     { text: "💰 Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📋 Transactions", callback_data: "view_transactions" },
+                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
                     { text: "📊 Monthly Insights", callback_data: "summary_month" }
                 ],
                 [
@@ -233,7 +233,7 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
 
     if (!results || !results.length) {
         await safeEditOrSendMessage(env, chatId, messageId, [
-            `📋 *Today's Transactions*`,
+            `📋 *Today's Ledger*`,
             `📅 \`${cambodiaDate} • Phnom Penh\``,
             ``,
             `_No transactions recorded today yet._`,
@@ -285,7 +285,7 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
     const netKhr = totalIncome - totalExpense;
 
     const message = [
-        `📋 *Today's Transactions*`,
+        `📋 *Today's Ledger*`,
         `📅 \`${cambodiaDate} • Phnom Penh\``,
         ``,
         ...lines,
@@ -363,7 +363,7 @@ export async function sendSummary(env, chatId, userId, period = "month", message
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "📋 Transactions", callback_data: "view_transactions" },
+                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
                     { text: "💳 Finance Hub", callback_data: "finance_hub" }
                 ],
                 [
@@ -503,7 +503,7 @@ export async function getHistoryMessageData(db, userId, page = 1) {
         inlineKeyboard.push(navRow);
     }
     inlineKeyboard.push([
-        { text: "📋 Today", callback_data: "view_transactions" },
+        { text: "📋 Today's Ledger", callback_data: "view_transactions" },
         { text: "📊 Monthly Insights", callback_data: "summary_month" }
     ]);
     inlineKeyboard.push([
