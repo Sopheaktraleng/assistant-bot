@@ -1358,54 +1358,127 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
 }
 
 /**
- * Real-time web search crawler utilizing high-speed Google News RSS and Wikipedia API
- * to provide 100% reliable, zero-quota web grounding directly from Cloudflare Worker edge isolates.
+ * Real-time web search crawler utilizing high-speed DuckDuckGo Lite, Wikipedia API,
+ * and Google News to provide 100% reliable, zero-quota web grounding directly from Cloudflare Worker edge isolates.
  */
-export async function searchLiveWeb(query, limit = 5) {
+export async function searchLiveWeb(query, limit = 5, env = {}) {
     const results = [];
-    try {
-        // 1. Google News Search (Live real-time sports, news, winners, current events)
-        const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
-        const newsPromise = fetch(googleNewsUrl, {
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-            signal: AbortSignal.timeout(4000)
-        }).then(async res => {
-            if (!res.ok) return [];
-            const xml = await res.text();
-            const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-            return items.slice(0, limit).map(item => {
-                const rawTitle = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "";
-                const rawLink = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
-                const cleanTitle = rawTitle.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
-                return { title: cleanTitle, url: rawLink, snippet: cleanTitle, source: "Google News" };
-            });
-        }).catch(() => []);
 
-        // 2. Wikipedia Search API (Entities, biographies, facts, history)
-        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
-        const wikiPromise = fetch(wikiUrl, {
-            headers: { "User-Agent": "FridayBot/2.0" },
-            signal: AbortSignal.timeout(4000)
-        }).then(async res => {
-            if (!res.ok) return [];
-            const data = await res.json();
-            const searchItems = data?.query?.search || [];
-            return searchItems.slice(0, 3).map(item => {
-                const cleanSnippet = (item.snippet || "").replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").trim();
-                return {
-                    title: item.title,
-                    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`,
-                    snippet: cleanSnippet,
-                    source: "Wikipedia"
-                };
+    // 0. Optional Premium AI Search API (Tavily) if user configures TAVILY_API_KEY
+    if (env?.TAVILY_API_KEY) {
+        try {
+            const tavilyResp = await fetch("https://api.tavily.com/search", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    api_key: env.TAVILY_API_KEY,
+                    query,
+                    search_depth: "basic",
+                    include_answer: true,
+                    max_results: limit
+                }),
+                signal: AbortSignal.timeout(4000)
             });
-        }).catch(() => []);
-
-        const [newsResults, wikiResults] = await Promise.all([newsPromise, wikiPromise]);
-        results.push(...newsResults, ...wikiResults);
-    } catch (err) {
-        console.warn("searchLiveWeb error:", err.message);
+            if (tavilyResp.ok) {
+                const data = await tavilyResp.json();
+                if (Array.isArray(data.results) && data.results.length > 0) {
+                    return data.results.slice(0, limit).map(r => ({
+                        title: r.title || "Web Result",
+                        url: r.url || "",
+                        snippet: (r.content || "").slice(0, 400).trim(),
+                        source: "Tavily"
+                    }));
+                }
+            }
+        } catch (_) {}
     }
+
+    // 1. DuckDuckGo Lite (High precision, full factual snippets, handles typos, never blocked by Cloudflare datacenter IPs)
+    try {
+        const ddgRes = await fetch("https://lite.duckduckgo.com/lite/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            body: `q=${encodeURIComponent(query)}`,
+            signal: AbortSignal.timeout(4500)
+        });
+        if (ddgRes.ok) {
+            const text = await ddgRes.text();
+            const linkMatches = [...text.matchAll(/<a rel="nofollow" href="([^"]+)"[^>]*class=['"]result-link['"][^>]*>([\s\S]*?)<\/a>/gi)];
+            const snippetMatches = [...text.matchAll(/<td[^>]+class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/gi)];
+            for (let i = 0; i < Math.min(linkMatches.length, snippetMatches.length, limit); i++) {
+                const rawUrl = linkMatches[i][1];
+                const cleanTitle = linkMatches[i][2].replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim();
+                const cleanSnippet = snippetMatches[i][1].replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim();
+                if (cleanTitle && cleanSnippet) {
+                    results.push({
+                        title: cleanTitle,
+                        url: rawUrl,
+                        snippet: cleanSnippet,
+                        source: "DuckDuckGo"
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("DDG Lite search warning:", e.message);
+    }
+
+    // 2. Wikipedia Extracts API (Authoritative encyclopedia facts, bios, awards, history)
+    if (results.length < limit) {
+        try {
+            const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=3&prop=extracts&exintro=true&explaintext=true&format=json&origin=*`;
+            const wikiRes = await fetch(wikiUrl, {
+                headers: { "User-Agent": "FridayBot/2.0 (contact@friday.ai)" },
+                signal: AbortSignal.timeout(3500)
+            });
+            if (wikiRes.ok) {
+                const wikiData = await wikiRes.json();
+                const pages = Object.values(wikiData?.query?.pages || {});
+                for (const p of pages) {
+                    if (p.title && p.extract) {
+                        results.push({
+                            title: p.title,
+                            url: `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, "_"))}`,
+                            snippet: p.extract.slice(0, 350).trim(),
+                            source: "Wikipedia"
+                        });
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
+    // 3. Google News Search fallback (Live breaking sports, scores, and news events)
+    if (results.length === 0) {
+        try {
+            const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+            const newsRes = await fetch(googleNewsUrl, {
+                headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+                signal: AbortSignal.timeout(3500)
+            });
+            if (newsRes.ok) {
+                const xml = await newsRes.text();
+                const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+                for (const item of items.slice(0, limit)) {
+                    const rawTitle = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "";
+                    const rawLink = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
+                    const cleanTitle = rawTitle.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+                    if (cleanTitle) {
+                        results.push({
+                            title: cleanTitle,
+                            url: rawLink,
+                            snippet: cleanTitle,
+                            source: "Google News"
+                        });
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
     return results.slice(0, limit);
 }
 
@@ -1435,12 +1508,16 @@ export async function askGeminiWithGoogleSearch(env, query, context = {}) {
 
     const candidateModels = [
         env?.GEMINI_MODEL,
+        "gemini-flash-lite-latest",
+        "gemini-3.1-flash-lite",
         ...GEMINI_MODELS
     ].filter(Boolean).filter(m => m !== "gemini-3-flash-preview");
 
     const isOwner = context?.isOwner !== false;
     const userName = context?.userName || (isOwner ? "Boss" : "there");
     const addressUser = isOwner ? "Boss" : userName;
+
+    const hasKhmerChars = /[\u1780-\u17FF]/.test(cleanQuery);
 
     const systemPrompt = isOwner
         ? `You are F.R.I.D.A.Y., Boss's exceptionally smart, warm, loyal, and witty personal AI executive assistant in Cambodia.
@@ -1449,15 +1526,16 @@ Boss Query: "${cleanQuery}"
 
 CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
 1. Accuracy & Grounding:
-   - Use live search results to provide accurate, up-to-the-minute real-world information.
-   - Ground your answer strictly in fresh live search results.
+   - Ground your answer strictly and exclusively in the provided live search results.
+   - Mention key names, winners, numbers, scores, and dates in **bold**.
+   - If search results indicate an event has not yet taken place, or the winner has not been decided, state that clearly.
+   - NEVER hallucinate, invent, or guess winners or facts not supported by the search results.
 2. Tone & Persona:
    - Speak with executive warmth, loyalty, and polish, addressing the user as "Boss".
    - Keep answers clear, direct, and concise (2 to 4 crisp sentences, or structured bullet points if comparing items, scores, or news).
-   - Bold key numbers, names, scores, temperatures, or currency rates.
-   - AVOID fluff, robotic clichés, or lengthy corporate disclaimers.
+   - AVOID robotic clichés or lengthy corporate disclaimers.
 3. Language:
-   - If Boss asks in Khmer (ភាសាខ្មែរ / អក្សរខ្មែរ), reply fluently and naturally in Khmer. Otherwise reply in natural English.`
+   - ${hasKhmerChars ? "Boss asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, natural English."}`
         : `You are F.R.I.D.A.Y., a friendly, exceptionally smart, warm, and helpful AI assistant in Cambodia.
 Today's Date: ${dateStr}, Current Time: ${timeStr} in Cambodia (${tz}).
 The user is ${userName}.
@@ -1465,16 +1543,27 @@ User Query: "${cleanQuery}"
 
 CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
 1. Accuracy & Grounding:
-   - Use live search results to provide accurate, up-to-the-minute real-world information.
-   - Ground your answer strictly in fresh live search results.
+   - Ground your answer strictly and exclusively in the provided live search results.
+   - Mention key names, winners, numbers, scores, and dates in **bold**.
+   - If search results indicate an event has not yet taken place, or the winner has not been decided, state that clearly.
+   - NEVER hallucinate, invent, or guess winners or facts not supported by the search results.
 2. Tone & Persona:
    - Speak with warmth, friendliness, and polish.
    - CRITICAL RESTRICTION: NEVER call this user "Boss". Address them naturally or as "${userName}".
    - Keep answers clear, direct, and concise (2 to 4 crisp sentences, or structured bullet points if comparing items, scores, or news).
-   - Bold key numbers, names, scores, temperatures, or currency rates.
-   - AVOID fluff, robotic clichés, or lengthy corporate disclaimers.
+   - AVOID robotic clichés or lengthy corporate disclaimers.
 3. Language:
-   - If the user asks in Khmer (ភាសាខ្មែរ / អក្សរខ្មែរ), reply fluently and naturally in Khmer. Otherwise reply in natural English.`;
+   - ${hasKhmerChars ? "The user asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, natural English."}`;
+
+    // Helper to safely format source citations without breaking Telegram Markdown
+    const formatSafeSourceLinks = (srcs) => {
+        if (!Array.isArray(srcs) || srcs.length === 0) return "";
+        return srcs.map(s => {
+            const safeTitle = (s.title || "Live Source").replace(/[\[\]\(\)*_`~]/g, "").slice(0, 30).trim();
+            const safeUrl = (s.url || "").replace(/_/g, "%5F");
+            return `[${safeTitle}](${safeUrl})`;
+        }).join(" • ");
+    };
 
     // 2. Try Gemini native google_search tool (if account has search tool enabled/quota)
     if (env?.GEMINI_API_KEY) {
@@ -1485,7 +1574,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                 }
             ],
             tools: [{ google_search: {} }],
-            generationConfig: { temperature: 0.4 }
+            generationConfig: { temperature: 0.3 }
         });
 
         for (const model of candidateModels) {
@@ -1507,7 +1596,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                         const sources = extractGroundingSources(metadata);
                         let formattedReply = rawText.trim();
                         if (sources && sources.length > 0) {
-                            const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                            const sourceLinks = formatSafeSourceLinks(sources);
                             formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
                         }
                         const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
@@ -1520,8 +1609,8 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
         }
     }
 
-    // 3. Robust Live Web Search Fallback via DuckDuckGo + AI Synthesis
-    const searchResults = await searchWebDuckDuckGo(cleanQuery, 5);
+    // 3. Robust Live Web Search Fallback via DuckDuckGo Lite + AI Synthesis
+    const searchResults = await searchWebDuckDuckGo(cleanQuery, 5, env);
     const hasSearchResults = Array.isArray(searchResults) && searchResults.length > 0;
 
     const sources = hasSearchResults
@@ -1536,14 +1625,20 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
         : "";
 
     const synthesisPrompt = hasSearchResults
-        ? `${systemPrompt}\n\nLive Real-Time Web Search Results:\n${groundingContext}\n\n${addressUser} asks: "${cleanQuery}"\nUsing the live search results above, formulate an accurate, direct, well-structured answer addressing ${addressUser}. Include key names and numbers in bold.`
+        ? `${systemPrompt}
+
+VERIFIED LIVE WEB SEARCH RESULTS:
+${groundingContext}
+
+${addressUser} asks: "${cleanQuery}"
+Using the live search results above, formulate an accurate, direct, well-structured answer addressing ${addressUser}. State facts clearly and bold key names and numbers. If the event hasn't happened or is pending, state that clearly.`
         : `${systemPrompt}\n\n${addressUser} asks: "${cleanQuery}"\nAnswer to the best of your knowledge with clear, direct points.`;
 
     // 3a. Synthesize with Gemini Text Model (without google_search tool so it never hits the tool 429 quota)
     if (env?.GEMINI_API_KEY) {
         const textPayload = JSON.stringify({
             contents: [{ parts: [{ text: synthesisPrompt }] }],
-            generationConfig: { temperature: 0.4 }
+            generationConfig: { temperature: 0.2 }
         });
 
         for (const model of candidateModels) {
@@ -1562,7 +1657,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                     if (rawText && rawText.trim()) {
                         let formattedReply = rawText.trim();
                         if (sources.length > 0) {
-                            const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                            const sourceLinks = formatSafeSourceLinks(sources);
                             formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
                         }
                         const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
@@ -1575,7 +1670,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
         }
     }
 
-    // 3b. Synthesize with Cloudflare Workers AI (Llama 3.1) if Gemini is completely rate-limited
+    // 3b. Synthesize with Cloudflare Workers AI (Llama 3.2) if Gemini is completely rate-limited
     if (env?.AI) {
         try {
             const aiResp = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
@@ -1584,14 +1679,14 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                     { role: "user", content: hasSearchResults ? `Live Web Search Results:\n${groundingContext}\n\nQuestion: "${cleanQuery}"` : cleanQuery }
                 ],
                 max_tokens: 1000,
-                temperature: 0.3
+                temperature: 0.1
             });
 
             const outputText = aiResp?.response || (typeof aiResp === "string" ? aiResp : "");
             if (outputText && outputText.trim()) {
                 let formattedReply = outputText.trim();
                 if (sources.length > 0) {
-                    const sourceLinks = sources.map(s => `[${s.title}](${s.url})`).join(" • ");
+                    const sourceLinks = formatSafeSourceLinks(sources);
                     formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
                 }
                 const spoken = outputText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();

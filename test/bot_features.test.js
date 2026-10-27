@@ -633,6 +633,35 @@ describe("Bot Improvements & Stability", () => {
 
             fetchSpy.mockRestore();
         });
+
+        it("searchLiveWeb should parse DuckDuckGo Lite results and sanitize URLs for Telegram", async () => {
+            const mockDdgHtml = `
+                <html><body>
+                <table>
+                <tr><td>1.</td><td><a rel="nofollow" href="https://en.wikipedia.org/wiki/2024_Ballon_d%27Or" class="result-link">2024 Ballon d'Or - Wikipedia</a></td></tr>
+                <tr><td></td><td class="result-snippet">The Ballon d'Or awards were presented in Paris. Rodri and Aitana Bonmati claimed top prizes.</td></tr>
+                </table>
+                </body></html>
+            `;
+
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+                const urlStr = typeof url === "string" ? url : "";
+                if (urlStr.includes("lite.duckduckgo.com")) {
+                    return Promise.resolve(new Response(mockDdgHtml, { status: 200 }));
+                }
+                return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+            });
+
+            const { searchLiveWeb } = await import("../src/services/ai.js");
+            const results = await searchLiveWeb("who won ballor'dor in 2024", 5);
+
+            expect(results.length).toBe(1);
+            expect(results[0].title).toBe("2024 Ballon d'Or - Wikipedia");
+            expect(results[0].snippet).toContain("Rodri and Aitana Bonmati");
+            expect(results[0].source).toBe("DuckDuckGo");
+
+            fetchSpy.mockRestore();
+        });
     });
 
     describe("Webhook Security & Secret Verification", () => {
