@@ -688,12 +688,7 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
-    if (text === "/summary") {
-        await sendSummary(env, chatId, userId, "today");
-        return;
-    }
-
-    if (text === "/month") {
+    if (text === "/summary" || text === "/month") {
         await sendSummary(env, chatId, userId, "month");
         return;
     }

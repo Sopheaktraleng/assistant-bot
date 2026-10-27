@@ -37,8 +37,8 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
                     { text: "💰 Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
-                    { text: "📊 Summary", callback_data: "summary_today" }
+                    { text: "📋 Transactions", callback_data: "view_transactions" },
+                    { text: "📊 Monthly Insights", callback_data: "summary_month" }
                 ],
                 [
                     { text: "‹ Main Hub", callback_data: "hub" }
@@ -233,9 +233,9 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
 
     if (!results || !results.length) {
         await safeEditOrSendMessage(env, chatId, messageId, [
-            `📜 *Today's Ledger*`,
+            `📋 *Today's Transactions*`,
             `📅 \`${cambodiaDate} • Phnom Penh\``,
-            `────────────────────`,
+            ``,
             `_No transactions recorded today yet._`,
             ``,
             `_Tap below to log your first transaction today!_`
@@ -249,9 +249,10 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
                     ],
                     [
                         { text: "📜 All History", callback_data: "history:1" },
-                        { text: "💳 Finance Hub", callback_data: "finance_hub" }
+                        { text: "📊 Monthly Insights", callback_data: "summary_month" }
                     ],
                     [
+                        { text: "💳 Finance Hub", callback_data: "finance_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -284,11 +285,11 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
     const netKhr = totalIncome - totalExpense;
 
     const message = [
-        `📜 *Today's Ledger*`,
+        `📋 *Today's Transactions*`,
         `📅 \`${cambodiaDate} • Phnom Penh\``,
-        `────────────────────`,
+        ``,
         ...lines,
-        `────────────────────`,
+        ``,
         `● *Income:* \`${formatAmount(totalIncome, displayCurrency)}\``,
         `● *Spent:*  \`${formatAmount(totalExpense, displayCurrency)}\``,
         `● *Net:*    \`${formatAmount(netKhr, displayCurrency)}\``
@@ -304,7 +305,7 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
                 ],
                 [
                     { text: "📜 All History", callback_data: "history:1" },
-                    { text: "📊 Summary", callback_data: "summary_today" }
+                    { text: "📊 Monthly Insights", callback_data: "summary_month" }
                 ],
                 [
                     { text: "💳 Finance Hub", callback_data: "finance_hub" },
@@ -315,17 +316,18 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
     });
 }
 
-export async function sendSummary(env, chatId, userId, period = "today", messageId = null) {
-    const safePeriod = (period === "month" || period === "all") ? period : "today";
-    const [displayCurrency, stats, breakdown] = await Promise.all([
+export async function sendSummary(env, chatId, userId, period = "month", messageId = null) {
+    const safePeriod = (period === "today" || period === "all") ? period : "month";
+    const [displayCurrency, stats, breakdown, budgetStatus] = await Promise.all([
         getDisplayCurrency(env.DB, userId),
         getPeriodStats(env.DB, userId, safePeriod),
-        getCategoryRows(env.DB, userId, safePeriod, 5)
+        getCategoryRows(env.DB, userId, safePeriod, 5),
+        safePeriod === "month" ? getBudgetStatus(env.DB, userId) : Promise.resolve(null)
     ]);
 
-    let title = `Daily Summary (${today()})`;
-    if (safePeriod === "month") title = `Monthly Summary (${monthLabel()})`;
-    if (safePeriod === "all") title = `All-Time Summary (Lifetime)`;
+    let title = `Monthly Insights (${monthLabel()})`;
+    if (safePeriod === "all") title = `All-Time Insights (Lifetime)`;
+    if (safePeriod === "today") title = `Daily Summary (${today()})`;
 
     const lines = [
         `📊 *${title}*`,
@@ -343,6 +345,13 @@ export async function sendSummary(env, chatId, userId, period = "today", message
         lines.push(`● *Biggest Spend:* \`${symbol}${amt}${suffix}\` (${icon} ${capitalize(stats.maxCategory)})`);
     }
 
+    if (budgetStatus) {
+        lines.push(
+            `● *Monthly Budget:* \`${budgetStatus.bar}\` *${budgetStatus.percent}%*`,
+            `   └ [${budgetStatus.spentStr} / ${budgetStatus.budgetStr}] • \`${budgetStatus.safeDailyStr}/day\` safe`
+        );
+    }
+
     if (breakdown.length) {
         lines.push(``, `🏷️ *Category Breakdown:*`);
         breakdown.forEach((row) => {
@@ -354,9 +363,9 @@ export async function sendSummary(env, chatId, userId, period = "today", message
     }
 
     const tabRow = [
-        { text: safePeriod === "today" ? "• Today •" : "📅 Today", callback_data: "summary_today" },
         { text: safePeriod === "month" ? "• This Month •" : "📆 This Month", callback_data: "summary_month" },
-        { text: safePeriod === "all" ? "• All-Time •" : "🌐 All-Time", callback_data: "summary_all" }
+        { text: safePeriod === "all" ? "• All-Time •" : "🌐 All-Time", callback_data: "summary_all" },
+        { text: safePeriod === "today" ? "• Today •" : "📅 Today", callback_data: "summary_today" }
     ];
 
     await safeEditOrSendMessage(env, chatId, messageId, lines.join("\n"), {
@@ -365,7 +374,7 @@ export async function sendSummary(env, chatId, userId, period = "today", message
             inline_keyboard: [
                 tabRow,
                 [
-                    { text: "📋 Today's Ledger", callback_data: "view_transactions" },
+                    { text: "📋 Transactions", callback_data: "view_transactions" },
                     { text: "💳 Finance Hub", callback_data: "finance_hub" }
                 ],
                 [
@@ -505,8 +514,8 @@ export async function getHistoryMessageData(db, userId, page = 1) {
         inlineKeyboard.push(navRow);
     }
     inlineKeyboard.push([
-        { text: "📋 Today's Ledger", callback_data: "view_transactions" },
-        { text: "📊 Summary", callback_data: "summary_today" }
+        { text: "📋 Today", callback_data: "view_transactions" },
+        { text: "📊 Monthly Insights", callback_data: "summary_month" }
     ]);
     inlineKeyboard.push([
         { text: "‹ Back to Finance", callback_data: "finance_hub" },
