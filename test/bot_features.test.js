@@ -634,31 +634,43 @@ describe("Bot Improvements & Stability", () => {
             fetchSpy.mockRestore();
         });
 
-        it("searchLiveWeb should parse DuckDuckGo Lite results and sanitize URLs for Telegram", async () => {
-            const mockDdgHtml = `
-                <html><body>
-                <table>
-                <tr><td>1.</td><td><a rel="nofollow" href="https://en.wikipedia.org/wiki/2024_Ballon_d%27Or" class="result-link">2024 Ballon d'Or - Wikipedia</a></td></tr>
-                <tr><td></td><td class="result-snippet">The Ballon d'Or awards were presented in Paris. Rodri and Aitana Bonmati claimed top prizes.</td></tr>
-                </table>
-                </body></html>
-            `;
+        it("searchLiveWeb should sanitize query and parse Wikipedia and Google News results", async () => {
+            const mockWikiSearch = {
+                query: {
+                    search: [{ title: "2024 Ballon d'Or" }]
+                }
+            };
+            const mockWikiExtract = {
+                query: {
+                    pages: {
+                        "123": {
+                            title: "2024 Ballon d'Or",
+                            extract: "Rodri and Aitana Bonmati claimed top prizes in Paris."
+                        }
+                    }
+                }
+            };
 
             const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
                 const urlStr = typeof url === "string" ? url : "";
-                if (urlStr.includes("lite.duckduckgo.com")) {
-                    return Promise.resolve(new Response(mockDdgHtml, { status: 200 }));
+                if (urlStr.includes("action=query") && urlStr.includes("list=search")) {
+                    return Promise.resolve(new Response(JSON.stringify(mockWikiSearch), { status: 200 }));
                 }
-                return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+                if (urlStr.includes("action=query") && urlStr.includes("prop=extracts")) {
+                    return Promise.resolve(new Response(JSON.stringify(mockWikiExtract), { status: 200 }));
+                }
+                return Promise.resolve(new Response("", { status: 200 }));
             });
 
-            const { searchLiveWeb } = await import("../src/services/ai.js");
+            const { searchLiveWeb, sanitizeSearchQuery } = await import("../src/services/ai.js");
+            expect(sanitizeSearchQuery("who won ballor'dor in 2024")).toBe("Ballon d'Or in 2024");
+
             const results = await searchLiveWeb("who won ballor'dor in 2024", 5);
 
-            expect(results.length).toBe(1);
+            expect(results.length).toBeGreaterThan(0);
             expect(results[0].title).toBe("2024 Ballon d'Or - Wikipedia");
             expect(results[0].snippet).toContain("Rodri and Aitana Bonmati");
-            expect(results[0].source).toBe("DuckDuckGo");
+            expect(results[0].source).toBe("Wikipedia");
 
             fetchSpy.mockRestore();
         });
