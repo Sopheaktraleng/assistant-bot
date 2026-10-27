@@ -1396,12 +1396,21 @@ export async function searchLiveWeb(query, limit = 5, env = {}) {
             if (tavilyResp.ok) {
                 const data = await tavilyResp.json();
                 if (Array.isArray(data.results) && data.results.length > 0) {
-                    return data.results.slice(0, limit).map(r => ({
+                    const mapped = data.results.slice(0, limit).map(r => ({
                         title: r.title || "Web Result",
                         url: r.url || "",
-                        snippet: (r.content || "").slice(0, 400).trim(),
+                        snippet: (r.content || "").slice(0, 450).trim(),
                         source: "Tavily"
                     }));
+                    if (data.answer && typeof data.answer === "string") {
+                        mapped.unshift({
+                            title: "Live Web Answer",
+                            url: mapped[0]?.url || "https://tavily.com",
+                            snippet: data.answer.slice(0, 500).trim(),
+                            source: "Tavily"
+                        });
+                    }
+                    return mapped.slice(0, limit);
                 }
             }
         } catch (_) {}
