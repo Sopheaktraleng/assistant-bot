@@ -156,15 +156,15 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
     }
 
     const icon = getCategoryIcon(category, type);
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
-    
-    const todayTotalRow = await env.DB.prepare(
-        `SELECT COALESCE(SUM(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) as total FROM expenses WHERE user_id = ? AND date = ? AND type = 'expense'`
-    ).bind(userId, today()).first();
+    const [displayCurrency, todayTotalRow, warn] = await Promise.all([
+        getDisplayCurrency(env.DB, userId),
+        env.DB.prepare(
+            `SELECT COALESCE(SUM(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) as total FROM expenses WHERE user_id = ? AND date = ? AND type = 'expense'`
+        ).bind(userId, today()).first(),
+        !isIncome ? getBudgetWarningText(env.DB, userId) : Promise.resolve("")
+    ]);
     const todaySpentKhr = todayTotalRow?.total || 0;
     const todaySpentStr = formatAmount(todaySpentKhr, displayCurrency);
-
-    const warn = !isIncome ? await getBudgetWarningText(env.DB, userId) : "";
 
     const header = isIncome ? "＋ *Income Recorded*" : "－ *Expense Recorded*";
     const lines = [
@@ -198,12 +198,12 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
 
 export async function sendTransactions(env, chatId, userId, messageId = null) {
     const date = today();
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
-    const { results } = await env.DB.prepare(
-        "SELECT amount, category, type, currency, created_at FROM expenses WHERE user_id = ? AND date = ? ORDER BY id ASC"
-    )
-    .bind(userId, date)
-    .all();
+    const [displayCurrency, { results }] = await Promise.all([
+        getDisplayCurrency(env.DB, userId),
+        env.DB.prepare(
+            "SELECT amount, category, type, currency, created_at FROM expenses WHERE user_id = ? AND date = ? ORDER BY id ASC"
+        ).bind(userId, date).all()
+    ]);
 
     if (!results || !results.length) {
         await safeEditOrSendMessage(env, chatId, messageId, [
@@ -283,9 +283,11 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
 }
 
 export async function sendSummary(env, chatId, userId, period, messageId = null) {
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
-    const stats = await getPeriodStats(env.DB, userId, period);
-    const breakdown = await getCategoryRows(env.DB, userId, period, 5);
+    const [displayCurrency, stats, breakdown] = await Promise.all([
+        getDisplayCurrency(env.DB, userId),
+        getPeriodStats(env.DB, userId, period),
+        getCategoryRows(env.DB, userId, period, 5)
+    ]);
     const title = period === "month" ? `Monthly Summary (${monthLabel()})` : `Daily Summary (${today()})`;
 
     const lines = [
@@ -333,9 +335,11 @@ export async function sendSummary(env, chatId, userId, period, messageId = null)
 }
 
 export async function sendCategoryBreakdown(env, chatId, userId, period) {
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
-    const rows = await getCategoryRows(env.DB, userId, period, 10);
-    const stats = await getPeriodStats(env.DB, userId, period);
+    const [displayCurrency, rows, stats] = await Promise.all([
+        getDisplayCurrency(env.DB, userId),
+        getCategoryRows(env.DB, userId, period, 10),
+        getPeriodStats(env.DB, userId, period)
+    ]);
     const title = period === "month" ? `Monthly Category Breakdown (${monthLabel()})` : `Daily Category Breakdown (${today()})`;
 
     if (!rows.length) {
@@ -393,24 +397,21 @@ export async function updateHistoryMessage(env, chatId, userId, messageId, page 
 
 export async function getHistoryMessageData(db, userId, page = 1) {
     const limit = 10;
-    const countRow = await db
-        .prepare("SELECT COUNT(*) AS count FROM expenses WHERE user_id = ?")
-        .bind(userId)
-        .first();
-    const totalCount = countRow?.count || 0;
-    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
-    const currentPage = Math.max(1, Math.min(page, totalPages));
-
-    const { results } = await db
-        .prepare(
+    const requestedPage = Math.max(1, page);
+    const [countRow, res] = await Promise.all([
+        db.prepare("SELECT COUNT(*) AS count FROM expenses WHERE user_id = ?").bind(userId).first(),
+        db.prepare(
             `SELECT id, amount, category, type, currency, date, created_at 
              FROM expenses 
              WHERE user_id = ? 
              ORDER BY date DESC, id DESC 
              LIMIT ? OFFSET ?`
-        )
-        .bind(userId, limit, (currentPage - 1) * limit)
-        .all();
+        ).bind(userId, limit, (requestedPage - 1) * limit).all()
+    ]);
+    const results = res?.results || [];
+    const totalCount = countRow?.count || 0;
+    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+    const currentPage = Math.min(requestedPage, totalPages);
 
     if (!results || results.length === 0) {
         return {
@@ -559,31 +560,26 @@ export async function sendWeeklyReportForUser(env, chatId, userId, startDate, en
         return;
     }
 
-    const biggest = await env.DB
-        .prepare(
+    const [biggest, categories, displayCurrency] = await Promise.all([
+        env.DB.prepare(
             `SELECT amount, category, currency
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND date >= ? AND date <= ?
              ORDER BY (CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END) DESC, id DESC
              LIMIT 1`
-        )
-        .bind(userId, startDate, endDate)
-        .first();
-
-    const categories = await env.DB
-        .prepare(
+        ).bind(userId, startDate, endDate).first(),
+        env.DB.prepare(
             `SELECT category, 
                     SUM(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END) AS total
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND date >= ? AND date <= ?
              GROUP BY LOWER(category)
              ORDER BY total DESC`
-        )
-        .bind(userId, startDate, endDate)
-        .all();
+        ).bind(userId, startDate, endDate).all(),
+        getDisplayCurrency(env.DB, userId)
+    ]);
 
-    const catResults = categories.results || [];
-    const displayCurrency = await getDisplayCurrency(env.DB, userId);
+    const catResults = categories?.results || [];
     const totalSpentStr = formatAmount(total, displayCurrency);
     const chartUrl = generatePieChartUrl(catResults, totalSpentStr);
 

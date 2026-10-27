@@ -360,7 +360,10 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
             return;
         }
 
-        const userVoicePref = await getUserVoiceMode(env.DB, userId);
+        const [userVoicePref, context] = await Promise.all([
+            getUserVoiceMode(env.DB, userId),
+            buildAiUserContext(env.DB, userId, cleanQuery)
+        ]);
         const shouldVoice = isVoice || userVoicePref === "on";
 
         try {
@@ -369,7 +372,6 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
 
         const isUserOwner = isOwner(userId, env);
         const requesterName = from?.first_name || from?.username || (isUserOwner ? "Boss" : "Friend");
-        const context = await buildAiUserContext(env.DB, userId, cleanQuery);
         context.db = env.DB;
         context.userId = userId;
         context.chatId = chatId;
@@ -447,10 +449,6 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                 } else if (act.type === "add_memory" && act.fact) {
                     const memCat = act.category || "preference";
                     await saveUserMemory(env.DB, userId, act.fact.trim(), memCat);
-                } else if (act.type === "add_watchlist" && act.title) {
-                    await env.DB.prepare(
-                        "INSERT INTO watchlist (user_id, title, status) VALUES (?, ?, 'plan_to_watch')"
-                    ).bind(userId, act.title.trim()).run();
                 }
             } catch (actErr) {
                 console.error("Failed to execute AI Copilot action:", actErr);

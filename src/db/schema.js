@@ -60,21 +60,6 @@ const TABLE_SCHEMAS = [
         message_id INTEGER,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`,
-    `CREATE TABLE IF NOT EXISTS watchlist (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        year TEXT,
-        genre TEXT,
-        rating TEXT,
-        runtime TEXT,
-        platforms TEXT,
-        synopsis TEXT,
-        why_love TEXT,
-        status TEXT NOT NULL DEFAULT 'plan_to_watch',
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        watched_at TEXT
-    );`,
     `CREATE TABLE IF NOT EXISTS chat_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,

@@ -48,10 +48,6 @@ export function isCompoundOrMultiAction(text) {
     if (/\b(?:done|completed|finished)\s+(?:with\s+|the\s+|all\s+|my\s+)?\b/i.test(lower)) {
         signals++;
     }
-    // 5. Watchlist
-    if (/\b(?:watchlist|watch\s+later|movie\s+to\s+watch|series\s+to\s+watch)\b/i.test(lower)) {
-        signals++;
-    }
 
     return signals >= 2;
 }

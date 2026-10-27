@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
     parseExtractedJson,
     parseCopilotResponse,
-    parseMovieJson
+    parseExtractedPdfStatementJson
 } from "../src/services/ai.js";
 import {
     isConversationalOrCorrection,
@@ -129,26 +129,24 @@ describe("AI Parser Utilities", () => {
         });
     });
 
-    describe("parseMovieJson", () => {
-        it("should parse valid movie JSON", () => {
+    describe("parseExtractedPdfStatementJson", () => {
+        it("should parse valid single invoice PDF JSON", () => {
             const raw = JSON.stringify({
-                title: "Inception",
-                year: "2010",
-                genre: "Sci-Fi / Action",
-                rating: "8.8/10",
-                runtime: "2h 28m",
-                platforms: "Netflix",
-                synopsis: "A thief who enters the dreams of others.",
-                why_love: "Mind-bending visuals and incredible score."
+                is_statement: false,
+                amount: 45.5,
+                currency: "USD",
+                merchant: "Brown Coffee",
+                category: "Coffee"
             });
-            const result = parseMovieJson(raw);
-            expect(result.title).toBe("Inception");
-            expect(result.year).toBe("2010");
-            expect(result.genre).toBe("Sci-Fi / Action");
+            const result = parseExtractedPdfStatementJson(raw);
+            expect(result.is_statement).toBe(false);
+            expect(result.amount).toBe(45.5);
+            expect(result.currency).toBe("USD");
+            expect(result.merchant).toBe("Brown Coffee");
         });
 
         it("should return null when invalid", () => {
-            expect(parseMovieJson("Not a movie JSON")).toBeNull();
+            expect(parseExtractedPdfStatementJson("Not a PDF statement JSON")).toBeNull();
         });
     });
 });

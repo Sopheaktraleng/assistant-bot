@@ -9,7 +9,7 @@ import { processDueReminders } from "./modules/reminders/cron.js";
 import { sendWeeklyScheduledReports } from "./modules/finance/views.js";
 import { sendDailyScheduledWakeup, sendDailyScheduledBriefings } from "./modules/copilot/briefing.js";
 import { sendMessage, answerCallback } from "./services/telegram.js";
-import { isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "./config/constants.js";
+import { isUserAuthorizedAsync } from "./config/constants.js";
 
 /**
  * Safely processes Telegram updates with idempotency check against duplicate deliveries.

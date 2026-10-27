@@ -431,9 +431,9 @@ Return ONLY pure JSON.`;
 export async function buildAiUserContext(db, userId, userQuery = null) {
     const curDate = today();
     const curTime = currentTime();
-    const displayCurrency = await getDisplayCurrency(db, userId);
 
     const [
+        displayCurrency,
         todaySummary,
         monthSummary,
         allSummary,
@@ -447,6 +447,7 @@ export async function buildAiUserContext(db, userId, userQuery = null) {
         recentChat,
         memories
     ] = await Promise.all([
+        getDisplayCurrency(db, userId),
         getFinancialSummary(db, userId, "today"),
         getFinancialSummary(db, userId, "month"),
         getFinancialSummary(db, userId, "all"),
@@ -659,14 +660,14 @@ Core Operating Directives (CRITICAL):
   "action": null | { ... },
   "actions": null | [
     {
-      "type": "add_expense" | "add_income" | "delete_last_transaction" | "set_currency" | "set_budget" | "clear_today_expenses" | "clear_all_transactions" | "add_work" | "add_reminder" | "add_memory" | "add_watchlist",
+      "type": "add_expense" | "add_income" | "delete_last_transaction" | "set_currency" | "set_budget" | "clear_today_expenses" | "clear_all_transactions" | "add_work" | "add_reminder" | "add_memory",
       "amount": number (for expense/income/budget),
       "currency": "USD" | "KHR" (for expense/income/budget/set_currency),
       "category": string (for expense/income/work/memory: 'preference' | 'work' | 'identity' | 'goal' | 'rule'),
       "date": "YYYY-MM-DD" (optional, for expense/income),
       "filter": "expense" | "income" | "any" (for delete_last_transaction),
       "content": string (for work task),
-      "title": string (for reminder or watchlist),
+      "title": string (for reminder),
       "time": "HH:mm" (24h format, for reminder),
       "frequency": "daily" | "weekdays" | "once" (for reminder),
       "fact": string (for add_memory)
@@ -1628,25 +1629,6 @@ export async function transcribeAudioFile(env, arrayBuffer, mimeType = "audio/og
     }
 
     return text;
-}
-
-export function parseMovieJson(rawText) {
-    if (!rawText) return null;
-    let clean = rawText.trim();
-    if (clean.startsWith("```json")) {
-        clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
-    } else if (clean.startsWith("```")) {
-        clean = clean.replace(/^```\s*/, "").replace(/\s*```$/, "");
-    }
-    try {
-        return JSON.parse(clean);
-    } catch (e) {
-        const match = clean.match(/\{[\s\S]*\}/);
-        if (match) {
-            try { return JSON.parse(match[0]); } catch (_) {}
-        }
-        return null;
-    }
 }
 
 export function splitTextIntoTtsChunks(text, maxLen = 160) {

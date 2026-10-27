@@ -178,27 +178,22 @@ export async function getPeriodStats(db, userId, period) {
     const condition = period === "month" ? "date LIKE ?" : "date = ?";
     const value = period === "month" ? `${monthPrefix()}%` : today();
     
-    const row = await db
-        .prepare(
+    const [row, biggest] = await Promise.all([
+        db.prepare(
             `SELECT COALESCE(SUM(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) AS total,
                     COUNT(*) AS count,
                     COALESCE(AVG(CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END), 0) AS average
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND ${condition}`
-        )
-        .bind(userId, value)
-        .first();
-
-    const biggest = await db
-        .prepare(
+        ).bind(userId, value).first(),
+        db.prepare(
             `SELECT amount, category, currency
              FROM expenses
              WHERE user_id = ? AND type = 'expense' AND ${condition}
              ORDER BY (CASE WHEN currency = 'USD' THEN amount * ${EXCHANGE_RATE} ELSE amount END) DESC, id DESC
              LIMIT 1`
-        )
-        .bind(userId, value)
-        .first();
+        ).bind(userId, value).first()
+    ]);
 
     return {
         total: Number(row?.total || 0),
@@ -298,19 +293,16 @@ export async function setMonthlyBudget(db, userId, budgetInKhr) {
 }
 
 export async function getBudgetWarningText(db, userId) {
-    const settingsRow = await db.prepare(
-        "SELECT monthly_budget FROM user_settings WHERE user_id = ?"
-    )
-    .bind(userId)
-    .first();
+    const [settingsRow, monthSummary, displayCurrency] = await Promise.all([
+        db.prepare("SELECT monthly_budget FROM user_settings WHERE user_id = ?").bind(userId).first(),
+        getFinancialSummary(db, userId, "month"),
+        getDisplayCurrency(db, userId)
+    ]);
     
     const budgetKhr = settingsRow?.monthly_budget || 0;
     if (budgetKhr <= 0) return "";
 
-    const monthSummary = await getFinancialSummary(db, userId, "month");
     const totalSpentInKhr = monthSummary.totalExpenseInKhr;
-    const displayCurrency = await getDisplayCurrency(db, userId);
-    
     const percent = Math.round((totalSpentInKhr / budgetKhr) * 100);
     
     if (percent >= 100) {

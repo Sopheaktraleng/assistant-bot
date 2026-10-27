@@ -232,28 +232,6 @@ export async function handleApiRequest(request, env) {
             });
         }
 
-        if (url.pathname === "/api/watchlist") {
-            await ensureTables(env.DB);
-            const { results } = await env.DB.prepare(
-                `SELECT id, title, year, genre, rating, runtime, platforms, synopsis, why_love, status, created_at, watched_at
-                 FROM watchlist
-                 WHERE user_id = ? AND status IN ('plan_to_watch', 'watched')
-                 ORDER BY (CASE WHEN status = 'plan_to_watch' THEN 0 ELSE 1 END), id DESC`
-            ).bind(userId).all();
-
-            const items = results || [];
-            const planCount = items.filter(i => i.status === "plan_to_watch").length;
-            const watchedCount = items.filter(i => i.status === "watched").length;
-
-            return json({
-                ok: true,
-                items,
-                total: items.length,
-                planCount,
-                watchedCount
-            });
-        }
-
         if (url.pathname === "/api/export") {
             await ensureTables(env.DB);
             const { results } = await env.DB.prepare(
@@ -407,74 +385,6 @@ export async function handleApiRequest(request, env) {
                 .run();
 
             return json({ ok: true, changes: result.meta?.changes || 0 });
-        }
-
-        if (url.pathname === "/api/watchlist/add") {
-            const body = await request.json().catch(() => ({}));
-            const title = (body.title || "").trim();
-            if (!title) {
-                return json({ error: "Title is required" }, 400);
-            }
-
-            await ensureTables(env.DB);
-            const res = await env.DB.prepare(`
-                INSERT INTO watchlist (user_id, title, year, genre, rating, runtime, platforms, synopsis, why_love, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan_to_watch')
-            `).bind(
-                userId,
-                title,
-                (body.year || "").trim(),
-                (body.genre || "General").trim(),
-                (body.rating || "").trim(),
-                (body.runtime || "").trim(),
-                (body.platforms || "").trim(),
-                (body.synopsis || "").trim(),
-                (body.why_love || "").trim()
-            ).run();
-
-            return json({
-                ok: true,
-                item: {
-                    id: res.meta?.last_row_id,
-                    title,
-                    year: body.year || "",
-                    genre: body.genre || "General",
-                    rating: body.rating || "",
-                    status: "plan_to_watch"
-                }
-            });
-        }
-
-        if (url.pathname === "/api/watchlist/toggle") {
-            const id = url.searchParams.get("id");
-            if (!id) {
-                return json({ error: "Missing parameters" }, 400);
-            }
-
-            await ensureTables(env.DB);
-            const row = await env.DB.prepare("SELECT status FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).first();
-            if (!row) {
-                return json({ error: "Title not found" }, 404);
-            }
-
-            const newStatus = row.status === "watched" ? "plan_to_watch" : "watched";
-            const watchedAt = newStatus === "watched" ? today() : null;
-
-            await env.DB.prepare("UPDATE watchlist SET status = ?, watched_at = ? WHERE id = ? AND user_id = ?")
-                .bind(newStatus, watchedAt, id, userId).run();
-
-            return json({ ok: true, newStatus });
-        }
-
-        if (url.pathname === "/api/watchlist/delete") {
-            const id = url.searchParams.get("id");
-            if (!id) {
-                return json({ error: "Missing parameters" }, 400);
-            }
-
-            await ensureTables(env.DB);
-            const res = await env.DB.prepare("DELETE FROM watchlist WHERE id = ? AND user_id = ?").bind(id, userId).run();
-            return json({ ok: true, changes: res.meta?.changes || 0 });
         }
     }
 
