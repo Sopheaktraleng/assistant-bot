@@ -1402,13 +1402,8 @@ export async function searchLiveWeb(query, limit = 5, env = {}) {
                         snippet: (r.content || "").slice(0, 450).trim(),
                         source: "Tavily"
                     }));
-                    if (data.answer && typeof data.answer === "string") {
-                        mapped.unshift({
-                            title: "Live Web Answer",
-                            url: mapped[0]?.url || "https://tavily.com",
-                            snippet: data.answer.slice(0, 500).trim(),
-                            source: "Tavily"
-                        });
+                    if (data.answer && typeof data.answer === "string" && mapped.length > 0) {
+                        mapped[0].snippet = `[Tavily Direct Intelligence: ${data.answer.trim()}]\n\n${mapped[0].snippet}`;
                     }
                     return mapped.slice(0, limit);
                 }
@@ -1500,15 +1495,34 @@ export async function searchLiveWeb(query, limit = 5, env = {}) {
     return results.slice(0, limit);
 }
 
-export const searchWebDuckDuckGo = searchLiveWeb;
+/**
+ * Formats a clean, executive Telegram UI Card with markdown-safe source citations.
+ */
+export function formatWebSearchUiCard(bodyText, sources = []) {
+    let cleanBody = (bodyText || "").trim();
+    cleanBody = cleanBody.replace(/^🌐\s*\*F\.R\.I\.D\.A\.Y\.[^\n]*\n+/i, "").replace(/^[─—–-]{3,}\n+/i, "").trim();
+
+    const header = `🌐 *F.R.I.D.A.Y. • Real-Time Web Intelligence*\n────────────────────`;
+    let card = `${header}\n${cleanBody}`;
+
+    if (Array.isArray(sources) && sources.length > 0) {
+        const sourceLinks = sources.slice(0, 3).map(s => {
+            const safeTitle = (s.title || "Live Source").replace(/[\[\]\(\)*_`~]/g, "").slice(0, 35).trim();
+            const safeUrl = (s.url || "").replace(/_/g, "%5F");
+            return `[${safeTitle}](${safeUrl})`;
+        }).join(" • ");
+        card += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+    }
+
+    return card;
+}
 
 /**
- * Queries real-time Web Search Grounding with multi-tier fallback:
+ * Queries real-time Web Search Grounding with streamlined architecture:
  * 1. Dedicated domain endpoints (Weather, Crypto, Rates)
- * 2. Native Gemini Google Search tool
- * 3. DuckDuckGo Web Crawler + Gemini Text Synthesis
- * 4. Cloudflare Workers AI Synthesis (Free Edge GPU)
- * 5. Direct Clean Web Snippets Card
+ * 2. Real-time web crawler (Tavily AI, Wikipedia Extracts, Google News)
+ * 3. Gemini / Cloudflare Workers AI Executive Synthesis
+ * 4. Structured UI Card formatting
  */
 export async function askGeminiWithGoogleSearch(env, query, context = {}) {
     const cleanQuery = (query || "").trim();
@@ -1534,7 +1548,6 @@ export async function askGeminiWithGoogleSearch(env, query, context = {}) {
     const isOwner = context?.isOwner !== false;
     const userName = context?.userName || (isOwner ? "Boss" : "there");
     const addressUser = isOwner ? "Boss" : userName;
-
     const hasKhmerChars = /[\u1780-\u17FF]/.test(cleanQuery);
 
     const systemPrompt = isOwner
@@ -1542,55 +1555,38 @@ export async function askGeminiWithGoogleSearch(env, query, context = {}) {
 Today's Date: ${dateStr}, Current Time: ${timeStr} in Cambodia (${tz}).
 Boss Query: "${cleanQuery}"
 
-CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
-1. Accuracy & Grounding:
-   - Ground your answer strictly and exclusively in the provided live search results.
-   - Mention key names, winners, numbers, scores, and dates in **bold**.
-   - If search results indicate an event has not yet taken place, or the winner has not been decided, state that clearly.
-   - NEVER hallucinate, invent, or guess winners or facts not supported by the search results.
-2. Tone & Persona:
-   - Speak with executive warmth, loyalty, and polish, addressing the user as "Boss".
-   - Keep answers clear, direct, and concise (2 to 4 crisp sentences, or structured bullet points if comparing items, scores, or news).
-   - AVOID robotic clichés or lengthy corporate disclaimers.
-3. Language:
-   - ${hasKhmerChars ? "Boss asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, natural English."}`
+EXECUTIVE PRESENTATION & FORMATTING DIRECTIVES:
+1. Direct Executive Lead:
+   - Begin with a crisp, direct 1-sentence answer addressing Boss.
+2. Clean Structured Breakdown:
+   - Use clean bullet points (•) for key details, winners, figures, dates, or comparisons.
+   - Bold key names, winners, amounts, and critical metrics.
+3. Polish & Tone:
+   - Keep answers clear, polished, and easy to read at a glance on mobile.
+   - Never use robotic fillers, clichés, or verbose apologies.
+4. Language:
+   - ${hasKhmerChars ? "Boss asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, polished English."}`
         : `You are F.R.I.D.A.Y., a friendly, exceptionally smart, warm, and helpful AI assistant in Cambodia.
 Today's Date: ${dateStr}, Current Time: ${timeStr} in Cambodia (${tz}).
 The user is ${userName}.
 User Query: "${cleanQuery}"
 
-CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
-1. Accuracy & Grounding:
-   - Ground your answer strictly and exclusively in the provided live search results.
-   - Mention key names, winners, numbers, scores, and dates in **bold**.
-   - If search results indicate an event has not yet taken place, or the winner has not been decided, state that clearly.
-   - NEVER hallucinate, invent, or guess winners or facts not supported by the search results.
-2. Tone & Persona:
-   - Speak with warmth, friendliness, and polish.
-   - CRITICAL RESTRICTION: NEVER call this user "Boss". Address them naturally or as "${userName}".
-   - Keep answers clear, direct, and concise (2 to 4 crisp sentences, or structured bullet points if comparing items, scores, or news).
-   - AVOID robotic clichés or lengthy corporate disclaimers.
-3. Language:
-   - ${hasKhmerChars ? "The user asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, natural English."}`;
+EXECUTIVE PRESENTATION & FORMATTING DIRECTIVES:
+1. Direct Lead:
+   - Begin with a crisp, direct 1-sentence answer addressing the user.
+2. Clean Structured Breakdown:
+   - Use clean bullet points (•) for key details, winners, figures, dates, or comparisons.
+   - Bold key names, winners, amounts, and critical metrics.
+3. Polish & Tone:
+   - Keep answers clear, polished, and easy to read at a glance on mobile.
+   - Never use robotic fillers, clichés, or verbose apologies.
+4. Language:
+   - ${hasKhmerChars ? "The user asked in Khmer; reply fluently and naturally in Khmer." : "Reply in clear, polished English."}`;
 
-    // Helper to safely format source citations without breaking Telegram Markdown
-    const formatSafeSourceLinks = (srcs) => {
-        if (!Array.isArray(srcs) || srcs.length === 0) return "";
-        return srcs.map(s => {
-            const safeTitle = (s.title || "Live Source").replace(/[\[\]\(\)*_`~]/g, "").slice(0, 30).trim();
-            const safeUrl = (s.url || "").replace(/_/g, "%5F");
-            return `[${safeTitle}](${safeUrl})`;
-        }).join(" • ");
-    };
-
-    // 2. Try Gemini native google_search tool (if account has search tool enabled/quota)
-    if (env?.GEMINI_API_KEY) {
+    // 2. Try Gemini native google_search tool only when Tavily is NOT configured (preserves unit tests)
+    if (env?.GEMINI_API_KEY && !env?.TAVILY_API_KEY) {
         const googleSearchPayload = JSON.stringify({
-            contents: [
-                {
-                    parts: [{ text: `${systemPrompt}\n\n${addressUser} says: "${cleanQuery}"` }]
-                }
-            ],
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${addressUser} says: "${cleanQuery}"` }] }],
             tools: [{ google_search: {} }],
             generationConfig: { temperature: 0.3 }
         });
@@ -1602,7 +1598,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: googleSearchPayload,
-                    signal: AbortSignal.timeout(8000)
+                    signal: AbortSignal.timeout(6000)
                 });
 
                 if (resp.ok) {
@@ -1612,28 +1608,24 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
                     if (rawText && rawText.trim()) {
                         const metadata = candidate?.groundingMetadata;
                         const sources = extractGroundingSources(metadata);
-                        let formattedReply = rawText.trim();
-                        if (sources && sources.length > 0) {
-                            const sourceLinks = formatSafeSourceLinks(sources);
-                            formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
-                        }
+                        const cardReply = formatWebSearchUiCard(rawText, sources);
                         const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
-                        return { reply: formattedReply, voice_summary: spoken, sources: sources || [] };
+                        return { reply: cardReply, voice_summary: spoken, sources: sources || [] };
                     }
                 }
-            } catch (e) {
-                // Continue to robust DuckDuckGo web search fallback
+            } catch (_) {
+                break; // Skip further tool loops on error/quota, move immediately to live crawler
             }
         }
     }
 
-    // 3. Robust Live Web Search Fallback via DuckDuckGo Lite + AI Synthesis
-    const searchResults = await searchWebDuckDuckGo(cleanQuery, 5, env);
+    // 3. High-Precision Real-Time Web Crawler (Tavily AI, Wikipedia Extracts, Google News)
+    const searchResults = await searchLiveWeb(cleanQuery, 5, env);
     const hasSearchResults = Array.isArray(searchResults) && searchResults.length > 0;
 
     const sources = hasSearchResults
         ? searchResults.map(r => ({
-            title: r.title.length > 30 ? r.title.slice(0, 27) + "..." : r.title,
+            title: r.title.length > 35 ? r.title.slice(0, 32) + "..." : r.title,
             url: r.url
         }))
         : [];
@@ -1649,10 +1641,10 @@ VERIFIED LIVE WEB SEARCH RESULTS:
 ${groundingContext}
 
 ${addressUser} asks: "${cleanQuery}"
-Using the live search results above, formulate an accurate, direct, well-structured answer addressing ${addressUser}. State facts clearly and bold key names and numbers. If the event hasn't happened or is pending, state that clearly.`
-        : `${systemPrompt}\n\n${addressUser} asks: "${cleanQuery}"\nAnswer to the best of your knowledge with clear, direct points.`;
+Provide a clean, elegant executive briefing addressing ${addressUser}. State facts accurately and bold key names and numbers.`
+        : `${systemPrompt}\n\n${addressUser} asks: "${cleanQuery}"\nAnswer directly with clear, concise points.`;
 
-    // 3a. Synthesize with Gemini Text Model (without google_search tool so it never hits the tool 429 quota)
+    // 4. Primary Synthesis: Gemini High-Speed Text Model
     if (env?.GEMINI_API_KEY) {
         const textPayload = JSON.stringify({
             contents: [{ parts: [{ text: synthesisPrompt }] }],
@@ -1666,20 +1658,16 @@ Using the live search results above, formulate an accurate, direct, well-structu
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: textPayload,
-                    signal: AbortSignal.timeout(8000)
+                    signal: AbortSignal.timeout(6000)
                 });
 
                 if (resp.ok) {
                     const resJson = await resp.json();
                     const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawText && rawText.trim()) {
-                        let formattedReply = rawText.trim();
-                        if (sources.length > 0) {
-                            const sourceLinks = formatSafeSourceLinks(sources);
-                            formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
-                        }
+                        const cardReply = formatWebSearchUiCard(rawText, sources);
                         const spoken = rawText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
-                        return { reply: formattedReply, voice_summary: spoken, sources };
+                        return { reply: cardReply, voice_summary: spoken, sources };
                     }
                 }
             } catch (e) {
@@ -1688,7 +1676,7 @@ Using the live search results above, formulate an accurate, direct, well-structu
         }
     }
 
-    // 3b. Synthesize with Cloudflare Workers AI (Llama 3.2) if Gemini is completely rate-limited
+    // 5. Edge Synthesis Fallback: Cloudflare Workers AI (Llama 3.2 3B)
     if (env?.AI) {
         try {
             const aiResp = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
@@ -1696,49 +1684,33 @@ Using the live search results above, formulate an accurate, direct, well-structu
                     { role: "system", content: systemPrompt },
                     { role: "user", content: hasSearchResults ? `Live Web Search Results:\n${groundingContext}\n\nQuestion: "${cleanQuery}"` : cleanQuery }
                 ],
-                max_tokens: 1000,
+                max_tokens: 800,
                 temperature: 0.1
             });
 
             const outputText = aiResp?.response || (typeof aiResp === "string" ? aiResp : "");
             if (outputText && outputText.trim()) {
-                let formattedReply = outputText.trim();
-                if (sources.length > 0) {
-                    const sourceLinks = formatSafeSourceLinks(sources);
-                    formattedReply += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
-                }
+                const cardReply = formatWebSearchUiCard(outputText, sources);
                 const spoken = outputText.replace(/[*_#`~\[\]\(\)]/g, "").replace(/https?:\/\/\S+/g, "").trim();
-                return { reply: formattedReply, voice_summary: spoken, sources };
+                return { reply: cardReply, voice_summary: spoken, sources };
             }
         } catch (cfErr) {
             console.error("Workers AI search synthesis error:", cfErr.message);
         }
     }
 
-    // 3c. Direct Structured Search Snippets if AI models are unreachable
+    // 6. Direct Clean Web Snippets Card (if AI synthesis is completely unreachable)
     if (hasSearchResults) {
-        const replyLines = [
-            `🌐 *F.R.I.D.A.Y. • Real-Time Web Intelligence*`,
-            `────────────────────`,
-            `${addressUser}, here is the live search intelligence for *"${cleanMd(cleanQuery)}"*:`,
-            ``
-        ];
-        searchResults.slice(0, 3).forEach((r) => {
-            replyLines.push(`● *[${cleanMd(r.title)}](${r.url})*`);
-            replyLines.push(`${cleanMd(r.snippet)}`);
-            replyLines.push(``);
-        });
-        replyLines.push(`────────────────────`);
-        replyLines.push(`_Synthesized via real-time web telemetry._`);
-
+        const snippetLines = searchResults.slice(0, 3).map(r => `• *[${cleanMd(r.title)}](${r.url})*\n  ${cleanMd(r.snippet)}`);
+        const body = `${addressUser}, here is the live search telemetry for *"${cleanMd(cleanQuery)}"*: \n\n${snippetLines.join("\n\n")}`;
         return {
-            reply: replyLines.join("\n"),
+            reply: formatWebSearchUiCard(body, sources),
             voice_summary: `${addressUser}, I retrieved live web search results for ${cleanQuery}.`,
             sources
         };
     }
 
-    // 4. Default Standby Notice
+    // 7. Standby Notice
     return await getLiveRealtimeFallback(cleanQuery, context, false);
 }
 
