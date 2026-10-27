@@ -1184,7 +1184,7 @@ export async function askAiCopilot(env, userQuery, context) {
                 content: m.content
             }));
 
-            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
                 messages: [
                     {
                         role: "system",
@@ -1358,59 +1358,58 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
 }
 
 /**
- * Real-time web search crawler using DuckDuckGo to provide 100% free web grounding
- * even when Google Search Grounding tools hit billing or quota limits.
+ * Real-time web search crawler utilizing high-speed Google News RSS and Wikipedia API
+ * to provide 100% reliable, zero-quota web grounding directly from Cloudflare Worker edge isolates.
  */
-export async function searchWebDuckDuckGo(query, limit = 5) {
+export async function searchLiveWeb(query, limit = 5) {
+    const results = [];
     try {
-        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-        const res = await fetch(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            },
-            signal: AbortSignal.timeout(6000)
-        });
-        if (!res.ok) return [];
-        const html = await res.text();
-        const results = [];
-        const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-        const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-
-        const titles = [];
-        let tMatch;
-        while ((tMatch = titleRegex.exec(html)) && titles.length < limit) {
-            let rawUrl = tMatch[1];
-            if (rawUrl.includes("uddg=")) {
-                const m = rawUrl.match(/uddg=([^&]+)/);
-                if (m) rawUrl = decodeURIComponent(m[1]);
-            } else if (rawUrl.startsWith("//")) {
-                rawUrl = "https:" + rawUrl;
-            }
-            const cleanTitle = tMatch[2].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").trim();
-            titles.push({ url: rawUrl, title: cleanTitle });
-        }
-
-        const snippets = [];
-        let sMatch;
-        while ((sMatch = snippetRegex.exec(html)) && snippets.length < limit) {
-            const cleanSnippet = sMatch[1].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").trim();
-            snippets.push(cleanSnippet);
-        }
-
-        for (let i = 0; i < titles.length; i++) {
-            results.push({
-                title: titles[i].title,
-                url: titles[i].url,
-                snippet: snippets[i] || ""
+        // 1. Google News Search (Live real-time sports, news, winners, current events)
+        const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+        const newsPromise = fetch(googleNewsUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+            signal: AbortSignal.timeout(4000)
+        }).then(async res => {
+            if (!res.ok) return [];
+            const xml = await res.text();
+            const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+            return items.slice(0, limit).map(item => {
+                const rawTitle = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "";
+                const rawLink = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
+                const cleanTitle = rawTitle.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+                return { title: cleanTitle, url: rawLink, snippet: cleanTitle, source: "Google News" };
             });
-        }
-        return results;
+        }).catch(() => []);
+
+        // 2. Wikipedia Search API (Entities, biographies, facts, history)
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+        const wikiPromise = fetch(wikiUrl, {
+            headers: { "User-Agent": "FridayBot/2.0" },
+            signal: AbortSignal.timeout(4000)
+        }).then(async res => {
+            if (!res.ok) return [];
+            const data = await res.json();
+            const searchItems = data?.query?.search || [];
+            return searchItems.slice(0, 3).map(item => {
+                const cleanSnippet = (item.snippet || "").replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").trim();
+                return {
+                    title: item.title,
+                    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`,
+                    snippet: cleanSnippet,
+                    source: "Wikipedia"
+                };
+            });
+        }).catch(() => []);
+
+        const [newsResults, wikiResults] = await Promise.all([newsPromise, wikiPromise]);
+        results.push(...newsResults, ...wikiResults);
     } catch (err) {
-        console.warn("searchWebDuckDuckGo error:", err.message);
-        return [];
+        console.warn("searchLiveWeb error:", err.message);
     }
+    return results.slice(0, limit);
 }
+
+export const searchWebDuckDuckGo = searchLiveWeb;
 
 /**
  * Queries real-time Web Search Grounding with multi-tier fallback:
@@ -1579,7 +1578,7 @@ CORE OPERATING DIRECTIVES FOR LIVE WEB SEARCH:
     // 3b. Synthesize with Cloudflare Workers AI (Llama 3.1) if Gemini is completely rate-limited
     if (env?.AI) {
         try {
-            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: hasSearchResults ? `Live Web Search Results:\n${groundingContext}\n\nQuestion: "${cleanQuery}"` : cleanQuery }
@@ -1675,7 +1674,7 @@ export async function callAiTextModel(env, systemPrompt, userPrompt, temperature
 
     if (env.AI) {
         try {
-            const aiResp = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+            const aiResp = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
                 messages: [
                     ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
                     { role: "user", content: userPrompt }

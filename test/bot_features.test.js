@@ -586,13 +586,15 @@ describe("Bot Improvements & Stability", () => {
         });
 
         it("askGeminiWithGoogleSearch should fallback to web crawler when google_search tool encounters 429", async () => {
-            const mockDdGHtml = `
-                <div class="result results_links">
-                    <h2 class="result__title">
-                        <a class="result__a" href="https://example.com/ballon-dor">2026 Ballon d'Or Winner</a>
-                    </h2>
-                    <a class="result__snippet">Harry Kane won the 2026 Ballon d'Or award in London.</a>
-                </div>
+            const mockNewsXml = `
+                <rss version="2.0">
+                    <channel>
+                        <item>
+                            <title>Harry Kane wins 2026 Ballon d'Or award in London</title>
+                            <link>https://example.com/ballon-dor</link>
+                        </item>
+                    </channel>
+                </rss>
             `;
 
             const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url, opts) => {
@@ -603,9 +605,9 @@ describe("Bot Improvements & Stability", () => {
                         error: { code: 429, message: "Resource exhausted" }
                     }), { status: 429 }));
                 }
-                // 2. DuckDuckGo web search crawler returns HTML results
-                if (urlStr.includes("duckduckgo.com")) {
-                    return Promise.resolve(new Response(mockDdGHtml, { status: 200 }));
+                // 2. Google News search crawler returns RSS results
+                if (urlStr.includes("news.google.com")) {
+                    return Promise.resolve(new Response(mockNewsXml, { status: 200 }));
                 }
                 // 3. Gemini text synthesis (without google_search tool) succeeds
                 if (urlStr.includes("generativelanguage.googleapis.com")) {
