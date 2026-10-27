@@ -710,7 +710,7 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
-    if (text.startsWith("/history") || text === "/all") {
+    if (text === "/transactions all" || text.startsWith("/history") || text === "/all") {
         const parts = text.split(/\s+/);
         let page = 1;
         if (parts.length > 1) {

@@ -248,7 +248,10 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
                         { text: "💰 Income", callback_data: "add_income" }
                     ],
                     [
-                        { text: "💳 Finance", callback_data: "finance_hub" },
+                        { text: "📜 All History", callback_data: "history:1" },
+                        { text: "💳 Finance Hub", callback_data: "finance_hub" }
+                    ],
+                    [
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -300,10 +303,11 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
                     { text: "💰 Income", callback_data: "add_income" }
                 ],
                 [
-                    { text: "📊 Summary", callback_data: "summary_today" },
-                    { text: "💳 Finance", callback_data: "finance_hub" }
+                    { text: "📜 All History", callback_data: "history:1" },
+                    { text: "📊 Summary", callback_data: "summary_today" }
                 ],
                 [
+                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
                     { text: "🏠 Main Hub", callback_data: "hub" }
                 ]
             ]
@@ -430,7 +434,7 @@ export async function getHistoryMessageData(db, userId, page = 1) {
     const [countRow, res] = await Promise.all([
         db.prepare("SELECT COUNT(*) AS count FROM expenses WHERE user_id = ?").bind(userId).first(),
         db.prepare(
-            `SELECT id, amount, category, type, currency, date, created_at 
+            `SELECT id, amount, category, type, currency, date, merchant, note, created_at 
              FROM expenses 
              WHERE user_id = ? 
              ORDER BY date DESC, id DESC 
@@ -444,11 +448,14 @@ export async function getHistoryMessageData(db, userId, page = 1) {
 
     if (!results || results.length === 0) {
         return {
-            text: "📜 *Transaction History*\n────────────────────\n_No transactions recorded yet._",
+            text: "📜 *All Transactions (History)*\n────────────────────\n_No transactions recorded yet._",
             replyMarkup: {
                 inline_keyboard: [
                     [
-                        { text: "‹ Back to Finance", callback_data: "finance_hub" },
+                        { text: "📋 Today's Ledger", callback_data: "view_transactions" },
+                        { text: "‹ Back to Finance", callback_data: "finance_hub" }
+                    ],
+                    [
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -462,12 +469,15 @@ export async function getHistoryMessageData(db, userId, page = 1) {
         const sign = isIncome ? "+" : "-";
         const symbol = row.currency === "USD" ? "$" : "";
         const suffix = row.currency === "KHR" ? " ៛" : "";
-        const amtStr = `${sign}${symbol}${row.currency === "USD" ? row.amount : formatMoney(row.amount)}${suffix}`;
-        return `• \`${row.date}\` • ${icon} \`${amtStr}\` • ${capitalize(row.category)}`;
+        const amtStr = `${sign}${symbol}${formatMoney(row.amount)}${suffix}`;
+        const timeStr = row.created_at ? formatTimeFromCreatedAt(row.created_at) : "";
+        const timeBadge = timeStr ? `\`${timeStr}\` ` : "";
+        const merchantDetail = row.merchant ? ` (${cleanMd(row.merchant)})` : "";
+        return `• \`${row.date}\` ${timeBadge}${icon} \`${amtStr}\` • ${capitalize(row.category)}${merchantDetail}`;
     });
 
     const text = [
-        `📜 *Transaction History*`,
+        `📜 *All Transactions (History)*`,
         `📖 Page ${currentPage} of ${totalPages} (${totalCount} total)`,
         `────────────────────`,
         ...lines
@@ -485,6 +495,10 @@ export async function getHistoryMessageData(db, userId, page = 1) {
     if (navRow.length > 0) {
         inlineKeyboard.push(navRow);
     }
+    inlineKeyboard.push([
+        { text: "📋 Today's Ledger", callback_data: "view_transactions" },
+        { text: "📊 Summary", callback_data: "summary_today" }
+    ]);
     inlineKeyboard.push([
         { text: "‹ Back to Finance", callback_data: "finance_hub" },
         { text: "🏠 Main Hub", callback_data: "hub" }

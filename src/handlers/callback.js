@@ -909,8 +909,8 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data.startsWith("history:")) {
-        const page = parseInt(data.slice(8), 10) || 1;
+    if (data === "view_history" || data.startsWith("history:")) {
+        const page = data === "view_history" ? 1 : (parseInt(data.slice(8), 10) || 1);
         await updateHistoryMessage(env, chatId, userId, callback.message.message_id, page);
         return;
     }
