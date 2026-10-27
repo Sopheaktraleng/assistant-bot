@@ -33,8 +33,8 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "－ Expense", callback_data: "add_expense" },
-                    { text: "＋ Income", callback_data: "add_income" }
+                    { text: "🧾 Expense", callback_data: "add_expense" },
+                    { text: "💰 Income", callback_data: "add_income" }
                 ],
                 [
                     { text: "📋 Today's Ledger", callback_data: "view_transactions" },
@@ -244,8 +244,8 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "＋ Expense", callback_data: "add_expense" },
-                        { text: "＋ Income", callback_data: "add_income" }
+                        { text: "🧾 Expense", callback_data: "add_expense" },
+                        { text: "💰 Income", callback_data: "add_income" }
                     ],
                     [
                         { text: "💳 Finance", callback_data: "finance_hub" },
@@ -296,8 +296,8 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "＋ Expense", callback_data: "add_expense" },
-                    { text: "＋ Income", callback_data: "add_income" }
+                    { text: "🧾 Expense", callback_data: "add_expense" },
+                    { text: "💰 Income", callback_data: "add_income" }
                 ],
                 [
                     { text: "📊 Summary", callback_data: "summary_today" },

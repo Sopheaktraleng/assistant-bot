@@ -473,8 +473,8 @@ export async function handleCallback(callback, env, origin) {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: "＋ Re-enter Expense", callback_data: "add_expense" },
-                            { text: "📜 Today's Ledger", callback_data: "view_transactions" }
+                            { text: "🧾 Re-enter Expense", callback_data: "add_expense" },
+                            { text: "📋 Today's Ledger", callback_data: "view_transactions" }
                         ],
                         [
                             { text: "💳 Finance Hub", callback_data: "finance_hub" },
