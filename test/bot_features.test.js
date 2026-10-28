@@ -1100,16 +1100,18 @@ describe("Bot Improvements & Stability", () => {
             const dailyBriefingBtn = allButtons.find(b => b.callback_data === "daily_briefing");
             expect(dailyBriefingBtn).toBeUndefined();
 
-            // Row 1 should be core hubs
+            // Row 1 should be core hubs (Finance & Tasks)
             expect(keyboard[0][0].callback_data).toBe("finance_hub");
             expect(keyboard[0][1].callback_data).toBe("tasks_today");
 
-            // Row 2 should be Reminders & Settings
+            // Row 2 should be Reminders & Help
             expect(keyboard[1][0].callback_data).toBe("reminders");
-            expect(keyboard[1][1].callback_data).toBe("settings");
+            expect(keyboard[1][1].callback_data).toBe("help");
 
-            // Row 3 should be Help & Guide
-            expect(keyboard[2][0].callback_data).toBe("help");
+            // Row 3 for owner should be Settings & User Access
+            expect(keyboard[2][0].callback_data).toBe("settings");
+            expect(keyboard[2][1].callback_data).toBe("manage_users");
+            expect(keyboard[2][1].text).toBe("👥 User Access");
 
             fetchSpy.mockRestore();
         });

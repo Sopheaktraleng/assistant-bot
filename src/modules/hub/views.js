@@ -91,15 +91,19 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
         ],
         [
             { text: "⏰ Reminders", callback_data: "reminders" },
-            { text: "⚙️ Settings", callback_data: "settings" }
-        ],
-        [
             { text: "💡 Help & Guide", callback_data: "help" }
         ]
     ];
 
     if (isUserOwner) {
-        hubButtons.push([{ text: "👥 Manage Users & Sharing", callback_data: "manage_users" }]);
+        hubButtons.push([
+            { text: "⚙️ Settings", callback_data: "settings" },
+            { text: "👥 User Access", callback_data: "manage_users" }
+        ]);
+    } else {
+        hubButtons.push([
+            { text: "⚙️ Settings", callback_data: "settings" }
+        ]);
     }
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
