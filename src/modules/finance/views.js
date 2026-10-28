@@ -34,7 +34,7 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
             inline_keyboard: [
                 [
                     { text: "📋 Today's Ledger", callback_data: "view_transactions" },
-                    { text: "📊 Monthly Insights", callback_data: "summary_month" }
+                    { text: "📊 Month Insights", callback_data: "summary_month" }
                 ],
                 [
                     { text: "📜 All History", callback_data: "view_history" },
@@ -323,15 +323,15 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "🧾 Expense", callback_data: "add_expense" },
-                        { text: "💰 Income", callback_data: "add_income" }
+                        { text: "＋ Log Expense", callback_data: "add_expense" },
+                        { text: "＋ Log Income", callback_data: "add_income" }
                     ],
                     [
-                        { text: "📜 All History", callback_data: "history:1" },
-                        { text: "📊 Monthly Insights", callback_data: "summary_month" }
+                        { text: "📊 Month Insights", callback_data: "summary_month" },
+                        { text: "📜 All History", callback_data: "history:1" }
                     ],
                     [
-                        { text: "💳 Finance Hub", callback_data: "finance_hub" },
+                        { text: "‹ Back to Finance", callback_data: "finance_hub" },
                         { text: "🏠 Main Hub", callback_data: "hub" }
                     ]
                 ]
@@ -347,21 +347,43 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         const isIncome = row.type === "income";
         const icon = getCategoryIcon(row.category, row.type);
         const sign = isIncome ? "+" : "-";
-        const symbol = row.currency === "USD" ? "$" : "";
-        const suffix = row.currency === "KHR" ? " ៛" : "";
         const amtKhr = row.currency === "USD" ? row.amount * EXCHANGE_RATE : row.amount;
 
         if (isIncome) totalIncome += amtKhr;
         else totalExpense += amtKhr;
 
-        const amtStr = `${sign}${symbol}${formatMoney(row.amount)}${suffix}`;
+        // Primary amount formatted in user's active display currency
+        let mainAmtStr = "";
+        let altAmtStr = "";
+        if (displayCurrency === "USD") {
+            const usdVal = amtKhr / EXCHANGE_RATE;
+            mainAmtStr = `${sign}$${formatMoney(usdVal, 2)}`;
+            if (row.currency === "KHR") {
+                altAmtStr = ` _(${formatMoney(row.amount)} ៛)_`;
+            }
+        } else {
+            mainAmtStr = `${sign}${formatMoney(amtKhr)} ៛`;
+            if (row.currency === "USD") {
+                altAmtStr = ` _($${formatMoney(row.amount, 2)})_`;
+            }
+        }
+
         const timeStr = row.created_at ? formatTimeFromCreatedAt(row.created_at) : "";
-        const timeBadge = timeStr ? `\`${timeStr}\` ` : "";
+        const timeBadge = timeStr ? `\`${timeStr}\` • ` : "";
         const merchantDetail = row.merchant ? ` (${cleanMd(row.merchant)})` : "";
-        return `• ${timeBadge}${icon} \`${amtStr}\` • ${capitalize(row.category)}${merchantDetail}`;
+        return `• ${timeBadge}${icon} \`${mainAmtStr}\` • ${capitalize(row.category)}${merchantDetail}${altAmtStr}`;
     });
 
     const netKhr = totalIncome - totalExpense;
+    const isNegative = netKhr < 0;
+    const netStatus = isNegative ? "🔴 _(in the red)_" : "🟢 _(in the green)_";
+    const forceDecimals = displayCurrency === "USD";
+
+    const incomeVal = formatAmount(totalIncome, displayCurrency, forceDecimals).replace(/^[+-]/, "");
+    const spentVal = formatAmount(totalExpense, displayCurrency, forceDecimals).replace(/^[+-]/, "");
+    const netFormatted = formatAmount(netKhr, displayCurrency, forceDecimals);
+    const netSign = netKhr > 0 ? "+" : "";
+    const netStr = `${netSign}${netFormatted}`;
 
     const message = [
         `📋 *Today's Ledger*`,
@@ -369,28 +391,39 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         ``,
         ...lines,
         ``,
-        `● *Income:* \`${formatAmount(totalIncome, displayCurrency)}\``,
-        `● *Spent:*  \`${formatAmount(totalExpense, displayCurrency)}\``,
-        `● *Net:*    \`${formatAmount(netKhr, displayCurrency)}\``
+        `💵 *Income:* \`+${incomeVal}\``,
+        `💸 *Spent:*  \`${spentVal}\``,
+        `💳 *Net:*    \`${netStr}\` ${netStatus}`
     ].join("\n");
+
+    const keyboard = [];
+
+    // Row 1: Add Entry + Quick Undo Last
+    const topRow = [
+        { text: "＋ Add Entry", callback_data: "add_expense" }
+    ];
+    if (results.length > 0) {
+        const lastTx = results[results.length - 1];
+        topRow.push({ text: "❌ Undo Last", callback_data: `undo_tx:${lastTx.id}` });
+    }
+    keyboard.push(topRow);
+
+    // Row 2: Month Insights (no truncation) + All History
+    keyboard.push([
+        { text: "📊 Month Insights", callback_data: "summary_month" },
+        { text: "📜 All History", callback_data: "history:1" }
+    ]);
+
+    // Row 3: Navigation
+    keyboard.push([
+        { text: "‹ Back to Finance", callback_data: "finance_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
 
     await safeEditOrSendMessage(env, chatId, messageId, message, {
         parse_mode: "Markdown",
         reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: "🧾 Expense", callback_data: "add_expense" },
-                    { text: "💰 Income", callback_data: "add_income" }
-                ],
-                [
-                    { text: "📜 All History", callback_data: "history:1" },
-                    { text: "📊 Monthly Insights", callback_data: "summary_month" }
-                ],
-                [
-                    { text: "💳 Finance Hub", callback_data: "finance_hub" },
-                    { text: "🏠 Main Hub", callback_data: "hub" }
-                ]
-            ]
+            inline_keyboard: keyboard
         }
     });
 }
@@ -583,7 +616,7 @@ export async function getHistoryMessageData(db, userId, page = 1) {
     }
     inlineKeyboard.push([
         { text: "📋 Today's Ledger", callback_data: "view_transactions" },
-        { text: "📊 Monthly Insights", callback_data: "summary_month" }
+        { text: "📊 Month Insights", callback_data: "summary_month" }
     ]);
     inlineKeyboard.push([
         { text: "‹ Back to Finance", callback_data: "finance_hub" },

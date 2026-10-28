@@ -513,9 +513,9 @@ export async function handleCallback(callback, env, origin) {
             await safeEditOrSendMessage(env, chatId, messageId, [
                 header,
                 ``,
-                `● *Amount:*   ~${amtStr}~`,
-                `● *Category:* ~${capitalize(deleted.category)}~`,
-                `● *Date:*     ~${deleted.date}~`,
+                `• *Amount:*   ~${amtStr}~`,
+                `• *Category:* ~${capitalize(deleted.category)}~`,
+                `• *Date:*     ~${deleted.date}~`,
                 ``,
                 `_This transaction was successfully removed from your ledger._`
             ].join("\n"), {
@@ -527,7 +527,7 @@ export async function handleCallback(callback, env, origin) {
                             { text: "📋 Today's Ledger", callback_data: "view_transactions" }
                         ],
                         [
-                            { text: "💳 Finance Hub", callback_data: "finance_hub" },
+                            { text: "‹ Back to Finance", callback_data: "finance_hub" },
                             { text: "🏠 Main Hub", callback_data: "hub" }
                         ]
                     ]

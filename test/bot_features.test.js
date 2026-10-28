@@ -12,7 +12,7 @@ import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
 import { sendMainHub } from "../src/modules/hub/views.js";
-import { sendFinanceHub, sendCategoryPicker } from "../src/modules/finance/views.js";
+import { sendFinanceHub, sendCategoryPicker, sendTransactions } from "../src/modules/finance/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
 
 describe("Bot Improvements & Stability", () => {
@@ -1277,6 +1277,68 @@ describe("Bot Improvements & Stability", () => {
                 return body.text?.includes("Expense Recorded");
             });
             expect(receiptCall).toBeDefined();
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendTransactions should render modern ledger UI with currency normalization, 2 decimal places, and undo button", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            first: vi.fn().mockResolvedValue({ display_currency: "USD" }),
+                            all: vi.fn().mockResolvedValue({
+                                results: [
+                                    {
+                                        id: 42,
+                                        amount: 5000,
+                                        category: "Food",
+                                        type: "expense",
+                                        currency: "KHR",
+                                        merchant: "Burger Joint",
+                                        created_at: "2026-10-28 12:33:00"
+                                    }
+                                ]
+                            })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token"
+            };
+
+            await sendTransactions(mockEnv, 849550186, 849550186);
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
+            const body = JSON.parse(lastCall[1].body);
+
+            // Verify clean header and ledger text
+            expect(body.text).toContain("📋 *Today's Ledger*");
+            // Primary amount normalized to display currency ($1.25) with original KHR in parentheses
+            expect(body.text).toContain("-$1.25");
+            expect(body.text).toContain("(5,000 ៛)");
+            expect(body.text).toContain("Food (Burger Joint)");
+
+            // Visual metrics with forced 2 decimals for USD
+            expect(body.text).toContain("💵 *Income:* `+$0.00`");
+            expect(body.text).toContain("💸 *Spent:*  `$1.25`");
+            expect(body.text).toContain("💳 *Net:*    `-$1.25` 🔴 _(in the red)_");
+
+            // Buttons: ＋ Add Entry, ❌ Undo Last, 📊 Month Insights, etc.
+            const buttons = body.reply_markup.inline_keyboard.flat();
+            expect(buttons.some(b => b.text === "＋ Add Entry")).toBe(true);
+            expect(buttons.some(b => b.text === "❌ Undo Last" && b.callback_data === "undo_tx:42")).toBe(true);
+            expect(buttons.some(b => b.text === "📊 Month Insights")).toBe(true);
+            expect(buttons.some(b => b.text === "📜 All History")).toBe(true);
+            expect(buttons.some(b => b.text === "‹ Back to Finance")).toBe(true);
 
             fetchSpy.mockRestore();
         });
