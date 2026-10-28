@@ -12,7 +12,7 @@ import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu, sendFocusMenu } from "../src/modules/reminders/views.js";
 import { parseReminderInput } from "../src/modules/reminders/commands.js";
-import { sendMainHub } from "../src/modules/hub/views.js";
+import { sendMainHub, sendSettingsMenu } from "../src/modules/hub/views.js";
 import { sendFinanceHub, sendCategoryPicker, sendTransactions } from "../src/modules/finance/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
 
@@ -156,6 +156,46 @@ describe("Bot Improvements & Stability", () => {
             expect(p4.targetDateStr).toBeNull();
             expect(p4.title).toBe("Bring lunch box");
             expect(p4.frequency).toBe("daily");
+        });
+
+        it("should render clean symmetrical 3-row System Settings menu without redundant user access", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ display_currency: "USD", monthly_budget: 0, voice_mode: "off" })
+                    })
+                })
+            };
+
+            const mockEnv = { DB: mockDb, TELEGRAM_BOT_TOKEN: "mock_token" };
+            await sendSettingsMenu(mockEnv, 123456, "849550186");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("System Settings");
+
+            const keyboard = payload.reply_markup.inline_keyboard;
+            // Exactly 3 rows
+            expect(keyboard.length).toBe(3);
+            // Exactly 2 buttons per row
+            expect(keyboard[0].length).toBe(2);
+            expect(keyboard[1].length).toBe(2);
+            expect(keyboard[2].length).toBe(2);
+
+            const buttonTexts = keyboard.flat().map(b => b.text);
+            expect(buttonTexts).toContain("💱 Currency: USD");
+            expect(buttonTexts).toContain("🎙️ Voice: OFF");
+            expect(buttonTexts).toContain("🎯 Set Budget");
+            expect(buttonTexts).toContain("📥 Export CSV");
+            expect(buttonTexts).toContain("🗑️ Reset Data");
+            expect(buttonTexts).toContain("🏠 Main Hub");
+            expect(buttonTexts.some(t => t.includes("Manage Users"))).toBe(false);
+
+            fetchSpy.mockRestore();
         });
     });
 

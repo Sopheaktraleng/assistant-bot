@@ -127,35 +127,33 @@ export async function sendSettingsMenu(env, chatId, userId, messageId = null) {
 
     const budgetKhr = settingsRow?.monthly_budget || 0;
     const budgetStr = budgetKhr > 0 ? formatAmount(budgetKhr, displayCurrency) : "Off (No limit)";
-    const toggleLabel = displayCurrency === "USD" ? "💱 Switch to KHR (៛)" : "💱 Switch to USD ($)";
-    const voiceToggleLabel = voiceMode === "on" ? "🎙️ Auto-Voice: ON (Always Speak)" : "📝 Auto-Voice: OFF (Tap to Enable)";
+    const currencyPill = displayCurrency === "USD" ? "💱 Currency: USD" : "💱 Currency: KHR";
+    const voicePill = voiceMode === "on" ? "🎙️ Voice: ON" : "🎙️ Voice: OFF";
 
     const text = [
         `⚙️ *System Settings*`,
         ``,
-        `💱 *Display Currency:* \`${displayCurrency}\``,
-        `🎯 *Monthly Budget:*   \`${budgetStr}\``,
-        `🎙️ *Auto-Voice Mode:*  \`${voiceMode === "on" ? "Enabled (Always Speak)" : "Disabled (Text + On-demand)"}\``,
+        `• *Display Currency:* \`${displayCurrency} (${displayCurrency === "USD" ? "$" : "៛"})\``,
+        `• *Monthly Budget:*   \`${budgetStr}\``,
+        `• *Auto-Voice Mode:*  \`${voiceMode === "on" ? "Enabled (Always Speak)" : "Disabled (Text)"}\``,
         ``,
-        `_Configure preferences or manage your records below:_`
+        `_Tap any setting below to toggle or reconfigure:_`
     ].join("\n");
 
     const keyboard = [
-        [{ text: toggleLabel, callback_data: "toggle_currency" }],
-        [{ text: voiceToggleLabel, callback_data: "toggle_voice_mode" }],
-        [{ text: "🎯 Set Monthly Budget", callback_data: "budget_help" }],
-        [{ text: "📥 Export CSV Backup", callback_data: "export_csv" }]
+        [
+            { text: currencyPill, callback_data: "toggle_currency" },
+            { text: voicePill, callback_data: "toggle_voice_mode" }
+        ],
+        [
+            { text: "🎯 Set Budget", callback_data: "budget_help" },
+            { text: "📥 Export CSV", callback_data: "export_csv" }
+        ],
+        [
+            { text: "🗑️ Reset Data", callback_data: "clear_data" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
     ];
-
-    if (isOwner(userId, env)) {
-        keyboard.push([{ text: "👥 Manage Users & Access", callback_data: "manage_users" }]);
-    }
-
-    keyboard.push([
-        { text: "🗑️ Clear Today", callback_data: "clear_today_warn" },
-        { text: "⚠️ Wipe All History", callback_data: "clear_all_warn" }
-    ]);
-    keyboard.push([{ text: "🏠 Main Hub", callback_data: "hub" }]);
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
