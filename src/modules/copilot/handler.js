@@ -154,17 +154,32 @@ export function buildSmartLocalFallback(query, context = {}) {
     }
 
     // 2. Undo / Delete Last Transaction
-    if (q === "undo" || q.includes("delete last") || q.includes("undo that") || q.includes("cancel last") || q.includes("remove last")) {
-        const filter = q.includes("income") ? "income" : (q.includes("expense") ? "expense" : "any");
+    if (q === "undo" || q.includes("delete last") || q.includes("undo that") || q.includes("cancel last") || q.includes("remove last") || q.startsWith("undo ") || q.startsWith("delete ")) {
+        if (!isOwnerUser) {
+            return {
+                reply: `🔒 *Access Restricted*\n\nTransaction undo and deletion is reserved for Boss. If you entered a transaction in error, please let Boss know to adjust it, ${title}.`,
+                voice_summary: `Transaction undo and deletion is reserved for Boss. Please ask Boss to make an adjustment.`,
+                action: null
+            };
+        }
+        let filter = "any";
+        if (q.includes("income")) filter = "income";
+        else if (q.includes("expense")) filter = "expense";
+        else {
+            const m = q.match(/(?:undo|delete|remove|cancel)\s+(?:my\s+)?(?:last\s+)?(\w+)/i);
+            if (m && !["last", "transaction", "tx", "entry", "that", "it", "item"].includes(m[1].toLowerCase())) {
+                filter = m[1];
+            }
+        }
         return {
             reply: [
                 `🗑️ *F.R.I.D.A.Y. • Ledger Operation*`,
                 ``,
-                `The last recorded transaction has been purged from your ledger, Boss.`,
+                `The transaction has been purged from your ledger, ${title}.`,
                 ``,
                 `_Balances have been updated._`
             ].join("\n"),
-            voice_summary: `Last transaction removed from your ledger, Boss.`,
+            voice_summary: `Transaction removed from your ledger, ${title}.`,
             action: { type: "delete_last_transaction", filter }
         };
     }
@@ -419,9 +434,13 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                     const recordDate = (act.date && /^\d{4}-\d{2}-\d{2}$/.test(act.date)) ? act.date : today();
                     await addExpenseRecord(env.DB, userId, act.amount, cat, "income", curr, recordDate, act.source || act.merchant || null, act.note || null);
                 } else if (act.type === "delete_last_transaction") {
-                    await deleteLastTransaction(env.DB, userId, act.filter || null);
+                    if (isUserOwner) {
+                        await deleteLastTransaction(env.DB, userId, act.filter || null);
+                    }
                 } else if (act.type === "delete_transaction" && act.id) {
-                    await deleteExpenseById(env.DB, userId, act.id);
+                    if (isUserOwner) {
+                        await deleteExpenseById(env.DB, userId, act.id);
+                    }
                 } else if (act.type === "set_currency" && act.currency) {
                     await setDisplayCurrency(env.DB, userId, act.currency.toUpperCase());
                 } else if (act.type === "set_budget" && act.amount && act.amount > 0) {

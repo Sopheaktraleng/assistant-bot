@@ -119,7 +119,7 @@ export async function sendCategoryPicker(env, chatId, type = "expense", messageI
         const minDecimals = item.currency === "USD" ? 2 : 0;
         const amtStr = `${sign}${itemSym}${formatMoney(item.amount, minDecimals)}${itemSuf}`;
         const label = item.merchant ? cleanMd(item.merchant) : capitalize(item.category);
-        const buttonText = `${itemIcon} ${amtStr} • ${label} (1-Tap)`;
+        const buttonText = `${itemIcon} ${amtStr} • ${label}`;
 
         const cbData = item.isExisting && item.id
             ? `relog_tx:${item.id}`
@@ -134,32 +134,14 @@ export async function sendCategoryPicker(env, chatId, type = "expense", messageI
     ]);
 
     const title = isIncome ? "💰 *Add Income*" : "🧾 *Add Expense*";
-    const subheader = favorites && favorites.length > 0
-        ? `Tap a recent favorite to re-log in 1 second, or type/speak:`
-        : `Tap a quick preset to log in 1 second, or type/speak:`;
-
-    const bullets = isIncome
-        ? [
-            `• \`+500 salary\``,
-            `• \`40$ income freelance\``,
-            `• \`earned $50 bonus\``,
-            ``,
-            `💡 *Tip:* Hold the 🎙️ mic button to speak naturally!`
-        ]
-        : [
-            `• \`5 coffee\``,
-            `• \`12000 lunch\``,
-            `• \`3.50 grab\``,
-            `• \`40 gas\``,
-            ``,
-            `💡 *Tip:* Hold 🎙️ mic or snap an ABA / KHQR receipt photo!`
-        ];
+    const subheader = isIncome
+        ? `_Choose a quick preset below, or simply type / voice what you earned._`
+        : `_Choose a quick preset below, or simply type / voice what you spent._`;
 
     const text = [
         title,
         ``,
-        subheader,
-        ...bullets
+        subheader
     ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
@@ -323,12 +305,12 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "＋ Log Expense", callback_data: "add_expense" },
-                        { text: "＋ Log Income", callback_data: "add_income" }
+                        { text: "🧾 + Expense", callback_data: "add_expense" },
+                        { text: "💰 + Income", callback_data: "add_income" }
                     ],
                     [
                         { text: "📊 Month Insights", callback_data: "summary_month" },
-                        { text: "📜 All History", callback_data: "history:1" }
+                        { text: "📜 History", callback_data: "history:1" }
                     ],
                     [
                         { text: "‹ Back to Finance", callback_data: "finance_hub" },
@@ -369,21 +351,31 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         }
 
         const timeStr = row.created_at ? formatTimeFromCreatedAt(row.created_at) : "";
-        const timeBadge = timeStr ? `\`${timeStr}\` • ` : "";
+        const timeBadge = timeStr ? ` · \`${timeStr}\`` : "";
         const merchantDetail = row.merchant ? ` (${cleanMd(row.merchant)})` : "";
-        return `• ${timeBadge}${icon} \`${mainAmtStr}\` • ${capitalize(row.category)}${merchantDetail}${altAmtStr}`;
+        return `${icon} *${capitalize(row.category)}*${merchantDetail}  \`${mainAmtStr}\`${timeBadge}${altAmtStr}`;
     });
 
-    const netKhr = totalIncome - totalExpense;
-    const isNegative = netKhr < 0;
-    const netStatus = isNegative ? "🔴 _(in the red)_" : "🟢 _(in the green)_";
     const forceDecimals = displayCurrency === "USD";
-
-    const incomeVal = formatAmount(totalIncome, displayCurrency, forceDecimals).replace(/^[+-]/, "");
     const spentVal = formatAmount(totalExpense, displayCurrency, forceDecimals).replace(/^[+-]/, "");
-    const netFormatted = formatAmount(netKhr, displayCurrency, forceDecimals);
-    const netSign = netKhr > 0 ? "+" : "";
-    const netStr = `${netSign}${netFormatted}`;
+    const count = results.length;
+    const entryLabel = count === 1 ? "1 entry" : `${count} entries`;
+
+    const summaryLines = [];
+    if (totalIncome > 0) {
+        const incomeVal = formatAmount(totalIncome, displayCurrency, forceDecimals).replace(/^[+-]/, "");
+        const netKhr = totalIncome - totalExpense;
+        const netSign = netKhr >= 0 ? "+" : "-";
+        const netFormatted = formatAmount(Math.abs(netKhr), displayCurrency, forceDecimals);
+        const netEmoji = netKhr >= 0 ? "🟢" : "🔴";
+        summaryLines.push(
+            `💵 *Income:* \`+${incomeVal}\``,
+            `💸 *Spent:*  \`${spentVal}\``,
+            `💳 *Daily Net:* \`${netSign}${netFormatted}\` ${netEmoji}`
+        );
+    } else {
+        summaryLines.push(`💸 *Total Spent Today:* \`${spentVal}\` _(${entryLabel})_`);
+    }
 
     const message = [
         `📋 *Today's Ledger*`,
@@ -391,34 +383,23 @@ export async function sendTransactions(env, chatId, userId, messageId = null) {
         ``,
         ...lines,
         ``,
-        `💵 *Income:* \`+${incomeVal}\``,
-        `💸 *Spent:*  \`${spentVal}\``,
-        `💳 *Net:*    \`${netStr}\` ${netStatus}`
+        ...summaryLines
     ].join("\n");
 
-    const keyboard = [];
-
-    // Row 1: Add Entry + Quick Undo Last
-    const topRow = [
-        { text: "＋ Add Entry", callback_data: "add_expense" }
+    const keyboard = [
+        [
+            { text: "🧾 + Expense", callback_data: "add_expense" },
+            { text: "💰 + Income", callback_data: "add_income" }
+        ],
+        [
+            { text: "📊 Month Insights", callback_data: "summary_month" },
+            { text: "📜 History", callback_data: "history:1" }
+        ],
+        [
+            { text: "‹ Back to Finance", callback_data: "finance_hub" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
     ];
-    if (results.length > 0) {
-        const lastTx = results[results.length - 1];
-        topRow.push({ text: "❌ Undo Last", callback_data: `undo_tx:${lastTx.id}` });
-    }
-    keyboard.push(topRow);
-
-    // Row 2: Month Insights (no truncation) + All History
-    keyboard.push([
-        { text: "📊 Month Insights", callback_data: "summary_month" },
-        { text: "📜 All History", callback_data: "history:1" }
-    ]);
-
-    // Row 3: Navigation
-    keyboard.push([
-        { text: "‹ Back to Finance", callback_data: "finance_hub" },
-        { text: "🏠 Main Hub", callback_data: "hub" }
-    ]);
 
     await safeEditOrSendMessage(env, chatId, messageId, message, {
         parse_mode: "Markdown",

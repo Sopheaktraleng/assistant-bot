@@ -1,5 +1,5 @@
 import { today, dateDaysAgo } from "../utils/time.js";
-import { formatAmount } from "../utils/format.js";
+import { formatAmount, formatMoney, cleanMd, capitalize } from "../utils/format.js";
 import { isUserAuthorized, isUserAuthorizedAsync, isOwner, OWNER_USER_ID } from "../config/constants.js";
 import { telegram, sendMessage, sendTelegramVoice } from "../services/telegram.js";
 import { generateSpeechAudio, askGeminiWithGoogleSearch } from "../services/ai.js";
@@ -69,13 +69,25 @@ import {
 import { sendVoiceHelp, handleVoiceMessage } from "../modules/voice/handler.js";
 import { handleAiCopilotQuery, sendFridayTacticalBriefing } from "../modules/copilot/handler.js";
 
-export async function handleUndoLastTransaction(env, chatId, userId) {
-    const deleted = await deleteLastTransaction(env.DB, userId);
-    if (!deleted) {
+export async function handleUndoLastTransaction(env, chatId, userId, filter = null, message = null) {
+    if (!isOwner(userId, env)) {
+        const guestName = message?.from?.first_name || "there";
         await sendMessage(
             env,
             chatId,
-            `ℹ️ *No Recent Transactions Found*\n\nBoss, there are no recorded transactions in your ledger to undo.`,
+            `🔒 *Access Restricted*\n\nTransaction undo and deletion is reserved for Boss. If you entered a transaction in error, please let Boss know to adjust it, ${guestName}.`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    const deleted = await deleteLastTransaction(env.DB, userId, filter);
+    if (!deleted) {
+        const targetDesc = filter ? ` matching "${cleanMd(filter)}"` : "";
+        await sendMessage(
+            env,
+            chatId,
+            `ℹ️ *No Transactions Found*\n\nBoss, there are no recorded transactions${targetDesc} in your ledger to undo.`,
             { parse_mode: "Markdown" }
         );
         return;
@@ -84,7 +96,7 @@ export async function handleUndoLastTransaction(env, chatId, userId) {
     const curr = deleted.currency || "USD";
     const symbol = curr === "USD" ? "$" : "";
     const suffix = curr === "KHR" ? " ៛" : "";
-    const formattedVal = `${symbol}${deleted.amount}${suffix}`;
+    const formattedVal = `${symbol}${formatMoney(deleted.amount, curr === "USD" ? 2 : 0)}${suffix}`;
     const typeLabel = deleted.type === "income" ? "Income" : "Expense";
     const typeEmoji = deleted.type === "income" ? "🟢" : "💸";
 
@@ -96,12 +108,22 @@ export async function handleUndoLastTransaction(env, chatId, userId) {
             ``,
             `${typeEmoji} *Type:* ${typeLabel}`,
             `💵 *Amount:* \`${formattedVal}\``,
-            `🏷️ *Category:* *${deleted.category}*`,
+            `🏷️ *Category:* *${cleanMd(capitalize(deleted.category))}*`,
             `📅 *Date:* \`${deleted.date}\``,
             ``,
-            `_Successfully removed from your ledger._`
+            `_Successfully removed from your ledger, Boss._`
         ].join("\n"),
-        { parse_mode: "Markdown" }
+        {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "📋 Today's Ledger", callback_data: "view_transactions" },
+                        { text: "‹ Back to Finance", callback_data: "finance_hub" }
+                    ]
+                ]
+            }
+        }
     );
 }
 
@@ -803,7 +825,13 @@ export async function handleMessage(message, env, origin) {
     }
 
     if (text === "/undo" || text === "/cancel") {
-        await handleUndoLastTransaction(env, chatId, userId);
+        await handleUndoLastTransaction(env, chatId, userId, null, message);
+        return;
+    }
+
+    if (text.startsWith("/undo ") || text.startsWith("/cancel ")) {
+        const filter = text.split(/\s+/).slice(1).join(" ");
+        await handleUndoLastTransaction(env, chatId, userId, filter, message);
         return;
     }
 
@@ -930,7 +958,16 @@ export async function handleMessage(message, env, origin) {
             lower === "delete last income" ||
             lower === "cancel last"
         ) {
-            await handleUndoLastTransaction(env, chatId, userId);
+            const filter = lower.includes("income") ? "income" : (lower.includes("expense") ? "expense" : null);
+            await handleUndoLastTransaction(env, chatId, userId, filter, message);
+            return;
+        }
+
+        // Targeted Natural Undo (e.g. "undo coffee", "delete lunch", "undo grab")
+        const undoMatch = lower.match(/^(?:undo|delete|remove|cancel)\s+(?:my\s+)?(?:last\s+)?(\w+)$/);
+        if (undoMatch && !["all", "history", "everything", "task", "tasks", "reminder", "reminders"].includes(undoMatch[1])) {
+            const targetFilter = undoMatch[1];
+            await handleUndoLastTransaction(env, chatId, userId, targetFilter, message);
             return;
         }
 

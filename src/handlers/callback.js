@@ -502,6 +502,10 @@ export async function handleCallback(callback, env, origin) {
 
     // --- Undo / Delete Transaction Callback ---
     if (data.startsWith("undo_tx:")) {
+        if (!isOwner(userId, env)) {
+            await answerCallback(env, callback.id, { text: "🔒 Undo is restricted to the bot owner (Boss).", show_alert: true });
+            return;
+        }
         const txId = parseInt(data.slice(8), 10);
         const deleted = await deleteExpenseById(env.DB, userId, txId);
         if (deleted) {

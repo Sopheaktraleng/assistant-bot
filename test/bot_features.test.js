@@ -1210,7 +1210,9 @@ describe("Bot Improvements & Stability", () => {
 
             const expPayload = JSON.parse(expCall[1].body);
             expect(expPayload.text).toContain("Add Expense");
-            expect(expPayload.text).toContain("Tap a recent favorite to re-log in 1 second");
+            expect(expPayload.text).toContain("Choose a quick preset below, or simply type / voice what you spent.");
+            expect(expPayload.text).not.toContain("• `5 coffee`");
+            expect(expPayload.text).not.toContain("💡 *Tip:*");
             const expKeyboard = expPayload.reply_markup?.inline_keyboard;
             expect(expKeyboard).toBeDefined();
 
@@ -1218,11 +1220,24 @@ describe("Bot Improvements & Stability", () => {
             expect(expKeyboard[0][0].callback_data).toBe("relog_tx:101");
             expect(expKeyboard[0][0].text).toContain("$3.50");
             expect(expKeyboard[0][0].text).toContain("Brown Coffee");
+            expect(expKeyboard[0][0].text).not.toContain("1-Tap");
 
             // Navigation at bottom
             const lastRow = expKeyboard[expKeyboard.length - 1];
             expect(lastRow[0].callback_data).toBe("finance_hub");
             expect(lastRow[1].callback_data).toBe("hub");
+
+            // 2. Test Income Option 1 text
+            await sendCategoryPicker(mockEnv, 849550186, "income", null, 849550186);
+            const incCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("Add Income");
+            });
+            expect(incCall).toBeDefined();
+            const incPayload = JSON.parse(incCall[1].body);
+            expect(incPayload.text).toContain("Add Income");
+            expect(incPayload.text).toContain("Choose a quick preset below, or simply type / voice what you earned.");
+            expect(incPayload.text).not.toContain("💡 *Tip:*");
 
             fetchSpy.mockRestore();
         });
@@ -1281,7 +1296,7 @@ describe("Bot Improvements & Stability", () => {
             fetchSpy.mockRestore();
         });
 
-        it("sendTransactions should render modern ledger UI with currency normalization, 2 decimal places, and undo button", async () => {
+        it("sendTransactions should render modern Option 1 ledger UI with spending focus, clean items, and friendly undo button", async () => {
             const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
                 Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
             );
@@ -1322,23 +1337,132 @@ describe("Bot Improvements & Stability", () => {
 
             // Verify clean header and ledger text
             expect(body.text).toContain("📋 *Today's Ledger*");
-            // Primary amount normalized to display currency ($1.25) with original KHR in parentheses
-            expect(body.text).toContain("-$1.25");
+            // Category & icon lead, amount formatted cleanly without multiple dots
+            expect(body.text).toContain("🍔 *Food* (Burger Joint)  `-$1.25`");
             expect(body.text).toContain("(5,000 ៛)");
-            expect(body.text).toContain("Food (Burger Joint)");
 
-            // Visual metrics with forced 2 decimals for USD
-            expect(body.text).toContain("💵 *Income:* `+$0.00`");
-            expect(body.text).toContain("💸 *Spent:*  `$1.25`");
-            expect(body.text).toContain("💳 *Net:*    `-$1.25` 🔴 _(in the red)_");
+            // Normal day spending summary (no false income: $0 or false in the red)
+            expect(body.text).toContain("💸 *Total Spent Today:* `$1.25` _(1 entry)_");
+            expect(body.text).not.toContain("Income:");
+            expect(body.text).not.toContain("in the red");
 
-            // Buttons: ＋ Add Entry, ❌ Undo Last, 📊 Month Insights, etc.
+            // Buttons: Pure minimalist 3x2 grid (no undo button in UI)
             const buttons = body.reply_markup.inline_keyboard.flat();
-            expect(buttons.some(b => b.text === "＋ Add Entry")).toBe(true);
-            expect(buttons.some(b => b.text === "❌ Undo Last" && b.callback_data === "undo_tx:42")).toBe(true);
+            expect(buttons.some(b => b.text === "🧾 + Expense")).toBe(true);
+            expect(buttons.some(b => b.text === "💰 + Income")).toBe(true);
             expect(buttons.some(b => b.text === "📊 Month Insights")).toBe(true);
-            expect(buttons.some(b => b.text === "📜 All History")).toBe(true);
+            expect(buttons.some(b => b.text === "📜 History")).toBe(true);
             expect(buttons.some(b => b.text === "‹ Back to Finance")).toBe(true);
+            expect(buttons.some(b => b.text === "🏠 Main Hub")).toBe(true);
+            expect(buttons.some(b => b.text.includes("Undo"))).toBe(false);
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendTransactions should show Daily Net when income exists today", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            first: vi.fn().mockResolvedValue({ display_currency: "USD" }),
+                            all: vi.fn().mockResolvedValue({
+                                results: [
+                                    {
+                                        id: 1,
+                                        amount: 500,
+                                        category: "Salary",
+                                        type: "income",
+                                        currency: "USD",
+                                        created_at: "2026-10-28 09:00:00"
+                                    },
+                                    {
+                                        id: 2,
+                                        amount: 25,
+                                        category: "Food",
+                                        type: "expense",
+                                        currency: "USD",
+                                        created_at: "2026-10-28 12:00:00"
+                                    }
+                                ]
+                            })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token"
+            };
+
+            await sendTransactions(mockEnv, 849550186, 849550186);
+
+            const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
+            const body = JSON.parse(lastCall[1].body);
+
+            expect(body.text).toContain("💵 *Income:* `+$500.00`");
+            expect(body.text).toContain("💸 *Spent:*  `$25.00`");
+            expect(body.text).toContain("💳 *Daily Net:* `+$475.00` 🟢");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("handleUndoLastTransaction should restrict guests and only allow Boss to undo transactions", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                prepare: vi.fn().mockImplementation((sql) => {
+                    return {
+                        bind: vi.fn().mockReturnValue({
+                            first: vi.fn().mockResolvedValue({
+                                id: 88,
+                                amount: 2.5,
+                                category: "Coffee",
+                                type: "expense",
+                                currency: "USD",
+                                date: "2026-10-28"
+                            }),
+                            run: vi.fn().mockResolvedValue({ meta: { changes: 1 } })
+                        })
+                    };
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                OWNER_ID: "849550186"
+            };
+
+            const guestUserId = 999888777; // Guest
+            const guestMessage = {
+                from: { id: guestUserId, first_name: "Sarah" }
+            };
+
+            const { handleUndoLastTransaction } = await import("../src/handlers/message.js");
+
+            // 1. Guest attempt should be rejected with polite access notice
+            await handleUndoLastTransaction(mockEnv, guestUserId, guestUserId, "coffee", guestMessage);
+            const guestCall = fetchSpy.mock.calls[0];
+            const guestBody = JSON.parse(guestCall[1].body);
+            expect(guestBody.text).toContain("Access Restricted");
+            expect(guestBody.text).toContain("Sarah");
+            expect(guestBody.text).toContain("reserved for Boss");
+
+            // 2. Boss attempt should succeed cleanly
+            await handleUndoLastTransaction(mockEnv, 849550186, 849550186, "coffee", null);
+            const bossCall = fetchSpy.mock.calls[1];
+            const bossBody = JSON.parse(bossCall[1].body);
+            expect(bossBody.text).toContain("Transaction Undone");
+            expect(bossBody.text).toContain("Boss");
+            expect(bossBody.text).toContain("$2.50");
+            expect(bossBody.text).toContain("Coffee");
 
             fetchSpy.mockRestore();
         });

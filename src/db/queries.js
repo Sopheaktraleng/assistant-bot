@@ -297,8 +297,14 @@ export async function deleteLastTransaction(db, userId, filterType = null) {
         let query = "SELECT id, amount, category, type, currency, date FROM expenses WHERE user_id = ?";
         const params = [userId];
         if (filterType && filterType !== "any" && filterType !== "all") {
-            query += " AND type = ?";
-            params.push(filterType.toLowerCase());
+            const cleanFilter = filterType.toLowerCase().trim();
+            if (cleanFilter === "expense" || cleanFilter === "income") {
+                query += " AND type = ?";
+                params.push(cleanFilter);
+            } else {
+                query += " AND (LOWER(category) = ? OR LOWER(merchant) LIKE ? OR LOWER(note) LIKE ?)";
+                params.push(cleanFilter, `%${cleanFilter}%`, `%${cleanFilter}%`);
+            }
         }
         query += " ORDER BY id DESC LIMIT 1";
 

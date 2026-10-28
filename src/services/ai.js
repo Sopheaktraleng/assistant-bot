@@ -1,4 +1,4 @@
-import { TIME_ZONE, EXCHANGE_RATE, GEMINI_MODELS } from "../config/constants.js";
+import { TIME_ZONE, EXCHANGE_RATE, GEMINI_MODELS, isOwner } from "../config/constants.js";
 import { today, currentTime, normalizeReminderTime } from "../utils/time.js";
 import { cleanMd, normalizeCategory } from "../utils/format.js";
 import { arrayBufferToBase64 } from "../utils/crypto.js";
@@ -849,11 +849,11 @@ export const FRIDAY_FUNCTION_DECLARATIONS = [
     },
     {
         name: "delete_last_transaction",
-        description: "Undo or delete the most recent recorded transaction.",
+        description: "Undo or delete a recent transaction by type or category (e.g. 'expense', 'income', 'coffee', 'lunch').",
         parameters: {
             type: "OBJECT",
             properties: {
-                filter: { type: "STRING", enum: ["expense", "income", "any"], description: "Type of transaction to delete" }
+                filter: { type: "STRING", description: "Filter by type ('expense', 'income') or category/keyword (e.g. 'coffee', 'lunch', 'any')" }
             }
         }
     },
@@ -919,7 +919,7 @@ export const FRIDAY_FUNCTION_DECLARATIONS = [
     }
 ];
 
-export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs = {}) {
+export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs = {}, env = {}) {
     if (!db || !userId) return { success: false, error: "Database or user unavailable" };
     try {
         switch (toolName) {
@@ -963,6 +963,9 @@ export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs 
                 return { success: true, recorded: { id: txId, type: "income", amount: amt, currency: curr, category: cat, date, source, note } };
             }
             case "delete_last_transaction": {
+                if (!isOwner(userId, env)) {
+                    return { success: false, error: "Access denied. Only Boss can undo or delete ledger transactions." };
+                }
                 const deleted = await deleteLastTransaction(db, userId, toolArgs.filter || null);
                 return { success: !!deleted, deletedTransaction: deleted };
             }
@@ -1090,7 +1093,7 @@ export async function askAiCopilot(env, userQuery, context) {
                     for (const fCall of functionCalls) {
                         const toolName = fCall.name;
                         const toolArgs = fCall.args || {};
-                        const toolResult = await executeCopilotTool(context?.db, context?.userId, context?.chatId, toolName, toolArgs);
+                        const toolResult = await executeCopilotTool(context?.db, context?.userId, context?.chatId, toolName, toolArgs, context?.env);
 
                         functionResponses.push({
                             functionResponse: {
