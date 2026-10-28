@@ -12,6 +12,7 @@ import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
 import { sendMainHub } from "../src/modules/hub/views.js";
+import { sendFinanceHub, sendCategoryPicker } from "../src/modules/finance/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
 
 describe("Bot Improvements & Stability", () => {
@@ -1112,6 +1113,92 @@ describe("Bot Improvements & Stability", () => {
             expect(keyboard[2][0].callback_data).toBe("settings");
             expect(keyboard[2][1].callback_data).toBe("manage_users");
             expect(keyboard[2][1].text).toBe("👥 User Access");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendFinanceHub should render data telemetry buttons instead of clunky category pickers", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue(null),
+                        all: vi.fn().mockResolvedValue({ results: [] })
+                    }),
+                    first: vi.fn().mockResolvedValue(null),
+                    all: vi.fn().mockResolvedValue([])
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token"
+            };
+
+            await sendFinanceHub(mockEnv, 849550186, 849550186);
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const hubCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("Finance & Cashflow");
+            });
+            expect(hubCall).toBeDefined();
+
+            const payload = JSON.parse(hubCall[1].body);
+            const keyboard = payload.reply_markup?.inline_keyboard;
+            expect(keyboard).toBeDefined();
+
+            // Flat check: NO add_expense or add_income buttons
+            const allButtons = keyboard.flat();
+            expect(allButtons.find(b => b.callback_data === "add_expense")).toBeUndefined();
+            expect(allButtons.find(b => b.callback_data === "add_income")).toBeUndefined();
+
+            // Row 1: Today's Ledger & Monthly Insights
+            expect(keyboard[0][0].callback_data).toBe("view_transactions");
+            expect(keyboard[0][1].callback_data).toBe("summary_month");
+
+            // Row 2: All History & Export CSV
+            expect(keyboard[1][0].callback_data).toBe("view_history");
+            expect(keyboard[1][1].callback_data).toBe("export_csv");
+
+            // Row 3: Back to Main Hub
+            expect(keyboard[2][0].callback_data).toBe("hub");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendCategoryPicker should render clean conversational prompt without 8-button wall", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockEnv = {
+                TELEGRAM_BOT_TOKEN: "mock_token"
+            };
+
+            await sendCategoryPicker(mockEnv, 849550186, "expense");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const call = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("Add Expense");
+            });
+            expect(call).toBeDefined();
+
+            const payload = JSON.parse(call[1].body);
+            expect(payload.text).toContain("Simply type or speak what you spent:");
+            expect(payload.text).toContain("5 coffee");
+
+            const keyboard = payload.reply_markup?.inline_keyboard;
+            expect(keyboard).toBeDefined();
+            // Should only have navigation buttons (Back to Finance, Main Hub)
+            expect(keyboard.length).toBe(1);
+            expect(keyboard[0][0].callback_data).toBe("finance_hub");
+            expect(keyboard[0][1].callback_data).toBe("hub");
 
             fetchSpy.mockRestore();
         });

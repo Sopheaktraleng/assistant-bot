@@ -33,12 +33,12 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: "🧾 Expense", callback_data: "add_expense" },
-                    { text: "💰 Income", callback_data: "add_income" }
-                ],
-                [
                     { text: "📋 Today's Ledger", callback_data: "view_transactions" },
                     { text: "📊 Monthly Insights", callback_data: "summary_month" }
+                ],
+                [
+                    { text: "📜 All History", callback_data: "view_history" },
+                    { text: "📥 Export CSV", callback_data: "export_csv" }
                 ],
                 [
                     { text: "‹ Main Hub", callback_data: "hub" }
@@ -50,42 +50,41 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
 
 export async function sendCategoryPicker(env, chatId, type = "expense", messageId = null) {
     const isIncome = type === "income";
-    const title = isIncome ? "＋ *Add Income*" : "－ *Add Expense*";
-    const prefix = isIncome ? "cat_inc:" : "cat_exp:";
-    const categories = isIncome ? QUICK_INCOME_CATS : QUICK_EXPENSE_CATS;
-    const exampleCmd = isIncome ? "/income 500 usd salary" : "/add 5 usd coffee";
 
-    const rows = [];
-    for (let i = 0; i < categories.length; i += 2) {
-        const row = [
-            { text: `${categories[i].icon} ${categories[i].name}`, callback_data: `${prefix}${categories[i].name}` }
-        ];
-        if (categories[i + 1]) {
-            row.push({
-                text: `${categories[i + 1].icon} ${categories[i + 1].name}`,
-                callback_data: `${prefix}${categories[i + 1].name}`
-            });
-        }
-        rows.push(row);
-    }
+    const text = isIncome
+        ? [
+            `💰 *Add Income*`,
+            ``,
+            `Simply type or speak your earnings:`,
+            `• \`+500 salary\``,
+            `• \`40$ income freelance\``,
+            `• \`earned $50 bonus\``,
+            `• \`+1200000 khr project\``,
+            ``,
+            `💡 *Tip:* Hold the 🎙️ mic button to speak naturally!`
+        ].join("\n")
+        : [
+            `🧾 *Add Expense*`,
+            ``,
+            `Simply type or speak what you spent:`,
+            `• \`5 coffee\``,
+            `• \`12000 lunch\``,
+            `• \`3.50 grab\``,
+            `• \`40 gas\``,
+            ``,
+            `💡 *Tip:* Hold 🎙️ mic or snap an ABA / KHQR receipt photo!`
+        ].join("\n");
 
-    const customCb = isIncome ? "custom_inc" : "custom_add";
-    rows.push([{ text: `✏️ Custom: \`${exampleCmd}\``, callback_data: customCb }]);
-    rows.push([
-        { text: "‹ Back to Finance", callback_data: "finance_hub" },
-        { text: "🏠 Main Hub", callback_data: "hub" }
-    ]);
-
-    const text = [
-        title,
-        ``,
-        `Choose a category below, or type directly:`,
-        `\`${exampleCmd}\``
-    ].join("\n");
+    const keyboard = [
+        [
+            { text: "‹ Back to Finance", callback_data: "finance_hub" },
+            { text: "🏠 Main Hub", callback_data: "hub" }
+        ]
+    ];
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: rows }
+        reply_markup: { inline_keyboard: keyboard }
     });
 }
 
