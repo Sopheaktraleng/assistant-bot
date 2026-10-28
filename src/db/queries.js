@@ -242,6 +242,31 @@ export async function getCategoryRows(db, userId, period, limit) {
     return results || [];
 }
 
+/**
+ * Returns the user's top recent favorite transactions (grouped by category, amount, currency, merchant)
+ * to power 1-tap re-logging.
+ */
+export async function getRecentFavorites(db, userId, type = "expense", limit = 3) {
+    try {
+        const rows = await db
+            .prepare(`
+                SELECT category, amount, currency, merchant, COUNT(*) as freq, MAX(id) as last_id
+                FROM expenses
+                WHERE user_id = ? AND type = ?
+                GROUP BY category, amount, currency, COALESCE(merchant, '')
+                ORDER BY freq DESC, last_id DESC
+                LIMIT ?
+            `)
+            .bind(userId, type, limit)
+            .all();
+
+        return rows?.results || [];
+    } catch (e) {
+        console.warn("getRecentFavorites error:", e.message);
+        return [];
+    }
+}
+
 export async function addExpenseRecord(db, userId, amount, category, type = "expense", currency = "KHR", customDate = null, merchant = null, note = null) {
     const recordDate = (customDate && /^\d{4}-\d{2}-\d{2}$/.test(customDate)) ? customDate : today();
     const cleanMerchant = merchant && typeof merchant === "string" ? merchant.trim() : null;

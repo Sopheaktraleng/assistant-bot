@@ -425,6 +425,57 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
+    // --- 1-Tap Re-log from Recent Favorites or Default Presets ---
+    if (data.startsWith("relog_tx:")) {
+        const txId = parseInt(data.replace("relog_tx:", ""), 10);
+        const row = await env.DB.prepare(
+            "SELECT amount, category, type, currency, merchant FROM expenses WHERE id = ? AND user_id = ?"
+        ).bind(txId, userId).first();
+
+        if (row) {
+            await answerCallback(env, callback.id, { text: `✅ Re-logged ${row.category}!` });
+            const newTxId = await addExpenseRecord(
+                env.DB,
+                userId,
+                row.amount,
+                row.category,
+                row.type || "expense",
+                row.currency || "USD",
+                null,
+                row.merchant || null
+            );
+            await sendTransactionReceipt(env, chatId, userId, row.type || "expense", row.amount, row.currency || "USD", row.category, messageId, {
+                txId: newTxId,
+                merchant: row.merchant
+            });
+            return;
+        }
+    }
+
+    if (data.startsWith("relog_def:")) {
+        const parts = data.split(":");
+        const rType = parts[1] === "inc" || parts[1] === "income" ? "income" : "expense";
+        const rAmount = parseFloat(parts[2]) || 0;
+        const rCurrency = parts[3] || "USD";
+        const rCategory = parts[4] || "Other";
+
+        if (rAmount > 0) {
+            await answerCallback(env, callback.id, { text: `✅ Logged ${rCategory}!` });
+            const newTxId = await addExpenseRecord(
+                env.DB,
+                userId,
+                rAmount,
+                rCategory,
+                rType,
+                rCurrency
+            );
+            await sendTransactionReceipt(env, chatId, userId, rType, rAmount, rCurrency, rCategory, messageId, {
+                txId: newTxId
+            });
+            return;
+        }
+    }
+
     if (data === "custom_add") {
         await safeEditOrSendMessage(env, chatId, messageId, "✏️ *Custom Expense:*\nType: `/add 5 usd lunch` or `/add 15000 food`", {
             parse_mode: "Markdown",

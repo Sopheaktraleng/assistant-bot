@@ -1171,34 +1171,112 @@ describe("Bot Improvements & Stability", () => {
             fetchSpy.mockRestore();
         });
 
-        it("sendCategoryPicker should render clean conversational prompt without 8-button wall", async () => {
-            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+        it("sendCategoryPicker should render 1-tap recent favorites and presets for both expense and income", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
             );
 
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue(null),
+                        all: vi.fn().mockResolvedValue({
+                            results: [
+                                { category: "Coffee", amount: 3.5, currency: "USD", merchant: "Brown Coffee", freq: 5, last_id: 101 },
+                                { category: "Lunch", amount: 4.5, currency: "USD", merchant: "Park Cafe", freq: 3, last_id: 102 }
+                            ]
+                        })
+                    }),
+                    first: vi.fn().mockResolvedValue(null),
+                    all: vi.fn().mockResolvedValue({ results: [] })
+                })
+            };
+
             const mockEnv = {
+                DB: mockDb,
                 TELEGRAM_BOT_TOKEN: "mock_token"
             };
 
-            await sendCategoryPicker(mockEnv, 849550186, "expense");
+            // 1. Test Expense
+            await sendCategoryPicker(mockEnv, 849550186, "expense", null, 849550186);
 
             expect(fetchSpy).toHaveBeenCalled();
-            const call = fetchSpy.mock.calls.find(c => {
+            const expCall = fetchSpy.mock.calls.find(c => {
                 const body = JSON.parse(c[1]?.body || "{}");
                 return body.text?.includes("Add Expense");
             });
-            expect(call).toBeDefined();
+            expect(expCall).toBeDefined();
 
-            const payload = JSON.parse(call[1].body);
-            expect(payload.text).toContain("Simply type or speak what you spent:");
-            expect(payload.text).toContain("5 coffee");
+            const expPayload = JSON.parse(expCall[1].body);
+            expect(expPayload.text).toContain("Add Expense");
+            expect(expPayload.text).toContain("Tap a recent favorite to re-log in 1 second");
+            const expKeyboard = expPayload.reply_markup?.inline_keyboard;
+            expect(expKeyboard).toBeDefined();
 
-            const keyboard = payload.reply_markup?.inline_keyboard;
-            expect(keyboard).toBeDefined();
-            // Should only have navigation buttons (Back to Finance, Main Hub)
-            expect(keyboard.length).toBe(1);
-            expect(keyboard[0][0].callback_data).toBe("finance_hub");
-            expect(keyboard[0][1].callback_data).toBe("hub");
+            // First favorite should be Brown Coffee with relog_tx:101
+            expect(expKeyboard[0][0].callback_data).toBe("relog_tx:101");
+            expect(expKeyboard[0][0].text).toContain("$3.50");
+            expect(expKeyboard[0][0].text).toContain("Brown Coffee");
+
+            // Navigation at bottom
+            const lastRow = expKeyboard[expKeyboard.length - 1];
+            expect(lastRow[0].callback_data).toBe("finance_hub");
+            expect(lastRow[1].callback_data).toBe("hub");
+
+            fetchSpy.mockRestore();
+        });
+
+        it("handleCallback should handle relog_tx and relog_def to record 1-tap transactions", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+                Promise.resolve(new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 }))
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({
+                            amount: 3.5,
+                            category: "Coffee",
+                            type: "expense",
+                            currency: "USD",
+                            merchant: "Brown Coffee"
+                        }),
+                        all: vi.fn().mockResolvedValue({ results: [] }),
+                        run: vi.fn().mockResolvedValue({ meta: { last_row_id: 202 } })
+                    }),
+                    first: vi.fn().mockResolvedValue(null),
+                    all: vi.fn().mockResolvedValue({ results: [] }),
+                    run: vi.fn().mockResolvedValue({ meta: { last_row_id: 202 } })
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186",
+                OWNER_ID: "849550186"
+            };
+
+            // Test relog_tx
+            await handleCallback(
+                {
+                    id: "cb_relog_1",
+                    data: "relog_tx:101",
+                    from: { id: 849550186, first_name: "Boss" },
+                    message: { chat: { id: 849550186 }, message_id: 555 }
+                },
+                mockEnv,
+                "https://cashflow.workers.dev"
+            );
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const receiptCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("Expense Recorded");
+            });
+            expect(receiptCall).toBeDefined();
 
             fetchSpy.mockRestore();
         });

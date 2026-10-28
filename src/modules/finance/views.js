@@ -1,7 +1,7 @@
 import { EXCHANGE_RATE, QUICK_EXPENSE_CATS, QUICK_INCOME_CATS, isUserAuthorized } from "../../config/constants.js";
 import { today, monthLabel, dateDaysAgo, formatCambodiaDateTime, formatTimeFromCreatedAt } from "../../utils/time.js";
 import { formatAmount, formatMoney, capitalize, getCategoryIcon, generateTextProgressBar, cleanMd } from "../../utils/format.js";
-import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, getBudgetStatus, claimDailyBroadcast } from "../../db/queries.js";
+import { getDisplayCurrency, getFinancialSummary, getPeriodStats, getCategoryRows, getBudgetWarningText, getBudgetStatus, claimDailyBroadcast, getRecentFavorites } from "../../db/queries.js";
 import { ensureTables } from "../../db/schema.js";
 import { telegram, sendMessage, safeEditOrSendMessage } from "../../services/telegram.js";
 
@@ -48,39 +48,119 @@ export async function sendFinanceHub(env, chatId, userId, messageId = null) {
     });
 }
 
-export async function sendCategoryPicker(env, chatId, type = "expense", messageId = null) {
+export async function sendCategoryPicker(env, chatId, type = "expense", messageId = null, userId = null) {
     const isIncome = type === "income";
+    const effectiveUserId = userId || chatId;
+    await ensureTables(env.DB);
 
-    const text = isIncome
+    const [displayCurrency, favorites] = await Promise.all([
+        getDisplayCurrency(env.DB, effectiveUserId),
+        getRecentFavorites(env.DB, effectiveUserId, type, 3)
+    ]);
+
+    const isUsd = displayCurrency === "USD";
+    const sign = isIncome ? "+" : "";
+
+    // Candidate items: use user's frequent recent favorites, filled with standard presets if fewer than 3
+    const candidateItems = [];
+    if (favorites && favorites.length > 0) {
+        for (const f of favorites) {
+            candidateItems.push({
+                id: f.last_id,
+                category: f.category,
+                amount: f.amount,
+                currency: f.currency,
+                merchant: f.merchant,
+                isExisting: true
+            });
+        }
+    }
+
+    if (candidateItems.length < 3) {
+        const defaultExpensePresets = isUsd
+            ? [
+                { category: "Coffee", amount: 2.5, currency: "USD", merchant: null },
+                { category: "Lunch", amount: 5.0, currency: "USD", merchant: null },
+                { category: "Ride", amount: 2.0, currency: "USD", merchant: null }
+            ]
+            : [
+                { category: "Coffee", amount: 10000, currency: "KHR", merchant: null },
+                { category: "Lunch", amount: 20000, currency: "KHR", merchant: null },
+                { category: "Ride", amount: 8000, currency: "KHR", merchant: null }
+            ];
+
+        const defaultIncomePresets = isUsd
+            ? [
+                { category: "Salary", amount: 500, currency: "USD", merchant: null },
+                { category: "Freelance", amount: 50, currency: "USD", merchant: null },
+                { category: "Gift", amount: 20, currency: "USD", merchant: null }
+            ]
+            : [
+                { category: "Salary", amount: 2000000, currency: "KHR", merchant: null },
+                { category: "Freelance", amount: 200000, currency: "KHR", merchant: null },
+                { category: "Gift", amount: 80000, currency: "KHR", merchant: null }
+            ];
+
+        const defaults = isIncome ? defaultIncomePresets : defaultExpensePresets;
+        for (const def of defaults) {
+            if (candidateItems.length >= 3) break;
+            const alreadyHas = candidateItems.some(c => c.category.toLowerCase() === def.category.toLowerCase());
+            if (!alreadyHas) {
+                candidateItems.push({ ...def, isExisting: false });
+            }
+        }
+    }
+
+    const keyboard = [];
+    for (const item of candidateItems) {
+        const itemIcon = getCategoryIcon(item.category, type);
+        const itemSym = item.currency === "USD" ? "$" : "";
+        const itemSuf = item.currency === "KHR" ? " ៛" : "";
+        const minDecimals = item.currency === "USD" ? 2 : 0;
+        const amtStr = `${sign}${itemSym}${formatMoney(item.amount, minDecimals)}${itemSuf}`;
+        const label = item.merchant ? cleanMd(item.merchant) : capitalize(item.category);
+        const buttonText = `${itemIcon} ${amtStr} • ${label} (1-Tap)`;
+
+        const cbData = item.isExisting && item.id
+            ? `relog_tx:${item.id}`
+            : `relog_def:${type === "income" ? "inc" : "exp"}:${item.amount}:${item.currency}:${item.category}`;
+
+        keyboard.push([{ text: buttonText, callback_data: cbData }]);
+    }
+
+    keyboard.push([
+        { text: "‹ Back to Finance", callback_data: "finance_hub" },
+        { text: "🏠 Main Hub", callback_data: "hub" }
+    ]);
+
+    const title = isIncome ? "💰 *Add Income*" : "🧾 *Add Expense*";
+    const subheader = favorites && favorites.length > 0
+        ? `Tap a recent favorite to re-log in 1 second, or type/speak:`
+        : `Tap a quick preset to log in 1 second, or type/speak:`;
+
+    const bullets = isIncome
         ? [
-            `💰 *Add Income*`,
-            ``,
-            `Simply type or speak your earnings:`,
             `• \`+500 salary\``,
             `• \`40$ income freelance\``,
             `• \`earned $50 bonus\``,
-            `• \`+1200000 khr project\``,
             ``,
             `💡 *Tip:* Hold the 🎙️ mic button to speak naturally!`
-        ].join("\n")
+        ]
         : [
-            `🧾 *Add Expense*`,
-            ``,
-            `Simply type or speak what you spent:`,
             `• \`5 coffee\``,
             `• \`12000 lunch\``,
             `• \`3.50 grab\``,
             `• \`40 gas\``,
             ``,
             `💡 *Tip:* Hold 🎙️ mic or snap an ABA / KHQR receipt photo!`
-        ].join("\n");
+        ];
 
-    const keyboard = [
-        [
-            { text: "‹ Back to Finance", callback_data: "finance_hub" },
-            { text: "🏠 Main Hub", callback_data: "hub" }
-        ]
-    ];
+    const text = [
+        title,
+        ``,
+        subheader,
+        ...bullets
+    ].join("\n");
 
     await safeEditOrSendMessage(env, chatId, messageId, text, {
         parse_mode: "Markdown",
