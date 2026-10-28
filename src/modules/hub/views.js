@@ -86,16 +86,15 @@ export async function sendMainHub(env, chatId, userId, from, origin, messageId =
 
     const hubButtons = [
         [
-            { text: "⚡ Daily Briefing", callback_data: "daily_briefing" },
-            { text: "💡 Help & Guide", callback_data: "help" }
-        ],
-        [
             { text: "💳 Finance Hub", callback_data: "finance_hub" },
             { text: "📋 Today's Tasks", callback_data: "tasks_today" }
         ],
         [
             { text: "⏰ Reminders", callback_data: "reminders" },
             { text: "⚙️ Settings", callback_data: "settings" }
+        ],
+        [
+            { text: "💡 Help & Guide", callback_data: "help" }
         ]
     ];
 

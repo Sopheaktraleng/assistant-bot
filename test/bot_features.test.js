@@ -11,6 +11,7 @@ import worker from "../src/worker.js";
 import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
 import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
+import { sendMainHub } from "../src/modules/hub/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
 
 describe("Bot Improvements & Stability", () => {
@@ -1053,6 +1054,62 @@ describe("Bot Improvements & Stability", () => {
                 return body.text?.includes("Undone");
             });
             expect(editCall).toBeDefined();
+
+            fetchSpy.mockRestore();
+        });
+
+        it("sendMainHub should render streamlined hub buttons without redundant Daily Briefing button", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockDb = {
+                batch: vi.fn().mockResolvedValue([]),
+                prepare: vi.fn().mockReturnValue({
+                    bind: vi.fn().mockReturnValue({
+                        first: vi.fn().mockResolvedValue({ count: 5 }),
+                        all: vi.fn().mockResolvedValue({ results: [] })
+                    }),
+                    first: vi.fn().mockResolvedValue(null),
+                    all: vi.fn().mockResolvedValue([])
+                })
+            };
+
+            const mockEnv = {
+                DB: mockDb,
+                TELEGRAM_BOT_TOKEN: "mock_token",
+                ALLOWED_USER_IDS: "849550186",
+                OWNER_ID: "849550186"
+            };
+
+            await sendMainHub(mockEnv, 849550186, 849550186, { first_name: "Boss" }, "https://cashflow.workers.dev");
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const hubCall = fetchSpy.mock.calls.find(c => {
+                const body = JSON.parse(c[1]?.body || "{}");
+                return body.text?.includes("F.R.I.D.A.Y.");
+            });
+            expect(hubCall).toBeDefined();
+
+            const payload = JSON.parse(hubCall[1].body);
+            const keyboard = payload.reply_markup?.inline_keyboard;
+            expect(keyboard).toBeDefined();
+
+            // Flat check: NO daily_briefing button anywhere
+            const allButtons = keyboard.flat();
+            const dailyBriefingBtn = allButtons.find(b => b.callback_data === "daily_briefing");
+            expect(dailyBriefingBtn).toBeUndefined();
+
+            // Row 1 should be core hubs
+            expect(keyboard[0][0].callback_data).toBe("finance_hub");
+            expect(keyboard[0][1].callback_data).toBe("tasks_today");
+
+            // Row 2 should be Reminders & Settings
+            expect(keyboard[1][0].callback_data).toBe("reminders");
+            expect(keyboard[1][1].callback_data).toBe("settings");
+
+            // Row 3 should be Help & Guide
+            expect(keyboard[2][0].callback_data).toBe("help");
 
             fetchSpy.mockRestore();
         });
