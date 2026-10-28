@@ -669,6 +669,7 @@ Core Operating Directives (CRITICAL):
       "content": string (for work task),
       "title": string (for reminder),
       "time": "HH:mm" (24h format, for reminder),
+      "target_date": "YYYY-MM-DD" (optional, for reminder if user specifies a future date like 'on the 30th' or 'tomorrow'),
       "frequency": "daily" | "weekdays" | "once" (for reminder),
       "fact": string (for add_memory)
     }
@@ -900,6 +901,7 @@ export const FRIDAY_FUNCTION_DECLARATIONS = [
             properties: {
                 title: { type: "STRING", description: "Reminder description" },
                 time: { type: "STRING", description: "24-hour time in HH:mm format (Asia/Phnom_Penh UTC+7)" },
+                target_date: { type: "STRING", description: "Target date in YYYY-MM-DD format if scheduled for a specific day" },
                 frequency: { type: "STRING", enum: ["once", "daily", "weekdays"], description: "Repeat frequency" }
             },
             required: ["title", "time"]
@@ -993,11 +995,12 @@ export async function executeCopilotTool(db, userId, chatId, toolName, toolArgs 
             case "add_reminder": {
                 const cleanTitle = (toolArgs.title || "Reminder").trim();
                 const cleanTime = (toolArgs.time ? normalizeReminderTime(toolArgs.time) : null) || (toolArgs.time ? toolArgs.time.trim() : "12:00");
-                const freq = toolArgs.frequency || "once";
+                const targetDate = toolArgs.target_date || toolArgs.date || null;
+                const freq = targetDate ? "once" : (toolArgs.frequency || "once");
                 await db.prepare(
-                    "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
-                ).bind(userId, String(chatId || userId), cleanTitle, cleanTime, freq).run();
-                return { success: true, reminder: { title: cleanTitle, time: cleanTime, frequency: freq } };
+                    "INSERT INTO reminders (user_id, chat_id, title, reminder_time, target_date, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, ?, 'custom', 1)"
+                ).bind(userId, String(chatId || userId), cleanTitle, cleanTime, targetDate, freq).run();
+                return { success: true, reminder: { title: cleanTitle, time: cleanTime, target_date: targetDate, frequency: freq } };
             }
             case "add_memory": {
                 const memCat = toolArgs.category || "preference";

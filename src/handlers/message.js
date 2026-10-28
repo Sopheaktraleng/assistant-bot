@@ -59,7 +59,8 @@ import {
 
 // Reminders
 import {
-    sendRemindersMenu
+    sendRemindersMenu,
+    sendFocusMenu
 } from "../modules/reminders/views.js";
 import {
     handleRemindCommand
@@ -662,6 +663,11 @@ export async function handleMessage(message, env, origin) {
         return;
     }
 
+    if (text === "/focus" || text === "/pomodoro" || text === "/sprint") {
+        await sendFocusMenu(env, chatId);
+        return;
+    }
+
     // 3. Movie Watchlist (Retired for focus)
     if (
         text.startsWith("/watch") || 
@@ -913,6 +919,11 @@ export async function handleMessage(message, env, origin) {
 
         if (lower === "reminder" || lower === "reminders" || lower === "alarm" || lower === "alarms") {
             await sendRemindersMenu(env, chatId, userId);
+            return;
+        }
+
+        if (lower === "focus" || lower === "pomodoro" || lower === "sprint") {
+            await sendFocusMenu(env, chatId);
             return;
         }
 

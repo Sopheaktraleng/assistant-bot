@@ -8,6 +8,7 @@ const TABLE_SCHEMAS = [
         chat_id TEXT NOT NULL,
         title TEXT NOT NULL,
         reminder_time TEXT NOT NULL,
+        target_date TEXT,
         frequency TEXT NOT NULL DEFAULT 'weekdays',
         type TEXT NOT NULL DEFAULT 'lunchbox',
         is_active INTEGER NOT NULL DEFAULT 1,
@@ -123,6 +124,9 @@ export async function ensureTables(db) {
                 }
             }
         }
+        try {
+            await db.prepare("ALTER TABLE reminders ADD COLUMN target_date TEXT").run();
+        } catch (e) {}
         try {
             await db.prepare("ALTER TABLE user_settings ADD COLUMN briefing_mode TEXT DEFAULT 'on'").run();
         } catch (e) {}

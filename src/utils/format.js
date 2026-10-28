@@ -2,7 +2,7 @@ import { EXCHANGE_RATE } from "../config/constants.js";
 
 export function cleanMd(text) {
     if (!text) return "";
-    return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+    return text.replace(/([_*[\]()~`>#+\\|{}!])/g, "\\$1");
 }
 
 export function sanitizeMd(str) {

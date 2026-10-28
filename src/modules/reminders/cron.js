@@ -24,7 +24,7 @@ export async function processDueReminders(env) {
     const isWeekday = weekdayStr !== "Sat" && weekdayStr !== "Sun";
 
     const { results } = await env.DB.prepare(`
-        SELECT id, user_id, chat_id, title, reminder_time, frequency, type 
+        SELECT id, user_id, chat_id, title, reminder_time, target_date, frequency, type 
         FROM reminders 
         WHERE is_active = 1 
           AND reminder_time = ? 
@@ -38,12 +38,19 @@ export async function processDueReminders(env) {
             continue;
         }
 
+        // If reminder is scheduled for a specific date, only trigger on that date
+        if (r.target_date && r.target_date !== todayStr) {
+            continue;
+        }
+
         if (r.frequency === "weekdays" && !isWeekday) {
             continue;
         }
 
         try {
-            if (r.type === "lunchbox") {
+            if (r.type === "focus" || (r.title && (r.title.includes("Focus") || r.title.includes("Deep Work")))) {
+                await sendFocusCompletedNotification(env, r.chat_id, r.title, r.id);
+            } else if (r.type === "lunchbox") {
                 await sendLunchboxNotification(env, r.chat_id, r.id);
             } else if (r.type === "standup") {
                 await sendStandupNotification(env, r.chat_id, r.user_id, r.id);
@@ -53,7 +60,7 @@ export async function processDueReminders(env) {
                 await sendCustomReminderNotification(env, r.chat_id, r.title, r.reminder_time, r.id);
             }
 
-            if (r.frequency === "once") {
+            if (r.frequency === "once" || r.target_date) {
                 await env.DB.prepare("UPDATE reminders SET is_active = 0, last_sent_date = ? WHERE id = ?")
                     .bind(todayStr, r.id)
                     .run();
@@ -204,6 +211,32 @@ export async function sendCustomReminderNotification(env, chatId, title, time, r
                 [
                     { text: "⏰ Snooze 10m", callback_data: `remind_snooze:${reminderId}:10` },
                     { text: "⏰ Snooze 30m", callback_data: `remind_snooze:${reminderId}:30` }
+                ]
+            ]
+        }
+    });
+}
+
+export async function sendFocusCompletedNotification(env, chatId, title, reminderId = 0) {
+    const text = [
+        `🎯 *Sprint Completed!*`,
+        ``,
+        `🔔 *${title}*`,
+        `Sprint finished, Boss! ⚡ Time to take a breather.`,
+        ``,
+        `_Log what you accomplished to Today's Tasks:_`
+    ].join("\n");
+
+    await sendMessage(env, chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "⚡ Log to Today's Tasks", callback_data: "work_log_prompt" },
+                    { text: "☕ 10m Break", callback_data: "focus_start:10:☕ 10m Quick Break" }
+                ],
+                [
+                    { text: "✅ Done / Dismiss", callback_data: `remind_done:${reminderId}` }
                 ]
             ]
         }

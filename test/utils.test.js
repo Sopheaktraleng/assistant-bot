@@ -100,6 +100,13 @@ describe("Formatting Utilities", () => {
             expect(cleaned).toBe("\\*Bold\\* and \\_italic\\_ with \\`code\\` \\[link\\]\\(url\\)");
         });
 
+        it("cleanMd should preserve normal hyphens without escaping them to backslash-hyphen", () => {
+            const raw = "Check-in reminder (Mon-Fri)";
+            const cleaned = cleanMd(raw);
+            expect(cleaned).toBe("Check-in reminder \\(Mon-Fri\\)");
+            expect(cleaned).not.toContain("\\-");
+        });
+
         it("sanitizeMd should replace markdown special characters with spaces", () => {
             const raw = "10*5_2`[test]";
             const sanitized = sanitizeMd(raw);

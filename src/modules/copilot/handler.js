@@ -461,10 +461,11 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
                 } else if (act.type === "add_reminder" && act.title) {
                     const cleanTitle = act.title.trim();
                     const cleanTime = (act.time ? normalizeReminderTime(act.time) : null) || (act.time ? act.time.trim() : "12:00");
-                    const freq = act.frequency || "once";
+                    const targetDate = act.target_date || act.date || null;
+                    const freq = targetDate ? "once" : (act.frequency || "once");
                     await env.DB.prepare(
-                        "INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, 'custom', 1)"
-                    ).bind(userId, String(chatId), cleanTitle, cleanTime, freq).run();
+                        "INSERT INTO reminders (user_id, chat_id, title, reminder_time, target_date, frequency, type, is_active) VALUES (?, ?, ?, ?, ?, ?, 'custom', 1)"
+                    ).bind(userId, String(chatId), cleanTitle, cleanTime, targetDate, freq).run();
                 } else if (act.type === "add_memory" && act.fact) {
                     const memCat = act.category || "preference";
                     await saveUserMemory(env.DB, userId, act.fact.trim(), memCat);

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS reminders (
     chat_id TEXT NOT NULL,
     title TEXT NOT NULL,
     reminder_time TEXT NOT NULL, -- HH:mm 24-hour format in Asia/Phnom_Penh
+    target_date TEXT, -- YYYY-MM-DD for one-off scheduled alerts
     frequency TEXT NOT NULL DEFAULT 'weekdays', -- 'weekdays', 'daily', 'once'
     type TEXT NOT NULL DEFAULT 'lunchbox', -- 'lunchbox', 'expense_log', 'custom'
     is_active INTEGER NOT NULL DEFAULT 1,

@@ -67,6 +67,8 @@ import {
 import {
     sendPromptAddReminder,
     sendRemindersMenu,
+    sendRoutinesMenu,
+    sendFocusMenu,
     sendLunchboxMenu,
     sendReminderTimeMenu
 } from "../modules/reminders/views.js";
@@ -107,6 +109,7 @@ export async function handleCallback(callback, env, origin) {
     data.startsWith("approve_user:") ||
     data.startsWith("deny_user:") ||
     data.startsWith("revoke_user:") ||
+    data.startsWith("focus_start:") ||
     data.startsWith("remind_toggle") || 
     data.startsWith("remind_quick_timer:") || 
     data.startsWith("remind_shift:") || 
@@ -644,7 +647,47 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data === "remind_add_standup") {
+    if (data === "remind_focus") {
+        await sendFocusMenu(env, chatId, messageId);
+        return;
+    }
+
+    if (data.startsWith("focus_start:")) {
+        const parts = data.split(":");
+        const mins = parseInt(parts[1], 10) || 25;
+        const title = parts.slice(2).join(":") || `${mins}m Focus Sprint`;
+        const now = new Date();
+        const targetDate = new Date(now.getTime() + mins * 60 * 1000);
+        const targetTimeStr = new Intl.DateTimeFormat("en-GB", {
+            timeZone: TIME_ZONE,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(targetDate);
+        const dateStr = new Intl.DateTimeFormat("en-CA", {
+            timeZone: TIME_ZONE,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(targetDate);
+
+        await ensureTables(env.DB);
+        await env.DB.prepare(`
+            INSERT INTO reminders (user_id, chat_id, title, reminder_time, target_date, frequency, type, is_active)
+            VALUES (?, ?, ?, ?, ?, 'once', 'focus', 1)
+        `).bind(userId, String(chatId), title, targetTimeStr, dateStr).run();
+
+        await answerCallback(env, callback.id, { text: `🎯 ${title} started! Alert at ${targetTimeStr}.` });
+        await sendRemindersMenu(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data === "remind_routines") {
+        await sendRoutinesMenu(env, chatId, userId, messageId);
+        return;
+    }
+
+    if (data === "remind_add_standup" || data === "remind_add_standup_routines") {
         await ensureTables(env.DB);
         const existing = await env.DB.prepare(
             "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'standup' LIMIT 1"
@@ -663,13 +706,17 @@ export async function handleCallback(callback, env, origin) {
             `).bind(userId, String(chatId)).run();
         }
 
-        const toast = newActive ? "🟢 Morning Standup alarm ENABLED (09:00 Mon–Fri)!" : "⚪ Morning Standup alarm DISABLED.";
+        const toast = newActive ? "🔔 Morning Standup alarm ENABLED (09:00 Mon–Fri)!" : "🔕 Morning Standup alarm DISABLED.";
         await answerCallback(env, callback.id, { text: toast });
-        await sendRemindersMenu(env, chatId, userId, messageId);
+        if (data.endsWith("_routines")) {
+            await sendRoutinesMenu(env, chatId, userId, messageId);
+        } else {
+            await sendRemindersMenu(env, chatId, userId, messageId);
+        }
         return;
     }
 
-    if (data === "remind_add_lunchbox") {
+    if (data === "remind_add_lunchbox" || data === "remind_add_lunchbox_routines") {
         await ensureTables(env.DB);
         const existing = await env.DB.prepare(
             "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'lunchbox' LIMIT 1"
@@ -688,9 +735,13 @@ export async function handleCallback(callback, env, origin) {
             `).bind(userId, String(chatId)).run();
         }
 
-        const toast = newActive ? "🟢 Departure alarm ENABLED (17:30 Mon–Fri)!" : "⚪ Departure alarm DISABLED.";
+        const toast = newActive ? "🔔 Departure alarm ENABLED (17:30 Mon–Fri)!" : "🔕 Departure alarm DISABLED.";
         await answerCallback(env, callback.id, { text: toast });
-        await sendRemindersMenu(env, chatId, userId, messageId);
+        if (data.endsWith("_routines")) {
+            await sendRoutinesMenu(env, chatId, userId, messageId);
+        } else {
+            await sendRemindersMenu(env, chatId, userId, messageId);
+        }
         return;
     }
 
@@ -705,13 +756,20 @@ export async function handleCallback(callback, env, origin) {
             hour12: false
         }).format(targetDate);
 
+        const dateStr = new Intl.DateTimeFormat("en-CA", {
+            timeZone: TIME_ZONE,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(targetDate);
+
         const timerTitle = mins >= 60 ? `${mins / 60}h Countdown Timer` : `${mins}m Countdown Timer`;
 
         await ensureTables(env.DB);
         await env.DB.prepare(`
-            INSERT INTO reminders (user_id, chat_id, title, reminder_time, frequency, type, is_active)
-            VALUES (?, ?, ?, ?, 'once', 'custom', 1)
-        `).bind(userId, String(chatId), timerTitle, targetTimeStr).run();
+            INSERT INTO reminders (user_id, chat_id, title, reminder_time, target_date, frequency, type, is_active)
+            VALUES (?, ?, ?, ?, ?, 'once', 'custom', 1)
+        `).bind(userId, String(chatId), timerTitle, targetTimeStr, dateStr).run();
 
         await answerCallback(env, callback.id, { text: `⏱️ ${timerTitle} set for ${targetTimeStr}!` });
         await sendRemindersMenu(env, chatId, userId, messageId);
@@ -820,7 +878,7 @@ export async function handleCallback(callback, env, origin) {
         return;
     }
 
-    if (data === "toggle_expense_reminder") {
+    if (data === "toggle_expense_reminder" || data === "toggle_expense_reminder_routines") {
         await ensureTables(env.DB);
         const existing = await env.DB.prepare(
             "SELECT id, is_active FROM reminders WHERE user_id = ? AND type = 'expense_log' LIMIT 1"
@@ -839,9 +897,13 @@ export async function handleCallback(callback, env, origin) {
             `).bind(userId, String(chatId)).run();
         }
 
-        const stateTxt = newActive ? "🟢 Daily expense reminder ENABLED (21:00)!" : "🔴 Daily expense reminder DISABLED.";
+        const stateTxt = newActive ? "🔔 Daily expense reminder ENABLED (21:00)!" : "🔕 Daily expense reminder DISABLED.";
         await answerCallback(env, callback.id, { text: stateTxt });
-        await sendRemindersMenu(env, chatId, userId, messageId);
+        if (data.endsWith("_routines")) {
+            await sendRoutinesMenu(env, chatId, userId, messageId);
+        } else {
+            await sendRemindersMenu(env, chatId, userId, messageId);
+        }
         return;
     }
 

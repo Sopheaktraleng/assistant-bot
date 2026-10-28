@@ -10,7 +10,8 @@ import { handleMessage, handleRealTimeSearchCommand } from "../src/handlers/mess
 import worker from "../src/worker.js";
 import { handleCallback } from "../src/handlers/callback.js";
 import { answerCallback } from "../src/services/telegram.js";
-import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu } from "../src/modules/reminders/views.js";
+import { sendRemindersMenu, sendPromptAddReminder, sendReminderTimeMenu, sendFocusMenu } from "../src/modules/reminders/views.js";
+import { parseReminderInput } from "../src/modules/reminders/commands.js";
 import { sendMainHub } from "../src/modules/hub/views.js";
 import { sendFinanceHub, sendCategoryPicker, sendTransactions } from "../src/modules/finance/views.js";
 import { handleAddWorkLogCommand, handleListTodayTasksCommand } from "../src/modules/work/commands.js";
@@ -69,17 +70,37 @@ describe("Bot Improvements & Stability", () => {
 
             expect(fetchSpy).toHaveBeenCalled();
             const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
-            expect(payload.text).toContain("Reminders & Alerts Hub");
-            expect(payload.text).toContain("Daily Routine Automations");
+            expect(payload.text).toContain("Reminders & Alerts");
             expect(payload.text).toContain("Team sync with designer");
 
-            // Verify clean buttons exist
+            // Verify clean buttons exist with less clutter: Quick Timers & Focus Sprint
             const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
             expect(buttonTexts).toContain("⏱️ Quick Timers");
-            expect(buttonTexts).toContain("🔔 Test Alert");
-            expect(buttonTexts).toContain("🟢 Standup 09:00");
-            expect(buttonTexts).toContain("⚪ Departure 17:30");
-            expect(buttonTexts).toContain("⚙️ Edit");
+            expect(buttonTexts).toContain("🎯 Focus Sprint");
+            expect(buttonTexts).toContain("🏠 Main Hub");
+            expect(buttonTexts.some(t => t.includes("Team sync"))).toBe(true);
+            expect(buttonTexts.some(t => t.includes("Standup"))).toBe(false);
+
+            fetchSpy.mockRestore();
+        });
+
+        it("should render clean Focus Sprint menu with Pomodoro and Deep Work blocks", async () => {
+            const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+                new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 })
+            );
+
+            const mockEnv = { TELEGRAM_BOT_TOKEN: "mock_token" };
+            await sendFocusMenu(mockEnv, 123456);
+
+            expect(fetchSpy).toHaveBeenCalled();
+            const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+            expect(payload.text).toContain("Focus & Deep Work Sprints");
+
+            const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
+            expect(buttonTexts).toContain("🍅 25m Focus");
+            expect(buttonTexts).toContain("⚡ 50m Deep Work");
+            expect(buttonTexts).toContain("☕ 10m Break");
+            expect(buttonTexts).toContain("‹ Back to Reminders");
 
             fetchSpy.mockRestore();
         });
@@ -94,16 +115,47 @@ describe("Bot Improvements & Stability", () => {
 
             expect(fetchSpy).toHaveBeenCalled();
             const payload = JSON.parse(fetchSpy.mock.calls[0][1].body);
-            expect(payload.text).toContain("Quick Timers & Reminders");
-            expect(payload.text).toContain("1-Tap Countdown Timers");
+            expect(payload.text).toContain("Quick Timers");
 
             const buttonTexts = payload.reply_markup.inline_keyboard.flat().map(b => b.text);
-            expect(buttonTexts).toContain("⏱️ In 10 Mins");
-            expect(buttonTexts).toContain("⏱️ In 15 Mins");
-            expect(buttonTexts).toContain("⏱️ In 30 Mins");
-            expect(buttonTexts).toContain("⏱️ In 1 Hour");
+            expect(buttonTexts).toContain("⏱️ 15 Mins");
+            expect(buttonTexts).toContain("⏱️ 30 Mins");
+            expect(buttonTexts).toContain("⏱️ 1 Hour");
+            expect(buttonTexts).toContain("⏱️ 2 Hours");
+            expect(buttonTexts).toContain("‹ Back to Reminders");
 
             fetchSpy.mockRestore();
+        });
+
+        it("should parse natural date, relative time, and calendar day reminders in parseReminderInput", () => {
+            const fakeNow = new Date("2026-10-28T09:00:00+07:00");
+
+            // 1. Calendar day e.g. "on 30th at 8am Take the ice"
+            const p1 = parseReminderInput("on 30th at 8am to take the ice", fakeNow);
+            expect(p1.targetDateStr).toBe("2026-10-30");
+            expect(p1.timeStr).toBe("08:00");
+            expect(p1.title).toBe("Take the ice");
+            expect(p1.frequency).toBe("once");
+
+            // 2. Calendar day without time defaults to 09:00
+            const p2 = parseReminderInput("remind me to take the ice on 30th", fakeNow);
+            expect(p2.targetDateStr).toBe("2026-10-30");
+            expect(p2.timeStr).toBe("09:00");
+            expect(p2.title).toBe("Take the ice");
+
+            // 3. Relative timer: "in 20m check oven"
+            const p3 = parseReminderInput("in 20m Check oven", fakeNow);
+            expect(p3.isRelative).toBe(true);
+            expect(p3.mins).toBe(20);
+            expect(p3.title).toBe("Check oven");
+            expect(p3.frequency).toBe("once");
+
+            // 4. Daily recurring time: "17:30 bring lunch box"
+            const p4 = parseReminderInput("17:30 Bring lunch box", fakeNow);
+            expect(p4.timeStr).toBe("17:30");
+            expect(p4.targetDateStr).toBeNull();
+            expect(p4.title).toBe("Bring lunch box");
+            expect(p4.frequency).toBe("daily");
         });
     });
 
