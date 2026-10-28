@@ -174,7 +174,7 @@ export async function handleSearchExpensesCommand(env, chatId, userId, text) {
 
     const lines = [
         `🔍 *Search results for "${query}":*`,
-        `────────────────────`
+        ``
     ];
 
     for (const r of results) {
@@ -184,7 +184,7 @@ export async function handleSearchExpensesCommand(env, chatId, userId, text) {
         lines.push(`• \`${r.date}\`: *${sign}${symbol}${formatMoney(r.amount)}${suffix}* (${capitalize(r.category)})`);
     }
 
-    lines.push(`────────────────────`);
+    lines.push(``);
     lines.push(`_Showing ${results.length} most recent matches._`);
 
     await sendMessage(env, chatId, lines.join("\n"), {

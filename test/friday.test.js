@@ -295,7 +295,7 @@ describe("F.R.I.D.A.Y. Tactical Assistant Engine", () => {
         });
 
         it("sendFridayWakeupCall should generate smart AI-driven message when Gemini API is available", async () => {
-            const aiReply = "⏰ *Wake Up, Boss!*\n────────────────────\nMorning Boss! Grab some water, stretch, and let's conquer today.";
+            const aiReply = "⏰ *Wake Up, Boss!*\n\nMorning Boss! Grab some water, stretch, and let's conquer today.";
             const aiVoice = "Good morning Boss. It is 7:50 AM. Drink some water and ease out of bed.";
 
             fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {

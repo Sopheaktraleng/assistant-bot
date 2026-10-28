@@ -151,7 +151,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `⏳ *Access Request Submitted*\n────────────────────\nHello ${name}! Your request has been forwarded directly to Boss.\n\nYou will receive a notification as soon as it's reviewed!`,
+            `⏳ *Access Request Submitted*\n\nHello ${name}! Your request has been forwarded directly to Boss.\n\nYou will receive a notification as soon as it's reviewed!`,
             { parse_mode: "Markdown" }
         );
 
@@ -160,7 +160,7 @@ export async function handleCallback(callback, env, origin) {
         await sendMessage(
             env,
             ownerId,
-            `🔔 *New Access Request Received*\n────────────────────\n👤 *Name:* ${cleanMd(name)}\n💬 *Username:* ${username}\n🆔 *User ID:* \`${requesterId}\`\n\nWould you like to grant guest access to F.R.I.D.A.Y.?`,
+            `🔔 *New Access Request Received*\n\n👤 *Name:* ${cleanMd(name)}\n💬 *Username:* ${username}\n🆔 *User ID:* \`${requesterId}\`\n\nWould you like to grant guest access to F.R.I.D.A.Y.?`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -201,7 +201,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `✅ *Access Granted*\n────────────────────\n👤 *User:* ${cleanMd(targetName)} (\`${targetId}\`)\n🛡️ *Role:* Guest (Standard AI Persona, no Boss data access)\n\n_User has been notified and can now chat with F.R.I.D.A.Y._`,
+            `✅ *Access Granted*\n\n👤 *User:* ${cleanMd(targetName)} (\`${targetId}\`)\n🛡️ *Role:* Guest (Standard AI Persona, no Boss data access)\n\n_User has been notified and can now chat with F.R.I.D.A.Y._`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -217,7 +217,7 @@ export async function handleCallback(callback, env, origin) {
         await sendMessage(
             env,
             targetId,
-            `🎉 *Welcome to F.R.I.D.A.Y.!*\n────────────────────\nHello ${targetName}! Boss has approved your access.\n\nI'm F.R.I.D.A.Y., your intelligent AI assistant. Feel free to ask me questions, search the live web, check weather, or chat anytime.\n\nHow can I help you today?`,
+            `🎉 *Welcome to F.R.I.D.A.Y.!*\n\nHello ${targetName}! Boss has approved your access.\n\nI'm F.R.I.D.A.Y., your intelligent AI assistant. Feel free to ask me questions, search the live web, check weather, or chat anytime.\n\nHow can I help you today?`,
             { parse_mode: "Markdown" }
         ).catch(() => {});
         return;
@@ -238,7 +238,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `❌ *Access Denied*\n────────────────────\nRequest from user \`${targetId}\` was declined.`,
+            `❌ *Access Denied*\n\nRequest from user \`${targetId}\` was declined.`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -366,8 +366,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `🎯 *Monthly Budget Setting*\n` +
-            `────────────────────\n` +
+            `🎯 *Monthly Budget Setting*\n\n` +
             `Use the command:\n` +
             `• \`/budget 300 usd\` (Sets limit to $300)\n` +
             `• \`/budget 1200000 khr\` (Sets limit in Riel)\n` +
@@ -462,11 +461,11 @@ export async function handleCallback(callback, env, origin) {
             const header = deleted.type === "income" ? "❌ *Income Undone / Removed*" : "❌ *Expense Undone / Removed*";
             await safeEditOrSendMessage(env, chatId, messageId, [
                 header,
-                `────────────────────`,
+                ``,
                 `● *Amount:*   ~${amtStr}~`,
                 `● *Category:* ~${capitalize(deleted.category)}~`,
                 `● *Date:*     ~${deleted.date}~`,
-                `────────────────────`,
+                ``,
                 `_This transaction was successfully removed from your ledger._`
             ].join("\n"), {
                 parse_mode: "Markdown",
@@ -503,7 +502,7 @@ export async function handleCallback(callback, env, origin) {
                 message_id: callback.message.message_id,
                 text: [
                     `🎒 *Departure Reminder*`,
-                    `────────────────────`,
+                    ``,
                     `✅ *Lunch box packed and ready.*`,
                     `_Have a wonderful evening and safe trip home!_`
                 ].join("\n"),
@@ -536,7 +535,7 @@ export async function handleCallback(callback, env, origin) {
                 message_id: callback.message.message_id,
                 text: [
                     `⏰ *Reminder Snoozed*`,
-                    `────────────────────`,
+                    ``,
                     `Snoozed for 15 minutes.`,
                     `We will remind you again at \`${snoozeStr}\`.`
                 ].join("\n"),
@@ -569,7 +568,7 @@ export async function handleCallback(callback, env, origin) {
                 message_id: callback.message.message_id,
                 text: [
                     `⏰ *Standup Snoozed*`,
-                    `────────────────────`,
+                    ``,
                     `Snoozed for 30 minutes.`,
                     `We will remind you again at \`${snoozeStr}\`.`
                 ].join("\n"),
@@ -870,7 +869,7 @@ export async function handleCallback(callback, env, origin) {
                 message_id: callback.message.message_id,
                 text: [
                     `⏰ *Reminder Snoozed*`,
-                    `────────────────────`,
+                    ``,
                     `🔔 *${title}*`,
                     `Alert snoozed for ${mins} minutes.`,
                     `We will alert you again at \`${snoozeStr}\`.`
@@ -889,7 +888,7 @@ export async function handleCallback(callback, env, origin) {
                 message_id: callback.message.message_id,
                 text: [
                     `⏰ *Reminder Completed*`,
-                    `────────────────────`,
+                    ``,
                     `✅ *Marked as done!*`
                 ].join("\n"),
                 parse_mode: "Markdown"
@@ -966,7 +965,7 @@ export async function handleCallback(callback, env, origin) {
 
         const warningMsg = [
             `⚠️ *Database Reset Warning*`,
-            `────────────────────`,
+            ``,
             `This action will permanently delete all transaction records for your account.`,
             ``,
             `● *Transactions:* \`${count}\``,
@@ -1035,7 +1034,7 @@ export async function handleCallback(callback, env, origin) {
                 env,
                 chatId,
                 messageId,
-                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n────────────────────\nNo personal memories stored yet, Boss.\n\nTeach me with \`/remember <fact>\`!`,
+                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n\nNo personal memories stored yet, Boss.\n\nTeach me with \`/remember <fact>\`!`,
                 {
                     parse_mode: "Markdown",
                     reply_markup: {
@@ -1056,12 +1055,11 @@ export async function handleCallback(callback, env, origin) {
 
         const card = [
             `🧠 *F.R.I.D.A.Y. • Long-Term Memory Matrix*`,
-            `────────────────────`,
+            ``,
             `Here are the personal facts and directives I keep on record:`,
             ``,
             ...lines,
             ``,
-            `────────────────────`,
             `💡 *Controls:* \`/remember <fact>\` • \`/forget <id>\``
         ].join("\n");
 
@@ -1084,7 +1082,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `⚠️ *Wipe Memory Matrix Confirmation*\n────────────────────\nBoss, are you sure you want to erase all personal preferences and facts I've learned about you?\n\n_This cannot be undone._`,
+            `⚠️ *Wipe Memory Matrix Confirmation*\n\nBoss, are you sure you want to erase all personal preferences and facts I've learned about you?\n\n_This cannot be undone._`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -1105,7 +1103,7 @@ export async function handleCallback(callback, env, origin) {
             env,
             chatId,
             messageId,
-            `🗑️ *Memory Matrix Erased*\n────────────────────\nAll personal preferences and learned facts have been wiped, Boss. Starting fresh!`,
+            `🗑️ *Memory Matrix Erased*\n\nAll personal preferences and learned facts have been wiped, Boss. Starting fresh!`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {

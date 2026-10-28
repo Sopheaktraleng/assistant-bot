@@ -1279,12 +1279,12 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
 
                 const reply = [
                     `🌤️ *Phnom Penh Live Weather Telemetry*`,
-                    `────────────────────`,
+                    ``,
                     `● *Conditions:*   *${condition}*`,
                     `● *Temperature:*  *${temp}°C* (Feels like *${feelsLike}°C*)`,
                     `● *Humidity:*     *${humidity}%*`,
                     `● *Precipitation:* ${rainNote}`,
-                    `────────────────────`,
+                    ``,
                     `_Live satellite & meteorological telemetry via Open-Meteo._`
                 ].join("\n");
 
@@ -1312,11 +1312,11 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
 
                 const reply = [
                     `📈 *Live Crypto Market Telemetry*`,
-                    `────────────────────`,
+                    ``,
                     `● *Bitcoin (BTC):*   *$${btc}*`,
                     `● *Ethereum (ETH):*  *$${eth}*`,
                     `● *Solana (SOL):*    *$${sol}*`,
-                    `────────────────────`,
+                    ``,
                     `_Real-time spot telemetry via Binance._`
                 ].join("\n");
 
@@ -1336,10 +1336,10 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
         return {
             reply: [
                 `💱 *Cambodia Currency Exchange Telemetry*`,
-                `────────────────────`,
+                ``,
                 `● *Operational Rate:*  *1 USD = 4,000 KHR (៛)*`,
                 `● *Market Band:*        *4,000 – 4,050 ៛* per $1.00 USD`,
-                `────────────────────`,
+                ``,
                 `_F.R.I.D.A.Y. ledger conversion standard._`
             ].join("\n"),
             voice_summary: "The standard exchange rate is 4,000 Khmer Riel per 1 US Dollar.",
@@ -1357,7 +1357,7 @@ export async function getLiveRealtimeFallback(query, context = {}, quickOnly = f
     return {
         reply: [
             `🌐 *F.R.I.D.A.Y. • Real-Time Web Grounding*`,
-            `────────────────────`,
+            ``,
             `${addressUser}, I attempted to retrieve live search intelligence for *"${cleanMd(query)}"*, but the live search telemetry channel is temporarily rate-limited.`,
             ``,
             `💡 _Please re-try in a moment with:_ \`/search ${cleanMd(query)}\``
@@ -1512,8 +1512,8 @@ export function formatWebSearchUiCard(bodyText, sources = []) {
     let cleanBody = (bodyText || "").trim();
     cleanBody = cleanBody.replace(/^🌐\s*\*F\.R\.I\.D\.A\.Y\.[^\n]*\n+/i, "").replace(/^[─—–-]{3,}\n+/i, "").trim();
 
-    const header = `🌐 *F.R.I.D.A.Y. • Real-Time Web Intelligence*\n────────────────────`;
-    let card = `${header}\n${cleanBody}`;
+    const header = `🌐 *F.R.I.D.A.Y. • Real-Time Web Intelligence*`;
+    let card = `${header}\n\n${cleanBody}`;
 
     if (Array.isArray(sources) && sources.length > 0) {
         const sourceLinks = sources.slice(0, 3).map(s => {
@@ -1521,7 +1521,7 @@ export function formatWebSearchUiCard(bodyText, sources = []) {
             const safeUrl = (s.url || "").replace(/_/g, "%5F");
             return `[${safeTitle}](${safeUrl})`;
         }).join(" • ");
-        card += `\n\n────────────────────\n🌐 *Live Sources:* ${sourceLinks}`;
+        card += `\n\n🌐 *Live Sources:* ${sourceLinks}`;
     }
 
     return card;

@@ -146,10 +146,10 @@ export async function handleRemindCommand(env, chatId, userId, text) {
 
     const textResponse = [
         `${icon} *Reminder Set*`,
-        `────────────────────`,
+        ``,
         `● *Title:* *${title}*`,
         `● *Time:*  \`${timeStr}\` (${freqLabel})`,
-        `────────────────────`,
+        ``,
         `_You will be alerted on Telegram when it's time._`
     ].join("\n");
 

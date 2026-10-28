@@ -45,7 +45,7 @@ async function handleUpdateSafely(update, env, origin) {
                 await sendMessage(
                     env,
                     update.message.chat.id,
-                    `🔒 *F.R.I.D.A.Y. • Access Restricted*\n────────────────────\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
+                    `🔒 *F.R.I.D.A.Y. • Access Restricted*\n\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
                     {
                         parse_mode: "Markdown",
                         reply_markup: {

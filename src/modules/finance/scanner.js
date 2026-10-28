@@ -36,13 +36,13 @@ export function formatPendingScanText(scan) {
 
     return [
         `🧾 *Slip / Receipt Detected*`,
-        `────────────────────`,
+        ``,
         `● *Bank:*        ${cleanMd(bankName)}`,
         `● *${isIncome ? "Payer" : "Merchant"}:*   ${cleanMd(merchant)}`,
         `● *Amount:*      \`${mainAmt}\`${altAmt}`,
         `● *Category:*    ${icon} *${capitalize(scan.category)}*`,
         `● *Date & Time:* 📅 \`${cambodiaDate.full} ICT\`${note}`,
-        `────────────────────`,
+        ``,
         `_Tap below to confirm and record:_`
     ].join("\n");
 }
@@ -117,7 +117,7 @@ export async function renderPendingScanCard(env, chatId, scanOrId, messageId) {
 export async function sendScanHelp(env, chatId, messageId = null) {
     const text = [
         `📸 *Receipt & Slip Scanner*`,
-        `────────────────────`,
+        ``,
         `Simply send or forward any payment screenshot or receipt photo directly into this chat!`,
         ``,
         `✅ *Supported Slips & Receipts:*`,
@@ -195,13 +195,13 @@ export async function handleScanConfirm(env, chatId, userId, scanId, messageId, 
                 message_id: messageId,
                 text: [
                     `✅ *Receipt Recorded*`,
-                    `────────────────────`,
+                    ``,
                     `● *Amount:*      \`${amtStr}\``,
                     `● *Category:*    ${icon} *${capitalize(scan.category)}*`,
                     `● *Source:*      ${cleanMd(scan.bank || "Bank Transfer")}`,
                     scan.merchant ? `● *Merchant:*    🏪 *${cleanMd(scan.merchant)}*` : "",
                     `● *Date & Time:* 📅 \`${cambodiaDate.full} ICT\``,
-                    `────────────────────`,
+                    ``,
                     `_Saved to your ledger._`
                 ].filter(Boolean).join("\n"),
                 parse_mode: "Markdown"
@@ -384,7 +384,7 @@ export async function handleImageReceipt(message, env, origin) {
 
             const notFoundText = [
                 `⚠️ *Amount Not Detected*`,
-                `────────────────────`,
+                ``,
                 `We couldn't clearly identify an amount or bank slip in this image.`,
                 ``,
                 `💡 *Tips for best results:*`,
@@ -456,18 +456,18 @@ export function formatPendingStatementText(stmt) {
 
     let summaryStr = "";
     if (stmt.summary_markdown) {
-        summaryStr = `\n────────────────────\n💡 _${cleanMd(stmt.summary_markdown)}_`;
+        summaryStr = `\n\n💡 _${cleanMd(stmt.summary_markdown)}_`;
     }
 
     return [
         `📄 *${cleanMd(stmt.bank || "Bank Statement")} Detected*`,
-        `────────────────────`,
+        ``,
         `● *Bank:*      *${cleanMd(stmt.bank || "Bank Statement")}*${accountStr}${periodStr}`,
         `● *Inflow:*    \`${inflowStr}\``,
         `● *Outflow:*   \`${outflowStr}\``,
         `● *Total Txns:* *${stmt.transaction_count} transactions*`,
         summaryStr,
-        `────────────────────`,
+        ``,
         `_Boss, tap below to record all transactions into your cashflow ledger:_`
     ].join("\n");
 }
@@ -543,12 +543,12 @@ export async function handleStatementImport(env, chatId, userId, stmtId, message
 
     const text = [
         `✅ *Bank Statement Transactions Recorded*`,
-        `────────────────────`,
+        ``,
         `Boss, successfully imported *${result.count} transactions* from *${cleanMd(stmt.bank)}* into your cashflow ledger!`,
         ``,
         `● *Total Inflow:*   \`${inflowStr}\``,
         `● *Total Outflow:*  \`${outflowStr}\``,
-        `────────────────────`,
+        ``,
         `_All items are now live in your itemized ledger and summaries._`
     ].join("\n");
 
@@ -596,12 +596,12 @@ export async function handleStatementViewBreakdown(env, chatId, userId, stmtId, 
 
     const text = [
         `📋 *${cleanMd(stmt.bank)} • Transaction Breakdown*`,
-        `────────────────────`,
+        ``,
         `Period: \`${cleanMd(stmt.period || "Current")}\``,
         `Total: *${stmt.transaction_count} transactions*`,
         ``,
         ...lines,
-        `────────────────────`,
+        ``,
         `_Ready to import directly to ledger:_`
     ].join("\n");
 

@@ -5,7 +5,7 @@ import { transcribeAudioFile } from "../../services/ai.js";
 export async function sendVoiceHelp(env, chatId, messageId = null) {
     const text = [
         `🎙️ *Hands-Free Voice Notes*`,
-        `────────────────────`,
+        ``,
         `Speak directly to your personal assistant instead of typing!`,
         ``,
         `💡 *What you can say:*`,
@@ -104,7 +104,7 @@ export async function handleVoiceMessage(message, env, origin, onTranscribedMess
         if (!transcribedText || transcribedText.length < 2) {
             const noRecognizeMsg = [
                 `⚠️ *Could not understand audio*`,
-                `────────────────────`,
+                ``,
                 `Please try speaking closer to the microphone, or type your message directly.`,
                 ``,
                 `💡 *Try saying:*`,

@@ -109,9 +109,9 @@ export async function handleListTodayTasksCommand(env, chatId, userId, messageId
     const text = [
         `📋 *Today's Completed Tasks*`,
         `🗓️ \`${todayDate}\``,
-        `────────────────────`,
+        ``,
         taskList,
-        `────────────────────`,
+        ``,
         `🏆 *${monthCount} tasks* logged this month (${monthLabel()})`
     ].join("\n");
 

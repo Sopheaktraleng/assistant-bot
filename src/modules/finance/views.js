@@ -78,7 +78,7 @@ export async function sendCategoryPicker(env, chatId, type = "expense", messageI
 
     const text = [
         title,
-        `────────────────────`,
+        ``,
         `Choose a category below, or type directly:`,
         `\`${exampleCmd}\``
     ].join("\n");
@@ -125,9 +125,9 @@ export async function sendAmountPicker(env, chatId, category, type = "expense", 
 
     const text = [
         title,
-        `────────────────────`,
+        ``,
         `● *Category:* ${icon} *${capitalize(category)}*`,
-        `────────────────────`,
+        ``,
         `_Choose an amount below:_`
     ].join("\n");
 
@@ -174,7 +174,7 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
     const header = isIncome ? "＋ *Income Recorded*" : "－ *Expense Recorded*";
     const lines = [
         header,
-        `────────────────────`,
+        ``,
         `● *Amount:*      \`${mainAmt}\`${altAmt}`,
         `● *Category:*    ${icon} *${capitalize(category)}*`,
         extra.merchant ? `● *Merchant:*    🏪 *${cleanMd(extra.merchant)}*` : null,
@@ -184,7 +184,7 @@ export async function sendTransactionReceipt(env, chatId, userId, type, amount, 
     ].filter(Boolean);
 
     if (budgetStatus) {
-        lines.push(`────────────────────`);
+        lines.push(``);
         if (budgetStatus.isOver) {
             const overAmt = formatAmount(budgetStatus.spentKhr - budgetStatus.budgetKhr, displayCurrency);
             lines.push(`🚨 *Over Budget:* \`${budgetStatus.bar}\` *${budgetStatus.percent}%*`);
@@ -387,7 +387,7 @@ export async function sendCategoryBreakdown(env, chatId, userId, period) {
         return;
     }
 
-    const lines = [`📊 *${title}*`, `────────────────────`];
+    const lines = [`📊 *${title}*`, ``];
     for (const row of rows) {
         const percent = stats.total > 0 ? Math.round((row.total / stats.total) * 100) : 0;
         const icon = getCategoryIcon(row.category, "expense");
@@ -455,7 +455,7 @@ export async function getHistoryMessageData(db, userId, page = 1) {
 
     if (!results || results.length === 0) {
         return {
-            text: "📜 *All Transactions (History)*\n────────────────────\n_No transactions recorded yet._",
+            text: "📜 *All Transactions (History)*\n\n_No transactions recorded yet._",
             replyMarkup: {
                 inline_keyboard: [
                     [
@@ -486,7 +486,7 @@ export async function getHistoryMessageData(db, userId, page = 1) {
     const text = [
         `📜 *All Transactions (History)*`,
         `📖 Page ${currentPage} of ${totalPages} (${totalCount} total)`,
-        `────────────────────`,
+        ``,
         ...lines
     ].join("\n");
 
@@ -636,7 +636,7 @@ export async function sendWeeklyReportForUser(env, chatId, userId, startDate, en
     const textLines = [
         `📊 *${titleLabel}*`,
         `📅 \`${startDate}\` to \`${endDate}\``,
-        `────────────────────`,
+        ``,
         `● *Total Spent:*  \`${formatAmount(total, displayCurrency)}\``,
         `● *Average / Tx:* \`${formatAmount(average, displayCurrency)}\``,
         `● *Activity:*     \`${count} entries\``,
@@ -657,7 +657,7 @@ export async function sendWeeklyReportForUser(env, chatId, userId, startDate, en
     }
 
     if (catResults.length > 0) {
-        textLines.push(`────────────────────`, `🏷️ *Category Breakdown:*`);
+        textLines.push(``, `🏷️ *Category Breakdown:*`);
         catResults.forEach((cat) => {
             const percent = total > 0 ? Math.round((cat.total / total) * 100) : 0;
             const bar = generateTextProgressBar(percent);

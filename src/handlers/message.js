@@ -93,12 +93,12 @@ export async function handleUndoLastTransaction(env, chatId, userId) {
         chatId,
         [
             `🗑️ *Transaction Undone*`,
-            `────────────────────`,
+            ``,
             `${typeEmoji} *Type:* ${typeLabel}`,
             `💵 *Amount:* \`${formattedVal}\``,
             `🏷️ *Category:* *${deleted.category}*`,
             `📅 *Date:* \`${deleted.date}\``,
-            `────────────────────`,
+            ``,
             `_Successfully removed from your ledger._`
         ].join("\n"),
         { parse_mode: "Markdown" }
@@ -189,7 +189,7 @@ export async function handleMessage(message, env, origin) {
             await sendMessage(
                 env,
                 chatId,
-                `🔒 *F.R.I.D.A.Y. • Access Restricted*\n────────────────────\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
+                `🔒 *F.R.I.D.A.Y. • Access Restricted*\n\nHello ${requesterName}! This personal assistant is currently private and managed by Boss.\n\nWould you like to request guest access?`,
                 {
                     parse_mode: "Markdown",
                     reply_markup: {
@@ -235,7 +235,7 @@ export async function handleMessage(message, env, origin) {
         await sendMessage(
             env,
             chatId,
-            `🎙️ *Auto-Voice Mode: ENABLED*\n────────────────────\nBoss, I will now speak back with neural audio notes for every response. You won't have to read long texts anymore!\n\n_Type \`/voice off\` anytime to return to standard text mode._`,
+            `🎙️ *Auto-Voice Mode: ENABLED*\n\nBoss, I will now speak back with neural audio notes for every response. You won't have to read long texts anymore!\n\n_Type \`/voice off\` anytime to return to standard text mode._`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -257,7 +257,7 @@ export async function handleMessage(message, env, origin) {
         await sendMessage(
             env,
             chatId,
-            `📝 *Auto-Voice Mode: DISABLED*\n────────────────────\nSwitched back to standard text. Each message will still have a \`🔊 Read Aloud\` button if you're lazy to read!`,
+            `📝 *Auto-Voice Mode: DISABLED*\n\nSwitched back to standard text. Each message will still have a \`🔊 Read Aloud\` button if you're lazy to read!`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -274,7 +274,7 @@ export async function handleMessage(message, env, origin) {
         await sendMessage(
             env,
             chatId,
-            `🎙️ *F.R.I.D.A.Y. • Voice Synthesis & Hearing*\n────────────────────\nCurrent Mode: ${modeStatus}\n\n💡 *Voice Shortcuts:*\n• \`/voice on\` — Speak back automatically to every query\n• \`/voice off\` — Standard text mode with on-demand voice buttons\n• \`/speak\` — Read aloud my last response\n• \`/speak <query>\` — Ask a question and hear the answer\n• Hold 🎙️ mic button — Speak in English or Khmer (*អក្សរខ្មែរ*)`,
+            `🎙️ *F.R.I.D.A.Y. • Voice Synthesis & Hearing*\n\nCurrent Mode: ${modeStatus}\n\n💡 *Voice Shortcuts:*\n• \`/voice on\` — Speak back automatically to every query\n• \`/voice off\` — Standard text mode with on-demand voice buttons\n• \`/speak\` — Read aloud my last response\n• \`/speak <query>\` — Ask a question and hear the answer\n• Hold 🎙️ mic button — Speak in English or Khmer (*អក្សរខ្មែរ*)`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -358,7 +358,7 @@ export async function handleMessage(message, env, origin) {
             await sendMessage(
                 env,
                 chatId,
-                `🌐 *F.R.I.D.A.Y. • Real-Time Web Grounding*\n────────────────────\nAsk me anything in real-time across the live web:\n\n• ☀️ *Weather:* \`/weather\` or \`/search weather in Phnom Penh\`\n• 📈 *Markets:* \`/search Bitcoin and gold price today\`\n• ⚽ *Sports:* \`/search Premier League match results\`\n• 🎬 *Cinema:* \`/search Legend Cinema showtimes Phnom Penh\`\n\n_You can also just ask directly in normal conversation or voice notes!_`,
+                `🌐 *F.R.I.D.A.Y. • Real-Time Web Grounding*\n\nAsk me anything in real-time across the live web:\n\n• ☀️ *Weather:* \`/weather\` or \`/search weather in Phnom Penh\`\n• 📈 *Markets:* \`/search Bitcoin and gold price today\`\n• ⚽ *Sports:* \`/search Premier League match results\`\n• 🎬 *Cinema:* \`/search Legend Cinema showtimes Phnom Penh\`\n\n_You can also just ask directly in normal conversation or voice notes!_`,
                 { parse_mode: "Markdown" }
             );
             return;
@@ -439,7 +439,7 @@ export async function handleMessage(message, env, origin) {
             await sendMessage(
                 env,
                 chatId,
-                `🧠 *F.R.I.D.A.Y. • Memory Matrix*\n────────────────────\nTeach me preferences, work rules, or facts about you!\n\n💡 *Usage Examples:*\n• \`/remember I only drink iced Americano with no sugar\`\n• \`/remember My work hours are 08:30 to 17:30\`\n• \`/remember My manager is Alex\`\n\n_I will remember this across all our conversations!_`,
+                `🧠 *F.R.I.D.A.Y. • Memory Matrix*\n\nTeach me preferences, work rules, or facts about you!\n\n💡 *Usage Examples:*\n• \`/remember I only drink iced Americano with no sugar\`\n• \`/remember My work hours are 08:30 to 17:30\`\n• \`/remember My manager is Alex\`\n\n_I will remember this across all our conversations!_`,
                 { parse_mode: "Markdown" }
             );
             return;
@@ -460,7 +460,7 @@ export async function handleMessage(message, env, origin) {
         await sendMessage(
             env,
             chatId,
-            `🧠 *Memory Matrix Updated*\n────────────────────\nCommitted to long-term memory, Boss:\n\n🏷️ *Category:* \`${category.toUpperCase()}\`\n📝 *Fact:* _"${fact}"_\n\n_Type \`/memory\` anytime to inspect what I remember about you._`,
+            `🧠 *Memory Matrix Updated*\n\nCommitted to long-term memory, Boss:\n\n🏷️ *Category:* \`${category.toUpperCase()}\`\n📝 *Fact:* _"${fact}"_\n\n_Type \`/memory\` anytime to inspect what I remember about you._`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -482,7 +482,7 @@ export async function handleMessage(message, env, origin) {
             await sendMessage(
                 env,
                 chatId,
-                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n────────────────────\nNo personal memories stored yet, Boss.\n\nTeach me by typing:\n• \`/remember <fact>\`\n• Or tell me in chat: _"Friday, remember that I prefer black coffee"_\n\nI adapt my tone and suggestions based on what you share!`,
+                `🧠 *F.R.I.D.A.Y. • Long-Term Memory*\n\nNo personal memories stored yet, Boss.\n\nTeach me by typing:\n• \`/remember <fact>\`\n• Or tell me in chat: _"Friday, remember that I prefer black coffee"_\n\nI adapt my tone and suggestions based on what you share!`,
                 {
                     parse_mode: "Markdown",
                     reply_markup: {
@@ -503,12 +503,11 @@ export async function handleMessage(message, env, origin) {
 
         const card = [
             `🧠 *F.R.I.D.A.Y. • Long-Term Memory Matrix*`,
-            `────────────────────`,
+            ``,
             `Here are the personal facts and directives I keep on record:`,
             ``,
             ...lines,
             ``,
-            `────────────────────`,
             `💡 *Management Controls:*`,
             `• Delete single: \`/forget <id>\` (e.g. \`/forget ${memories[0].id}\`)`,
             `• Wipe all: \`/forget all\``,
@@ -587,7 +586,7 @@ export async function handleMessage(message, env, origin) {
         await sendMessage(
             env,
             chatId,
-            `🧹 *Conversation Buffer Flushed*\n────────────────────\nActive multi-turn context has been reset, Boss.\n\n_(Note: Your long-term \`/memory\` and financial ledgers remain completely safe and intact.)_\n\nReady for your next command.`,
+            `🧹 *Conversation Buffer Flushed*\n\nActive multi-turn context has been reset, Boss.\n\n_(Note: Your long-term \`/memory\` and financial ledgers remain completely safe and intact.)_\n\nReady for your next command.`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {

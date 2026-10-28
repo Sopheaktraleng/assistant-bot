@@ -113,7 +113,7 @@ Return pure JSON only:
 
         const lines = [
             `☀️ *Good morning, Boss!*`,
-            `────────────────────`,
+            ``,
             `Rise and shine! It's \`${context.currentTime}\` on a fresh ${dayName}.`,
             ``,
             `Hope you had a great night's rest. Here's your morning check-in:`,
@@ -185,7 +185,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `It's \`07:50 AM\`—a fresh Monday morning is here. 🌅`,
                     ``,
                     `Take a slow deep breath, drink a tall glass of cool water, and stretch out that sleep. No need to rush into the week; let's ease into the morning and build steady momentum.`,
@@ -200,7 +200,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `The clock shows \`07:50 AM\` on a crisp Tuesday morning. ☀️`,
                     ``,
                     `Shake off the drowsiness, get some water in your system, and let the morning light in. You built great momentum yesterday—let's carry it forward today.`,
@@ -215,7 +215,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `It's \`07:50 AM\`—midweek checkpoint! 🚀`,
                     ``,
                     `You're halfway through the week, Boss. Give yourself a moment to stretch, hydrate, and clear your head before the day gets rolling.`,
@@ -230,7 +230,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `It's \`07:50 AM\` on Thursday morning. ☀️`,
                     ``,
                     `We're on the doorstep of the weekend. Step out of bed, drink some water, and let's keep the focus sharp today.`,
@@ -245,7 +245,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `It's \`07:50 AM\`—and Friday has officially arrived! 🎉`,
                     ``,
                     `You've put in solid work all week. Stretch out that sleep, hydrate, and let's finish strong today before the weekend kicks off.`,
@@ -262,7 +262,7 @@ export function getHumanWakeupFallback(dayName, context) {
             return {
                 reply: [
                     `⏰ *Wake Up, Boss!*`,
-                    `────────────────────`,
+                    ``,
                     `It's \`07:50 AM\` on a peaceful ${dayName}. 🌿`,
                     ``,
                     `No alarms or deadlines pressing you this morning. Stretch out, enjoy the calm morning air, and ease out of bed at your own pace.`,

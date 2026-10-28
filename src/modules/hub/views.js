@@ -175,7 +175,7 @@ export async function sendUserManagementMenu(env, chatId, userId, messageId = nu
 
     const textLines = [
         `👥 *F.R.I.D.A.Y. • User Access Matrix*`,
-        `────────────────────`,
+        ``,
         `👑 *Owner:* ${cleanMd(owner.first_name || "Boss")} (\`${owner.user_id}\`)`,
         ``
     ];
@@ -200,7 +200,6 @@ export async function sendUserManagementMenu(env, chatId, userId, messageId = nu
         textLines.push("");
     }
 
-    textLines.push(`────────────────────`);
     textLines.push(`_Manage approvals or revoke guest access below:_`);
 
     const keyboard = [];
@@ -237,7 +236,7 @@ export async function sendUserManagementMenu(env, chatId, userId, messageId = nu
 export async function sendHelpMessage(env, chatId, messageId = null) {
     const text = [
         `💡 *Help & Shortcuts Guide*`,
-        `────────────────────`,
+        ``,
         `⚡ *Fast Natural Logging (No Commands Needed)*`,
         `• *Expense:* \`5 coffee\` or \`12000 lunch\` or \`3.50 grab\``,
         `• *Income:* \`+500 salary\`, \`40$ income\`, or \`earned $50 freelance\``,
@@ -268,7 +267,7 @@ export async function sendHelpMessage(env, chatId, messageId = null) {
         `• *Two-Way Voice:* Send a voice note, Friday speaks back!`,
         `• *Vision & Error Debugger:* Send code screenshots or error photos`,
         `• \`/ask <question>\` — e.g. _"Friday, can I afford a $60 dinner?"_`,
-        `────────────────────`,
+        ``,
         `_Tap any button below to jump directly to that workspace:_`
     ].join("\n");
 

@@ -100,14 +100,14 @@ export async function sendStandupNotification(env, chatId, userId, reminderId = 
 
     const text = [
         `🌅 *Morning Standup Time!*`,
-        `────────────────────`,
+        ``,
         `Ready to start your work day? 🚀`,
         ``,
         `⏮️ *Accomplished in last session (${effectivePrevDate}):*`,
         prevSummary,
         ``,
         `🎯 *What are your top priorities for today?*`,
-        `────────────────────`,
+        ``,
         `_Log anytime with: \`done <task description>\`_`
     ].join("\n");
 
@@ -131,13 +131,13 @@ export async function sendStandupNotification(env, chatId, userId, reminderId = 
 export async function sendLunchboxNotification(env, chatId, reminderId = 0) {
     const text = [
         `🎒 *End-of-Day Departure Alert*`,
-        `────────────────────`,
+        ``,
         `Wrapping up your workday? 🚪`,
         ``,
         `Don't forget to:`,
         `• Grab your lunchbox, bag, and personal belongings`,
         `• Log your daily accomplishments: \`/done <task>\``,
-        `────────────────────`,
+        ``,
         `_Safe travels home! ✨_`
     ].join("\n");
 
@@ -161,7 +161,7 @@ export async function sendLunchboxNotification(env, chatId, reminderId = 0) {
 export async function sendExpenseLogNotification(env, chatId) {
     const text = [
         `💳 *Daily Cashflow Check-in*`,
-        `────────────────────`,
+        ``,
         `Did you spend or earn anything today? 📊`,
         ``,
         `Take 10 seconds to record your day's transactions and keep your budget balanced!`
@@ -187,10 +187,10 @@ export async function sendExpenseLogNotification(env, chatId) {
 export async function sendCustomReminderNotification(env, chatId, title, time, reminderId) {
     const text = [
         `⏰ *Reminder Alert*`,
-        `────────────────────`,
+        ``,
         `🔔 *${title}*`,
         `● *Scheduled:* \`${time}\``,
-        `────────────────────`,
+        ``,
         `_Take action or snooze below:_`
     ].join("\n");
 

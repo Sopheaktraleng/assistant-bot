@@ -138,11 +138,11 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `⚡ *F.R.I.D.A.Y. • Ledger Correction*`,
-                `────────────────────`,
+                ``,
                 `Understood, Boss! My apologies for the misclassification.`,
                 `• *Reversed:* Last wrongful expense entry deleted.`,
                 `• *Logged:* \`${curHint === "USD" ? "$" : ""}${amount}${curHint === "KHR" ? " ៛" : ""}\` credited to *Income*.`,
-                `────────────────────`,
+                ``,
                 `_Net cashflow telemetry recalibrated._`
             ].join("\n"),
             voice_summary: `Understood Boss. I removed the wrongful expense and credited ${amount} dollars to your income.`,
@@ -159,9 +159,9 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `🗑️ *F.R.I.D.A.Y. • Ledger Operation*`,
-                `────────────────────`,
+                ``,
                 `The last recorded transaction has been purged from your ledger, Boss.`,
-                `────────────────────`,
+                ``,
                 `_Balances have been updated._`
             ].join("\n"),
             voice_summary: `Last transaction removed from your ledger, Boss.`,
@@ -174,9 +174,9 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `⚠️ *F.R.I.D.A.Y. • Ledger Reset*`,
-                `────────────────────`,
+                ``,
                 `All transactions have been purged from your database ledger, Boss.`,
-                `────────────────────`,
+                ``,
                 `_Fresh ledger initialized._`
             ].join("\n"),
             voice_summary: `All transactions purged from ledger, Boss.`,
@@ -188,9 +188,9 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `🧹 *F.R.I.D.A.Y. • Daily Reset*`,
-                `────────────────────`,
+                ``,
                 `Today's transactions have been cleared from your ledger, Boss.`,
-                `────────────────────`,
+                ``,
                 `_Today's burn reset to zero._`
             ].join("\n"),
             voice_summary: `Today's transactions cleared, Boss.`,
@@ -235,7 +235,7 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `🛡️ *F.R.I.D.A.Y. • Local Affordability Assessment*`,
-                `────────────────────`,
+                ``,
                 canAfford 
                     ? `🟢 *Affirmative, Boss.* You can safely afford this purchase.` 
                     : `🔴 *Caution, Boss.* This purchase will result in a negative cashflow buffer.`,
@@ -243,7 +243,7 @@ export function buildSmartLocalFallback(query, context = {}) {
                 `● *Target Cost:*   \`${symbol}${itemCost}${suffix}\``,
                 `● *Current Net:*   \`${netSign}${symbol}${Math.abs(netBal)}${suffix}\``,
                 `● *Buffer After:*  \`${remainingBuffer >= 0 ? "+" : "-"}${symbol}${Math.abs(remainingBuffer)}${suffix}\``,
-                `────────────────────`,
+                ``,
                 `_Calculated via onboard SQLite ledger telemetry._`
             ].join("\n"),
             voice_summary: canAfford
@@ -257,11 +257,11 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `💳 *F.R.I.D.A.Y. • Local Expense Telemetry*`,
-                `────────────────────`,
+                ``,
                 `● *Today's Spending:*   \`${symbol}${todayBurn}${suffix}\``,
                 `● *Monthly Expenses:*  \`${symbol}${totalExp}${suffix}\``,
                 `● *Net Cashflow:*      \`${netSign}${symbol}${Math.abs(netBal)}${suffix}\``,
-                `────────────────────`,
+                ``,
                 `_Calculated directly from live database ledger._`
             ].join("\n"),
             voice_summary: `Today you have spent ${todayBurn} dollars. Monthly total is ${totalExp} dollars.`
@@ -276,10 +276,10 @@ export function buildSmartLocalFallback(query, context = {}) {
         return {
             reply: [
                 `⚡ *F.R.I.D.A.Y. • Local Operations Telemetry*`,
-                `────────────────────`,
+                ``,
                 `📋 *Logged Tasks Today (${tasks.length}):*`,
                 taskLines,
-                `────────────────────`,
+                ``,
                 `_Use \`/done <task>\` to log new accomplishments._`
             ].join("\n"),
             voice_summary: `You have ${tasks.length} tasks logged for today, Boss.`
@@ -327,7 +327,7 @@ export async function handleAiCopilotQuery(env, chatId, userId, query, from, mes
         if (!cleanQuery) {
             const text = [
                 `🤖 *F.R.I.D.A.Y. Tactical Assistant*`,
-                `────────────────────`,
+                ``,
                 `Tactical intelligence for your cashflow ledger, work journal, budget, and reminders.`,
                 ``,
                 `💡 *What you can ask Boss:*`,
